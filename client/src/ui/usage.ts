@@ -10,7 +10,7 @@
 import type { AccountInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
-import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
+import { FIVE_HOURS_MS, formatTokens, formatUSD, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
 import { ICONS } from './icons';
 import { isAntigravity, isCodex, isOpencode, providerOf } from './provider';
 import { usageRowFits } from './usage-row';
@@ -187,6 +187,12 @@ export function usageSubtitle(a: Pick<AccountInfo, 'email' | 'plan' | 'configDir
 export function usageMessage(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>): [string, string] {
   const state = cardState(a);
   if (state === 'noquota') return [tr('sem cota'), tr('sem cota')];
+  // OpenCode com o banco local lido: custo e tokens da janela, em texto (sem barra, sem porcentagem).
+  const local = isOpencode(a) ? a.usage?.local : undefined;
+  if (local) {
+    const cost = formatUSD(local.costUsd);
+    return [tr('{0} · {1} dias · {2} ent. · {3} saída', [cost, String(local.days), formatTokens(local.input), formatTokens(local.output)]), tr('{0} · {1} d', [cost, String(local.days)])];
+  }
   if (isOpencode(a)) return [tr('o OpenCode não tem cota única'), tr('sem dados de cota')];
   if (isAntigravity(a)) return [tr('sem dados: npm run antigravity:install -- --uso'), tr('sem dados')];
   if (isCodex(a)) return [tr('sem dados ainda'), tr('sem dados')];
@@ -444,7 +450,15 @@ export class UsageCards {
       if (sonnet) rows.push([tr('Sonnet (semana)'), sonnet.summary]);
     }
     if (u && state === 'noquota') rows.push([tr('Cota'), tr('sem cota nem créditos agora')]);
-    if (u && (state !== 'empty' || codex)) {
+    const local = isOpencode(a) ? u?.local : undefined;
+    if (local) {
+      const win = tr('{0} dias', [String(local.days)]);
+      rows.push([tr('Custo ({0})', [win]), formatUSD(local.costUsd)]);
+      rows.push([tr('Entrada ({0})', [win]), formatTokens(local.input)]);
+      rows.push([tr('Saída ({0})', [win]), formatTokens(local.output)]);
+      rows.push([tr('Cache de leitura ({0})', [win]), formatTokens(local.cacheRead)]);
+    }
+    if (u && (state !== 'empty' || codex || local)) {
       rows.push([tr('Origem'), sourceLabel(u)]);
       rows.push([tr('Atualizado'), relativeTime(u.fetchedAt, now)]);
     }
