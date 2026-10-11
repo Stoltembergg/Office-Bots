@@ -1254,7 +1254,7 @@ export class Sim {
   /** Tile livre para alguém ficar em pé (sem assento, sem spot e sem outra pessoa). */
   private overflowFree(x: number, y: number, ch: Character, busy = this.busyTiles(ch.id)): boolean {
     const grid = this.building.grid;
-    if (grid.get(x, y) !== FREE || busy.has(y * grid.w + x)) return false;
+    if (grid.get(x, y) !== FREE || busy.has(grid.key(x, y))) return false;
     for (const s of this.spots.all()) if (s.tx === x && s.ty === y) return false;
     return true;
   }
@@ -1280,7 +1280,7 @@ export class Sim {
           [-1, 0],
           [0, 1],
           [0, -1],
-        ] as const) if (busy.has((y + dy) * grid.w + x + dx)) crowd++;
+        ] as const) if (busy.has(grid.key(x + dx, y + dy))) crowd++;
         const backed = solidAt(0, -1) || solidAt(0, 1) ? 2 : solidAt(1, 0) || solidAt(-1, 0) ? 1 : 0;
         const squeezed = (solidAt(1, 0) && solidAt(-1, 0)) || (solidAt(0, 1) && solidAt(0, -1)) ? 3 : 0;
         const score = backed - squeezed - crowd * 3 - (Math.abs(x - ch.tx) + Math.abs(y - ch.ty)) * 0.05 + ch.rng() * 0.8;
@@ -1417,7 +1417,7 @@ export class Sim {
       const y = target.ty + dy;
       const cell = grid.get(x, y);
       if (cell === 0) continue;
-      const d = Math.abs(x - from.tx) + Math.abs(y - from.ty) + (cell === SEAT ? 20 : 0) + (busy.has(y * grid.w + x) ? 40 : 0) + (dx && dy ? 3 : 0);
+      const d = Math.abs(x - from.tx) + Math.abs(y - from.ty) + (cell === SEAT ? 20 : 0) + (busy.has(grid.key(x, y)) ? 40 : 0) + (dx && dy ? 3 : 0);
       if (d < bestD) {
         bestD = d;
         best = { x, y };
@@ -1426,16 +1426,16 @@ export class Sim {
     return best ?? grid.nearestWalkable(target.tx, target.ty) ?? { x: target.tx, y: target.ty };
   }
 
-  /** Tiles (índice y*w+x) onde há alguém parado ou indo parar, exceto `a` e `b`. */
+  /** Tiles (índice `grid.key`) onde há alguém parado ou indo parar, exceto `a` e `b`. */
   busyTiles(a: string, b?: string): Set<number> {
-    const w = this.building.grid.w;
+    const grid = this.building.grid;
     const out = new Set<number>();
     for (const c of this.chars.values()) {
       if (c.gone || c.id === a || c.id === b) continue;
-      out.add(c.ty * w + c.tx);
+      out.add(grid.key(c.tx, c.ty));
       const go = c.step?.t === 'go' ? c.step : c.queue.find((s): s is Extract<Step, { t: 'go' }> => s.t === 'go');
-      if (go) out.add(go.ty * w + go.tx);
-      if (c.standTile) out.add(c.standTile.y * w + c.standTile.x);
+      if (go) out.add(grid.key(go.tx, go.ty));
+      if (c.standTile) out.add(grid.key(c.standTile.x, c.standTile.y));
     }
     return out;
   }

@@ -59,7 +59,7 @@ describe('layout do prédio', () => {
   const reception = coreAreas().find((a) => a.id === RECEPTION_ID)!;
   const elevator = reception.spots.find((s) => s.kind === 'elevator')!;
   const reach = b.grid.reachableFrom(elevator.tx, elevator.ty);
-  const reachable = (x: number, y: number) => reach[y * b.grid.w + x] === 1;
+  const reachable = (x: number, y: number) => reach[b.grid.key(x, y)] === 1;
 
   it('há dois elevadores com tiles de aproximação caminháveis', () => {
     const elevators = reception.spots.filter((s) => s.kind === 'elevator');
@@ -199,10 +199,10 @@ describe('variações das salas de projeto', () => {
         }
         const door = room.door!;
         const reach = b.grid.reachableFrom(door.x, door.y);
-        for (const sp of room.spots) expect(reach[sp.ty * b.grid.w + sp.tx], `${sp.id} inalcançável (semente ${seed})`).toBe(1);
+        for (const sp of room.spots) expect(reach[b.grid.key(sp.tx, sp.ty)], `${sp.id} inalcançável (semente ${seed})`).toBe(1);
         const r = room.rect;
         for (let y = r.y + 2; y < r.y + 11; y++)
-          for (let x = r.x + 1; x < r.x + 15; x++) if (b.grid.walkable(x, y)) expect(reach[y * b.grid.w + x], `tile ${x},${y} isolado (semente ${seed})`).toBe(1);
+          for (let x = r.x + 1; x < r.x + 15; x++) if (b.grid.walkable(x, y)) expect(reach[b.grid.key(x, y)], `tile ${x},${y} isolado (semente ${seed})`).toBe(1);
         expect(room.spots.filter((sp) => sp.kind === 'desk')).toHaveLength(6);
         expect(room.spots.filter((sp) => sp.kind === 'stool' || sp.kind === 'nook').length).toBeGreaterThanOrEqual(4);
         // spots de uso não podem cair em cima de móvel que bloqueia

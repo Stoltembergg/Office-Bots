@@ -396,7 +396,7 @@ export class Social {
     const cy = spots.reduce((a, s) => a + s.ty, 0) / spots.length;
     const grid = this.sim.building.grid;
     const busy = this.sim.busyTiles(ch.id);
-    const taken = new Set(g.members.filter((m) => m.tile && !m.left).map((m) => m.tile!.y * grid.w + m.tile!.x));
+    const taken = new Set(g.members.filter((m) => m.tile && !m.left).map((m) => grid.key(m.tile!.x, m.tile!.y)));
     let best: { x: number; y: number } | null = null;
     let bestD = Infinity;
     // de preferência na fileira de trás (rosto para a câmera, olhando a partida); depois dos lados
@@ -405,7 +405,7 @@ export class Social {
       for (let dx = -2; dx <= 3; dx++) {
         const x = Math.round(cx) + dx;
         const y = Math.round(cy) + dy;
-        const k = y * grid.w + x;
+        const k = grid.key(x, y);
         if (grid.get(x, y) !== FREE || busy.has(k) || taken.has(k)) continue;
         if (spots.some((s) => s.tx === x && s.ty === y)) continue;
         // bem atrás de um jogador, some atrás dele
