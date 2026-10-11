@@ -5,9 +5,8 @@ import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type S
 import type { WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
-import { BUILDING_H, COL_W, CORRIDOR_Y } from '../constants';
 import { layoutExterior, slotShell, type ExteriorLayout, type SlotShell } from '../layout/exterior';
-import { isCoreColumn, slotAt } from '../layout/geometry';
+import { blockKey, isCoreColumn, slotAt } from '../layout/geometry';
 import type { ExteriorProp } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
 import type { Character } from '../sim/character';
@@ -84,7 +83,7 @@ export class Renderer {
   private base: HTMLCanvasElement | null = null;
   private baseX = 0;
   private baseY = 0;
-  private baseCols = -1;
+  private baseKey = '';
   private layoutVersion = -1;
   private assetsVersion = 0;
   private builtAssetsVersion = 0;
@@ -137,11 +136,17 @@ export class Renderer {
   sync(): void {
     const sim = this.sim;
     const assetsChanged = this.builtAssetsVersion !== this.assetsVersion;
-    if (this.baseCols !== sim.building.cols || assetsChanged) this.buildBase();
+    // base (exterior, pátios, vinheta): só quando um bloco entra/sai ou uma coluna sobe/desce — não a cada relayout(),
+    // que o housekeeping chama a cada 1 s enquanto shrinkPending segura uma coluna (layoutVersion sobe, o prédio não muda)
+    const baseKey = sim.building.blocks.map((b) => `${blockKey(b.id)}:${b.columns.lo}-${b.columns.hi}`).join(';');
+    if (this.baseKey !== baseKey || assetsChanged) {
+      this.baseKey = baseKey;
+      this.buildBase();
+    }
     if (this.layoutVersion !== sim.layoutVersion || assetsChanged) {
       this.layoutVersion = sim.layoutVersion;
       const want = new Set<string>();
-      for (const a of [...sim.building.core, sim.building.corridor]) {
+      for (const a of sim.building.areas) {
         want.add(a.id);
         const cur = this.areas.get(a.id);
         if (!cur || cur.layout !== a || assetsChanged) this.areas.set(a.id, buildAreaVis(this.art, a, undefined, this.assets));
@@ -169,8 +174,6 @@ export class Renderer {
 
   /** Camada base: área externa, pátios das vagas vazias e fechamentos do corredor, por coluna de pé de cada bloco. */
   private buildBase(): void {
-    const cols = this.sim.building.cols;
-    this.baseCols = cols;
     this.exterior = layoutExterior(this.sim.building.blocks);
     const b = this.exterior.bounds;
     this.baseX = b.x * TILE;
@@ -245,7 +248,7 @@ export class Renderer {
       this.grass = null;
       this.clearColor = '#6f9a5a';
     }
-    this.finishBase(ctx, cols);
+    this.finishBase(ctx);
     this.base = c;
   }
 
@@ -263,17 +266,18 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Acabamento da camada externa: bordas levemente mais escuras (vinheta) e o capacho da entrada. */
-  private finishBase(ctx: CanvasRenderingContext2D, cols: number): void {
+  /** Acabamento da camada externa: bordas levemente mais escuras (vinheta) em volta do prédio de pé. */
+  private finishBase(ctx: CanvasRenderingContext2D): void {
     const b = this.exterior.bounds;
     const x0 = b.x * TILE;
     const y0 = b.y * TILE;
     const w = b.w * TILE;
     const h = b.h * TILE;
     ctx.save();
-    // vinheta: escurece com a distância ao prédio e chega ao tom da grama "de fora" exatamente na
-    // borda da área desenhada (máscara de 1 px por tile, ampliada com suavização)
-    const bwT = cols * COL_W;
+    // vinheta: escurece com a distância ao retângulo de pé do prédio (em tiles; começa em x 32 sem
+    // sala a oeste) e chega ao tom da grama "de fora" exatamente na borda da área desenhada
+    // (máscara de 1 px por tile, ampliada com suavização)
+    const r = this.sim.building.rect;
     const smooth = (a: number, z: number, v: number) => {
       const t = Math.max(0, Math.min(1, (v - a) / Math.max(1e-6, z - a)));
       return t * t * (3 - 2 * t);
@@ -288,8 +292,8 @@ export class Renderer {
         for (let tx = 0; tx < b.w; tx++) {
           const wx = b.x + tx + 0.5;
           const wy = b.y + ty + 0.5;
-          const fx = wx < 0 ? smooth(6, -b.x, -wx) : wx > bwT ? smooth(6, b.x + b.w - bwT, wx - bwT) : 0;
-          const fy = wy < 0 ? smooth(5, -b.y, -wy) : wy > BUILDING_H ? smooth(12, b.y + b.h - BUILDING_H, wy - BUILDING_H) : 0;
+          const fx = wx < r.x ? smooth(6, r.x - b.x, r.x - wx) : wx > r.x + r.w ? smooth(6, b.x + b.w - (r.x + r.w), wx - (r.x + r.w)) : 0;
+          const fy = wy < r.y ? smooth(5, r.y - b.y, r.y - wy) : wy > r.y + r.h ? smooth(12, b.y + b.h - (r.y + r.h), wy - (r.y + r.h)) : 0;
           const i = (ty * b.w + tx) * 4;
           img.data[i] = 18;
           img.data[i + 1] = 40;
@@ -304,14 +308,6 @@ export class Renderer {
     } catch {
       // sem vinheta
     }
-    // capacho diante da fachada de vidro da entrada (oeste do corredor)
-    const my = (CORRIDOR_Y + 1.25) * TILE;
-    ctx.fillStyle = '#3f4652';
-    ctx.fillRect(-1.75 * TILE, my, 1.5 * TILE, 2.5 * TILE);
-    ctx.fillStyle = '#596170';
-    ctx.fillRect(-1.75 * TILE + 2, my + 2, 1.5 * TILE - 4, 2.5 * TILE - 4);
-    ctx.fillStyle = '#4b525f';
-    for (let y = my + 4; y < my + 2.5 * TILE - 4; y += 3) ctx.fillRect(-1.75 * TILE + 3, y, 1.5 * TILE - 6, 1);
     ctx.restore();
   }
 
