@@ -57,8 +57,9 @@ para dar a letra de cada conta). Nada sai do computador: o Habblaud não lê cre
 corredor, de um lado ou do outro do núcleo — a primeira a leste, a segunda a oeste, e assim por diante, até quatro
 salas de cada lado. A nona sala abre um anexo do outro lado da rua, ligado ao lounge por uma passarela: no lugar do
 núcleo, um saguão com café, água e pia, e banheiros; as salas se abrem dos dois lados dele, como no principal. Da
-décima sétima em diante, abrem-se anexos novos a leste e a oeste, ligados pela ponta do corredor por passarelas, com
-ruas entre eles; da quadragésima nona, um anexo ao norte da rua norte, ligado à copa. No topo, os contadores e o uso
+décima sétima em diante, abrem-se anexos novos: a leste e a oeste, ligados pela ponta do corredor por passarelas, e
+ao sul de cada um deles, ligados ao saguão de cima, com ruas entre todos; da quadragésima nona, um anexo ao norte da
+rua norte, ligado à copa. No topo, os contadores e o uso
 de cada conta; à esquerda, as salas e os agentes; embaixo, o feed de atividade.
 
 ![Visão geral do Habblaud: prédio com recepção, copa, banheiros, lounge e salas dos dois lados, anexo do outro lado da rua ligado por uma passarela; barra lateral com salas e agentes; uso das contas no topo; feed de atividade embaixo](docs/screenshots/overview.png)

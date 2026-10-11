@@ -20,11 +20,12 @@ do meio (0.**3**.0).
   sai e ninguém mais está lá nem na passarela. No console do navegador, `habblaud.world.debug.state()` mostra
   `bridges` (as passarelas de pé, com os trechos).
 - **Anexos laterais e ao norte.** Da décima sétima sala em diante, os anexos seguem a ordem do quarteirão: a leste do
-  principal, depois ao sul dele, a oeste, ao norte da rua norte e assim por diante, em anéis. Os anexos laterais se
-  ligam ao pai pela ponta do corredor, com uma passarela reta na altura do corredor (a ponta perde o vidro e fica
-  aberta), por cima de uma rua norte–sul sem carros; o anexo ao norte se liga à copa, que ganhou uma porta na parede
-  norte, por uma passarela em Z por cima da rua norte. O saguão de cada anexo fica do lado da passarela e tem a porta
-  larga para ela; os banheiros ficam do outro lado do corredor.
+  principal, ao sul desse anexo, a oeste, ao sul do anexo oeste, ao norte da rua norte e assim por diante, em anéis.
+  Os anexos laterais se ligam ao pai pela ponta do corredor, com uma passarela reta na altura do corredor (a ponta
+  perde o vidro e fica aberta), por cima de uma rua norte–sul sem carros; os do sul se ligam ao saguão do anexo de
+  cima por uma passarela em Z, como o primeiro anexo ao lounge; o anexo ao norte se liga à copa, que ganhou uma porta
+  na parede norte, por uma passarela em Z por cima da rua norte. O saguão de cada anexo fica do lado da passarela e
+  tem a porta larga para ela; os banheiros ficam do outro lado do corredor.
 
 ### Alterado
 

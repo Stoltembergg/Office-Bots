@@ -312,10 +312,13 @@ describe('montagem por blocos', () => {
   });
 });
 
-/** Invariantes do prédio inteiro, nos dois cenários: só o principal (fase 1) e o anexo 1 cheio mais a coluna 6 do principal. */
+/** Invariantes do prédio inteiro, em cinco cenários: só o principal (fase 1), A2 nascendo e os anéis com 33, 49 e 57 salas. */
 const BUILDING_SCENARIOS: [string, number[]][] = [
   ['principal com 6 salas', [0, 1, 2, 3, 4, 7]],
   ['anexo 1 cheio e A2 com uma sala (17 salas)', Array.from({ length: 17 }, (_, i) => i)],
+  ['A2 e A3 cheios e A4 nascendo (33 salas)', Array.from({ length: 33 }, (_, i) => i)],
+  ['A6 nascendo ao norte da rua norte (49 salas)', Array.from({ length: 49 }, (_, i) => i)],
+  ['A7 nascendo a partir de A6 (57 salas)', Array.from({ length: 57 }, (_, i) => i)],
 ];
 
 describe.each(BUILDING_SCENARIOS)('layout do prédio: %s', (_name, slots) => {
@@ -1142,13 +1145,13 @@ describe('área externa por blocos', () => {
         if (h && ty >= annex.y && ty < annex.y + annex.h) expect(p.x + h > ax0 && p.x - h < ax1, `${p.kind} em ${p.x},${p.y} cobre a parede do anexo (${n} salas)`).toBe(false);
       }
     }
-    // sem anexo nem passarela, a cena do principal não muda: contagem e digest dos props pinados com a entrada ao sul (D9)
-    // e as árvores por posição (D5) (1, 4 e 8 salas; qualquer filtro novo que tire ou mova um prop do principal quebra aqui)
+    // regressão da cena atual do principal sozinho (entrada ao sul, D9; árvores por posição, D5): contagem e digest dos
+    // props com 1, 4 e 8 salas; qualquer mudança que tire ou mova um prop do principal quebra aqui e exige re-pinar
     const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
     for (const [n, count, dg] of [
       [1, 186, 866660],
-      [4, 209, -913710],
-      [8, 279, -683169],
+      [4, 210, -995795],
+      [8, 278, -693873],
     ] as const) {
       const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
       expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);
@@ -1232,6 +1235,9 @@ describe('exterior da fase 3 (D5): ruas, props por posição, cercas e pátios p
         const ty = Math.floor(p.y / TILE);
         const onStreet = e.streets.some((s) => inRect(paved(s), tx, ty));
         expect(onStreet && !sidewalkFurniture.has(p.kind), `${p.kind} em ${tx},${ty} na rua (${n} salas)`).toBe(false);
+        // nem o mobiliário da calçada entra no asfalto (h: linhas 4..8; v: colunas 3..7)
+        const asphalt = (s: Street) => (s.axis === 'h' ? { x: s.rect.x, y: s.rect.y + 4, w: s.rect.w, h: 5 } : { x: s.rect.x + 3, y: s.rect.y, w: 5, h: s.rect.h });
+        expect(e.streets.some((s) => inRect(asphalt(s), tx, ty)), `${p.kind} em ${tx},${ty} no asfalto (${n} salas)`).toBe(false);
         expect(b.some((blk) => inRect(blk.rect, tx, ty)), `${p.kind} em ${tx},${ty} dentro de bloco (${n} salas)`).toBe(false);
         expect(bridges.some((br) => br.rects.some((r) => inRect(r, tx, ty))), `${p.kind} em ${tx},${ty} sob passarela (${n} salas)`).toBe(false);
       }

@@ -453,7 +453,8 @@ export class Lighting {
       if (vis.layout.kind !== 'corridor') continue;
       const r = vis.layout.rect;
       const cy = (r.y + r.h / 2) * TILE;
-      const glassAt = (tx: number) => vis.layout.furniture.some((f) => f.kind === 'glass_partition' && f.tx === tx);
+      // uma ponta aberta ainda tem vidro nos cantos (ly 0 e 4): o que decide é a linha do meio do corredor
+      const glassAt = (tx: number) => vis.layout.furniture.some((f) => f.kind === 'glass_partition' && f.tx === tx && f.ty === r.y + 2);
       if (glassAt(r.x)) halo(warm, r.x * TILE - 20, cy, 56, 92, 0.6 * k);
       if (glassAt(r.x + r.w - 1)) halo(warm, (r.x + r.w) * TILE + 20, cy, 56, 92, 0.45 * k);
     }

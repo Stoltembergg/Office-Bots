@@ -176,8 +176,11 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
       }
     }
   }
-  // postes: calçada norte da rua principal e calçada sul da rua norte (nenhum nas norte–sul)
-  for (let x = bounds.x + 4; x < bounds.x + bounds.w; x += 10) {
+  // postes: calçada norte da rua principal e calçada sul da rua norte, de 10 em 10 tiles numa grade fixa do mundo (não
+  // mudam de lugar quando o mundo cresce para oeste); nenhum no asfalto das ruas norte–sul
+  const asphaltV = streets.filter((s) => s.axis === 'v').map((s) => ({ x0: s.rect.x + 3, x1: s.rect.x + 8 }));
+  for (let x = Math.floor(bounds.x / 10) * 10 + 6; x < bounds.x + bounds.w; x += 10) {
+    if (x < bounds.x || asphaltV.some((a) => x >= a.x0 && x < a.x1)) continue;
     place({ kind: 'lamp', x: px(x), y: px(south + 3) + 6, seed: x }, true);
     if (northStreet) place({ kind: 'lamp', x: px(x), y: px(main.y - 3) + 6, seed: x + 1 }, true);
   }
