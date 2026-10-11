@@ -203,8 +203,9 @@ export interface RoomInfo {
    * 0N, 5S, 0S, com o núcleo nas colunas 2–3 (as salas alternam leste e oeste dele, primeiro ao norte do corredor,
    * depois ao sul). As vagas 8–15 ficam no anexo 1 (bloco (0,1), do outro lado da rua, ligado ao lounge por uma
    * passarela): o miolo dele é só a coluna 2 (saguão ao norte, banheiros ao sul) e a ordem é 3N, 1N, 3S, 1S, 4N,
-   * 0N, 4S, 0S. Enquanto os demais anexos não existem (IMPLEMENTED_BLOCKS = 2), as vagas s >= 16 ficam em colunas
-   * extras a leste do principal: coluna 6 + floor((s - 16) / 2), par = norte, ímpar = sul.
+   * 0N, 4S, 0S. A partir da vaga 16 os blocos seguem a ordem da spec (geometry.ts, blockOrder): A2 a leste (vagas
+   * 16–23, com o pai a oeste: 0N, 0S, 1N, 1S, 3N, 3S, 4N, 4S), A3 ao sul de A2, A4 a oeste, A5, A6 ao norte da rua
+   * norte e assim por diante; cada anexo se liga ao pai por uma passarela.
    */
   slot: number;
   /** Semente para cores/decoração determinísticas. */

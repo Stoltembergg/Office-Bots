@@ -635,22 +635,26 @@ describe('salas sem buracos', () => {
     expect(sim.building.areas.find((a) => a.id === CORRIDOR_ID)!.rect).toEqual({ x: 32, y: 12, w: 48, h: 5 });
   });
 
-  it('compactação na coluna extra: a sala da vaga 16 (coluna 6, transitório 7.5 com k = 2) muda para a vaga 4 (coluna 5) e, quando o fantasma some, hi cai de 6 para 5', () => {
+  it('compactação entre blocos (A2 → principal): a sala da vaga 16 (A2, coluna 0 norte) muda para a vaga 4 e, quando o fantasma some, A2 e a sua passarela somem', () => {
     const sim = newSim();
     const clock = { now: T0 };
-    // o sim dá a cada sala nova a menor vaga livre (o slot do servidor é só a ordem de chegada): com k = 2 as vagas
-    // 8..15 são do anexo 1, então a primeira sala da coluna extra 6 do principal (vaga 16) é a 17ª
+    // o sim dá a cada sala nova a menor vaga livre (o slot do servidor é só a ordem de chegada): as vagas 8..15 são
+    // do anexo 1, então a primeira sala de A2 (vaga 16) é a 17ª
     const ids = ['/a', '/b', '/c', '/d', '/e', '/f', '/g', '/h', '/i', '/j', '/k', '/l', '/m', '/n', '/o', '/p', '/q'];
     const rooms = ids.map((id, n) => room(id, n));
     const agents = ids.map((id) => agent(`${id}-1`, id, 'working'));
     sim.applySnapshot(snap(rooms, agents), clock.now);
     run(sim, clock, 0.5);
-    // vagas 0..16: principal nas colunas 0–5 mais a coluna extra 6 (transitório 7.5) e o anexo 1 cheio
-    expect(sim.building.blocks).toHaveLength(2);
-    expect(sim.building.blocks[0].columns).toEqual({ lo: 0, hi: 6 });
+    // vagas 0..16: principal nas colunas 0–5, anexo 1 cheio e A2 (1,0) com a coluna 0 (mais a ligação até a 2)
+    expect(sim.building.blocks.map((b) => [b.id.bx, b.id.by, b.columns.lo, b.columns.hi])).toEqual([
+      [0, 0, 0, 5],
+      [0, 1, 0, 4],
+      [1, 0, 0, 2],
+    ]);
+    expect(sim.building.bridges.map((b) => b.id)).toEqual(['passarela:0,1', 'passarela:1,0']);
     const q = sim.rooms.get('/q')!;
     expect(q.slot).toBe(16);
-    expect(q.layout.rect).toEqual({ x: 96, y: 0, w: 16, h: 12 }); // vaga 16 = coluna 6 norte
+    expect(q.layout.rect).toEqual({ x: 108, y: 0, w: 16, h: 12 }); // vaga 16 = coluna 0 norte de A2
     // a sessão da sala /e (vaga 4 = coluna 5 norte) fecha: a vaga 4 fica livre antes da última sala
     sim.applySnapshot(snap(rooms.filter((r) => r.id !== '/e'), agents.map((a) => (a.roomId === '/e' ? { ...a, status: 'offline' as const } : a)), 2), clock.now);
     run(sim, clock, 200, () => !sim.rooms.has('/e'));
@@ -661,14 +665,18 @@ describe('salas sem buracos', () => {
     expect(q.layout.rect).toEqual({ x: 80, y: 0, w: 16, h: 12 }); // coluna 5 norte
     const ghost = [...sim.rooms.values()].find((r) => r.ghost);
     expect(ghost?.slot).toBe(16);
-    // o fantasma (coluna 6) ainda está presente e quem estava lá vai andando: hi continua 6
-    expect(sim.building.blocks[0].columns).toEqual({ lo: 0, hi: 6 });
-    // o fantasma esvazia, apaga e é desmontado; sem ninguém na coluna 6, o prédio encolhe para as colunas 0–5
-    run(sim, clock, 120, () => sim.building.blocks[0].columns.hi === 5);
-    expect(sim.building.blocks[0].columns).toEqual({ lo: 0, hi: 5 });
+    // o fantasma (em A2) ainda está presente e quem estava lá vai andando: A2 continua de pé
+    expect(sim.building.blocks).toHaveLength(3);
+    // o fantasma esvazia, apaga e é desmontado; sem ninguém em A2 nem na passarela, os dois somem
+    run(sim, clock, 120, () => sim.building.blocks.length === 2);
+    expect(sim.building.blocks.map((b) => [b.id.bx, b.id.by])).toEqual([
+      [0, 0],
+      [0, 1],
+    ]);
+    expect(sim.building.bridges.map((b) => b.id)).toEqual(['passarela:0,1']);
     expect(sim.building.rect).toEqual({ x: 0, y: 0, w: 96, h: 70 }); // o anexo 1 (vagas 8..15) continua de pé
     expect([...sim.rooms.values()].some((r) => r.ghost)).toBe(false);
-    expect(sim.building.rooms.some((r) => r.rect.x === 96)).toBe(false);
+    expect(sim.building.rooms.some((r) => r.rect.x === 108)).toBe(false);
   });
 
   it('relayout(true) ignora a trava: encolhe com alguém na coluna e reposiciona quem ficou fora da grade', () => {

@@ -30,7 +30,7 @@ function corridorOf(b: BuildingLayout): AreaLayout {
   return b.areas.find((a) => a.id === CORRIDOR_ID)!;
 }
 
-/** Prédio montado com as salas das vagas dadas (K = 2: as vagas 8..15 montam o anexo 1; s ≥ 16 é o transitório 7.5). */
+/** Prédio montado com as salas das vagas dadas (as vagas 8..15 montam o anexo 1; 16..23, A2 a leste; e assim por diante). */
 function buildFor(slots: number[]): { rooms: AreaLayout[]; b: BuildingLayout; corridor: AreaLayout } {
   const rooms = roomsFor(slots);
   const b = assembleBuilding(existingBlocks(slots), rooms);
@@ -158,38 +158,43 @@ describe('montagem por blocos', () => {
     expect(rooms.map((r) => `${r.rect.x / COL_W}${r.side === 'north' ? 'N' : 'S'}`)).toEqual(['4N', '1N', '4S', '1S', '5N', '0N', '5S', '0S']);
   });
 
-  it('vaga 16 (transitório 7.5) cai na coluna 6: a coluna 5 fica sem sala, hi = 6 e o corredor vai até x 112', () => {
+  it('vaga 16 abre A2 (1,0): o principal ganha a coluna 5 (ligação, sem sala), a sala fica na coluna 0 norte de A2 e a passarela horizontal liga os corredores', () => {
     const { b, rooms, corridor } = buildFor([0, 1, 2, 3, 16]);
-    expect(b.blocks[0].columns).toEqual({ lo: 1, hi: 6 });
-    expect(b.rect).toEqual({ x: 16, y: 0, w: 96, h: 29 });
-    expect(corridor.rect).toEqual({ x: 16, y: CORRIDOR_Y, w: 96, h: CORRIDOR_H });
-    expect(rooms[4].rect).toEqual({ x: 96, y: 0, w: COL_W, h: ROOM_H });
+    expect(b.blocks.map((blk) => [blk.id.bx, blk.id.by, blk.columns.lo, blk.columns.hi])).toEqual([
+      [0, 0, 1, 5],
+      [1, 0, 0, 2],
+    ]);
+    expect(b.rect).toEqual({ x: 16, y: 0, w: 140, h: 29 });
+    expect(corridor.rect).toEqual({ x: 16, y: CORRIDOR_Y, w: 80, h: CORRIDOR_H });
+    expect(rooms[4].rect).toEqual({ x: 108, y: 0, w: COL_W, h: ROOM_H });
     expect(rooms[4].side).toBe('north');
     expect(rooms.some((r) => r.rect.x === 5 * COL_W)).toBe(false);
-    // vidro na ponta leste (x 111); o tile antes dele é corredor caminhável
-    expect(b.grid.walkable(111, CORRIDOR_Y + 2)).toBe(false);
-    expect(b.grid.walkable(110, CORRIDOR_Y + 2)).toBe(true);
+    // a ponta leste do corredor (x 95) é aberta e a passarela (x 96..107) é caminhável na altura do corredor
+    expect(b.grid.walkable(95, CORRIDOR_Y + 2)).toBe(true);
+    expect(b.grid.walkable(96, CORRIDOR_Y + 2)).toBe(true);
+    expect(b.grid.walkable(96, CORRIDOR_Y)).toBe(false);
   });
 
-  it('vaga 16 sozinha: colunas 2–6 com as colunas 4 e 5 vazias, corredor de 80 tiles e a sala em x 96 alcançável', () => {
+  it('vaga 16 sozinha: principal nas colunas 2–5 (4 e 5 vazias), A2 nas colunas 0–2, e a sala em x 108 alcançável do elevador', () => {
     const { b, rooms, corridor } = buildFor([16]);
-    expect(b.blocks[0].columns).toEqual({ lo: 2, hi: 6 });
-    expect(b.rect).toEqual({ x: 32, y: 0, w: 80, h: 29 });
-    expect(corridor.rect).toEqual({ x: 32, y: CORRIDOR_Y, w: 80, h: CORRIDOR_H });
-    expect(rooms[0].rect).toEqual({ x: 96, y: 0, w: COL_W, h: ROOM_H });
+    expect(b.blocks.map((blk) => [blk.columns.lo, blk.columns.hi])).toEqual([
+      [2, 5],
+      [0, 2],
+    ]);
+    expect(b.rect).toEqual({ x: 32, y: 0, w: 124, h: 29 });
+    expect(corridor.rect).toEqual({ x: 32, y: CORRIDOR_Y, w: 64, h: CORRIDOR_H });
+    expect(rooms[0].rect).toEqual({ x: 108, y: 0, w: COL_W, h: ROOM_H });
     expect(rooms[0].side).toBe('north');
     expect(rooms.some((r) => r.rect.x === 4 * COL_W || r.rect.x === 5 * COL_W)).toBe(false);
-    // vidro na ponta leste (x 111); o tile antes dele é corredor caminhável
-    expect(b.grid.walkable(111, CORRIDOR_Y + 2)).toBe(false);
-    expect(b.grid.walkable(110, CORRIDOR_Y + 2)).toBe(true);
-    // do elevador (recepção, coluna 2) até a porta da sala, atravessando duas colunas de pátio seguidas
+    // do elevador (recepção, coluna 2) até a porta da sala, atravessando duas colunas de pátio e a passarela
     const reception = b.areas.find((a) => a.id === core.RECEPTION_ID)!;
     const elevator = reception.spots.find((s) => s.kind === 'elevator')!;
     const reach = b.grid.reachableFrom(elevator.tx, elevator.ty);
     const door = rooms[0].door!;
     expect(reach[b.grid.key(door.x, door.y)]).toBe(1);
-    // os dois trechos vazios do corredor têm os seus pontos de conversa
+    // os dois trechos vazios do corredor do principal e o corredor de A2 têm os seus pontos de conversa
     for (const c of [4, 5]) expect(b.spots.filter((s) => s.group === `core:corredor:talk:${c}`)).toHaveLength(2);
+    expect(b.spots.filter((s) => s.group === 'anexo:1,0:corredor:talk:1')).toHaveLength(2);
   });
 
   it('Review Focus 4: sem anexo, a porta sul do lounge é caminhável mas o jardim abaixo fica fora da grade', () => {
@@ -310,7 +315,7 @@ describe('montagem por blocos', () => {
 /** Invariantes do prédio inteiro, nos dois cenários: só o principal (fase 1) e o anexo 1 cheio mais a coluna 6 do principal. */
 const BUILDING_SCENARIOS: [string, number[]][] = [
   ['principal com 6 salas', [0, 1, 2, 3, 4, 7]],
-  ['anexo 1 cheio e coluna 6 do principal (17 salas)', Array.from({ length: 17 }, (_, i) => i)],
+  ['anexo 1 cheio e A2 com uma sala (17 salas)', Array.from({ length: 17 }, (_, i) => i)],
 ];
 
 describe.each(BUILDING_SCENARIOS)('layout do prédio: %s', (_name, slots) => {
@@ -983,11 +988,13 @@ describe('área externa por blocos', () => {
     expect(gates([0, 1, 2, 3, 4, 5])).toEqual(new Set([7, 3, 2, 6]));
     // a vaga 16 abre A2 (fileira 0, mesma cerca sul): entram as vagas 17 (coluna 0 sul) e 19 (coluna 1 sul) de A2
     expect(gates([0, 1, 2, 3, 16])).toEqual(new Set([3, 2, 6, 17, 19]));
-    // extensão: de world.x a world.x + world.w − 2, de 2 em 2 tiles (colunas 1–4 → x 16..80)
+    // extensão: de world.x a world.x + world.w − 2, de 2 em 2 tiles (colunas 1–4 → x 16..80), menos as duas peças
+    // diante da entrada (x 39..41 → peças 38 e 40)
     const xs = hedgesOf([0, 1]).map((p) => (p.x - TILE) / TILE);
     expect(Math.min(...xs)).toBe(16);
     expect(Math.max(...xs)).toBe(78);
-    expect(xs).toHaveLength(32);
+    expect(xs).toHaveLength(30);
+    expect(xs.includes(38) || xs.includes(40)).toBe(false);
     expect(isCoreColumn(PRINCIPAL, 2) && isCoreColumn(PRINCIPAL, 3) && !isCoreColumn(PRINCIPAL, 4)).toBe(true);
   });
 
@@ -1020,20 +1027,24 @@ describe('área externa por blocos', () => {
   });
 
   it('pátios do prédio: um por coluna de pé fora do miolo; cap leste só em hi, oeste só em lo (Review Focus 1 e 3)', () => {
-    // colunas de pé 1..6 com a 5 vazia (vaga 16 = coluna 6 norte, transitório 7.5)
+    // principal nas colunas 1..5 (a 5 vazia, só ligação) e A2 (1,0) nas colunas 0..2 (vaga 16 = coluna 0 norte; a 2 é o saguão)
     const blocks = existingBlocks([0, 1, 2, 3, 16]);
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0].columns).toEqual({ lo: 1, hi: 6 });
+    expect(blocks.map((b) => [b.columns.lo, b.columns.hi])).toEqual([
+      [1, 5],
+      [0, 2],
+    ]);
     const shells = shellsOf([0, 1, 2, 3, 16]);
-    expect(shells.map((s) => s.sh.slot)).toEqual([1, 3, 0, 2, 4, 6, 16, 17]);
-    expect(shells.map((s) => s.col)).toEqual([1, 1, 4, 4, 5, 5, 6, 6]);
-    expect(capsAt(shells, 16 * TILE)).toEqual([1, 3]); // oeste: só a coluna lo = 1
-    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([16, 17]); // leste: só a coluna hi = 6 (x 96..112, fora do envelope)
+    expect(shells.map((s) => s.sh.slot)).toEqual([1, 3, 0, 2, 4, 6, 16, 17, 18, 19]);
+    expect(shells.map((s) => s.col)).toEqual([1, 1, 4, 4, 5, 5, 0, 0, 1, 1]);
+    expect(capsAt(shells, 16 * TILE)).toEqual([1, 3]); // principal, oeste: só a coluna lo = 1
+    expect(capsAt(shells, 6 * COL_W * TILE - 8)).toEqual([4, 6]); // principal, leste: só a coluna hi = 5
+    expect(capsAt(shells, 108 * TILE)).toEqual([16, 17]); // A2, oeste: só a coluna lo = 0 (x 108); a ponta leste (hi = 2) é o saguão
     for (const s of shells) {
       const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
-      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe(s.col === 1 || s.col === 6 ? 1 : 0);
+      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe([1, 3, 4, 6, 16, 17].includes(s.sh.slot) ? 1 : 0);
     }
-    expect(shells.some((s) => s.col === 2 || s.col === 3)).toBe(false);
+    expect(shells.some((s) => s.sh.slot < 16 && (s.col === 2 || s.col === 3))).toBe(false);
+    expect(shells.some((s) => s.sh.slot >= 16 && s.col === 2)).toBe(false);
   });
 
   it('pátios com a coluna 1 vazia entre a sala da coluna 0 e o miolo (vaga 5): cap oeste só na coluna 0, nenhum cap a leste porque a ponta leste é o miolo', () => {
@@ -1072,23 +1083,27 @@ describe('área externa por blocos', () => {
     expect(gates([4])).toEqual(new Set([2, 6]));
   });
 
-  it('pátios com as colunas 4 e 5 vazias entre o miolo e a sala da coluna 6 (vaga 16): cap leste só na coluna 6, nenhum cap a oeste porque a ponta oeste é o miolo', () => {
-    // existingBlocks([16]) → colunas 2–6: 2 e 3 miolo, 4 e 5 pátio dos dois lados, a 6 tem a sala (vaga 16 = 6N, transitório 7.5) e o pátio da vaga 17 ao sul
-    expect(existingBlocks([16])[0].columns).toEqual({ lo: 2, hi: 6 });
+  it('pátios com as colunas 4 e 5 vazias entre o miolo e A2 (vaga 16): cap leste do principal na coluna 5, nenhum a oeste (miolo); A2 com cap só a oeste', () => {
+    // existingBlocks([16]) → principal nas colunas 2–5 (2 e 3 miolo, 4 e 5 pátio dos dois lados, a 5 só pela ligação) e
+    // A2 nas colunas 0–2 (a 0 tem a sala, vaga 16 = 0N, e o pátio da 17 ao sul; a 1 é pátio dos dois lados; a 2 é o saguão)
+    expect(existingBlocks([16]).map((b) => [b.columns.lo, b.columns.hi])).toEqual([
+      [2, 5],
+      [0, 2],
+    ]);
     const shells = shellsOf([16]);
-    expect(shells.map((s) => s.sh.slot)).toEqual([0, 2, 4, 6, 16, 17]);
-    expect(shells.map((s) => s.col)).toEqual([4, 4, 5, 5, 6, 6]);
-    expect(shells[4].sh.rect).toEqual({ x: 96, y: 0, w: 16, h: 12 }); // vaga 16 = coluna 6, norte (fora do envelope)
-    expect(shells[5].sh.rect).toEqual({ x: 96, y: SOUTH_Y, w: 16, h: 12 }); // vaga 17 = coluna 6, sul
-    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([16, 17]); // leste: só a coluna hi = 6
-    expect(capsAt(shells, 32 * TILE)).toEqual([]); // a ponta oeste (lo = 2) é miolo: sem shell e sem cap
+    expect(shells.map((s) => s.sh.slot)).toEqual([0, 2, 4, 6, 16, 17, 18, 19]);
+    expect(shells.map((s) => s.col)).toEqual([4, 4, 5, 5, 0, 0, 1, 1]);
+    expect(shells[4].sh.rect).toEqual({ x: 108, y: 0, w: 16, h: 12 }); // vaga 16 = coluna 0 de A2, norte
+    expect(shells[5].sh.rect).toEqual({ x: 108, y: SOUTH_Y, w: 16, h: 12 }); // vaga 17 = coluna 0 de A2, sul
+    expect(capsAt(shells, 6 * COL_W * TILE - 8)).toEqual([4, 6]); // principal, leste: só a coluna hi = 5
+    expect(capsAt(shells, 32 * TILE)).toEqual([]); // a ponta oeste do principal (lo = 2) é miolo: sem shell e sem cap
+    expect(capsAt(shells, 108 * TILE)).toEqual([16, 17]); // A2, oeste: só a coluna lo = 0
     for (const s of shells) {
       const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
-      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe(s.col === 6 ? 1 : 0);
+      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe([4, 6, 16, 17].includes(s.sh.slot) ? 1 : 0);
     }
-    expect(shells.some((s) => s.col === 2 || s.col === 3)).toBe(false);
-    // a cerca viva abre diante das vagas sul das colunas 4, 5 e 6
-    expect(gates([16])).toEqual(new Set([2, 6, 17]));
+    // a cerca viva abre diante das vagas sul das colunas 4 e 5 do principal e das colunas 0 e 1 de A2
+    expect(gates([16])).toEqual(new Set([2, 6, 17, 19]));
   });
 
   it('com o anexo 1: a rua continua ao sul do principal (y 33..38) e os bounds abraçam os dois blocos e a passarela', () => {
