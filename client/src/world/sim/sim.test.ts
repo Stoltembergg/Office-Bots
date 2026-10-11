@@ -4,6 +4,7 @@ import type { AppearanceParts } from '../../../../shared/appearance';
 import type { AgentInfo, OfficeSnapshot, RoomInfo, ShellJob } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
+import { PRINCIPAL, standingColumns } from '../layout/geometry';
 import type { Character } from './character';
 import { SHELL_DONE_TOOL, Sim } from './sim';
 
@@ -446,10 +447,11 @@ describe('salas sem buracos', () => {
     const clock = { now: T0 };
     sim.applySnapshot(snap([room('/c', 8), room('/a', 0), room('/b', 3)], [agent('ana', '/a', 'working'), agent('bia', '/b', 'working'), agent('caio', '/c', 'working')]), clock.now);
     expect(['/a', '/b', '/c'].map((id) => sim.rooms.get(id)!.slot)).toEqual([0, 1, 2]);
-    expect(sim.building.cols).toBe(4);
+    // vagas 0 (4N), 1 (1N) e 2 (4S): colunas 1–4
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
   });
 
-  it('terminal fechou: a sala mais distante se muda para a vaga, o pessoal vai andando e o prédio encolhe', () => {
+  it('terminal fechou: a sala mais distante se muda para a vaga, o pessoal vai andando e a vaga antiga vira pátio', () => {
     const sim = newSim();
     const clock = { now: T0 };
     const rooms = [room('/a', 0), room('/b', 1), room('/c', 2)];
@@ -460,7 +462,7 @@ describe('salas sem buracos', () => {
     const caio = sim.chars.get('caio')!;
     const homeBefore = caio.homeSpot;
     expect(c.slot).toBe(2);
-    expect(sim.building.cols).toBe(4);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
 
     // a sessão da sala /b fecha: bia vai embora e a sala é desmontada
     sim.applySnapshot(snap([room('/a', 0), room('/c', 2)], [agents[0], agent('bia', '/b', 'offline'), agents[2], agents[3]], 2), clock.now);
@@ -491,10 +493,12 @@ describe('salas sem buracos', () => {
     expect(inside(c, caio)).toBe(true);
     expect(c.phase).toBe('ready');
     expect(c.lightOn).toBe(true);
-    // o endereço antigo esvaziou, apagou e foi desmontado; o prédio voltou a ter uma coluna de salas
+    // o endereço antigo esvaziou, apagou e foi desmontado; sobram as vagas 0 (coluna 4) e 1 (coluna 1)
     expect(sim.rooms.has(ghost!.id)).toBe(false);
-    run(sim, clock, 10, () => sim.building.cols === 3);
-    expect(sim.building.cols).toBe(3);
+    run(sim, clock, 10, () => sim.building.rooms.length === 2);
+    expect(sim.building.rooms.map((r) => r.id).sort()).toEqual(['/a', '/c']);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
+    expect(sim.building.rooms.some((r) => r.rect.x === 64 && r.rect.y === 17)).toBe(false); // 4S (vaga 2) ficou vazia
     // davi (ocioso, talvez passeando) também tem o lugar dele na sala nova
     expect(c.layout.spots.some((p) => p.id === sim.chars.get('davi')!.homeSpot)).toBe(true);
   });
@@ -514,8 +518,9 @@ describe('salas sem buracos', () => {
     });
     expect(moved).toBe(false);
     expect(sim.rooms.has('/c')).toBe(false);
-    run(sim, clock, 5, () => sim.building.cols === 3);
-    expect(sim.building.cols).toBe(3);
+    // só a vaga 0 (coluna 4): a coluna 1 sai de pé assim que ninguém mais está nela
+    run(sim, clock, 5, () => sim.building.blocks[0].columns.lo === 2);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 2, hi: 4 });
   });
 
   it('abre e fecha ao acaso (inclusive no meio de uma mudança): ninguém se teletransporta e no fim não sobra buraco', () => {
@@ -573,8 +578,10 @@ describe('salas sem buracos', () => {
     expect([...sim.rooms.keys()].sort()).toEqual([...open.keys()].sort());
     expect(slots).toEqual(slots.map((_, i) => i));
     expect([...sim.rooms.values()].some((r) => r.ghost)).toBe(false);
-    run(sim, clock, 20, () => sim.building.cols === 2 + Math.ceil(open.size / 2));
-    expect(sim.building.cols).toBe(2 + Math.ceil(open.size / 2));
+    // colunas de pé das salas abertas (quem ainda passeia numa coluna vazia a segura; o housekeeping tenta de novo a cada 1 s)
+    const want = standingColumns(PRINCIPAL, slots);
+    run(sim, clock, 60, () => sim.building.blocks[0].columns.lo === want.lo && sim.building.blocks[0].columns.hi === want.hi);
+    expect(sim.building.blocks[0].columns).toEqual(want);
     expect(maxStep).toBeLessThan(12);
   });
 
@@ -588,6 +595,85 @@ describe('salas sem buracos', () => {
     sim.applySnapshot(snap([room('/a', 0), room('/c', 2), room('/d', 7)], [agent('ana', '/a', 'working'), agent('caio', '/c', 'working'), agent('duda', '/d', 'working')], 2), clock.now);
     expect(sim.rooms.get('/d')!.slot).toBe(2);
     expect(sim.rooms.get('/d')!.phase).toBe('building');
+  });
+
+  it('trava de encolher: a coluna com alguém fica de pé depois que a sala saiu (a vaga vira pátio); quando a pessoa sai, encolhe sozinho', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0), room('/b', 1)], [agent('ana', '/a', 'working'), agent('bia', '/b', 'working')]), clock.now);
+    run(sim, clock, 0.5);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
+    // bia está sentada na sala /b (vaga 1 = coluna 1, x 16..32)
+    const bia = sim.chars.get('bia')!;
+    expect(bia.tx).toBeGreaterThanOrEqual(16);
+    expect(bia.tx).toBeLessThan(32);
+    // a sala /b some de uma vez (sem o desmonte), com bia ainda parada na coluna 1: a coluna fica de pé e a vaga vira pátio
+    sim.rooms.delete('/b');
+    sim.relayout();
+    expect(sim.building.rooms.map((r) => r.id)).toEqual(['/a']);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
+    expect(sim.building.rect).toEqual({ x: 16, y: 0, w: 64, h: 29 });
+    expect(sim.building.corridor.rect).toEqual({ x: 16, y: 12, w: 64, h: 5 });
+    // bia vai embora: sem nenhum outro gatilho, a verificação de 1 s (shrinkPending) encolhe o prédio para as colunas 2–4
+    sim.spots.releaseAll('bia');
+    sim.chars.delete('bia');
+    run(sim, clock, 2.5, () => sim.building.blocks[0].columns.lo === 2);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 2, hi: 4 });
+    expect(sim.building.rect).toEqual({ x: 32, y: 0, w: 48, h: 29 });
+    expect(sim.building.corridor.rect).toEqual({ x: 32, y: 12, w: 48, h: 5 });
+  });
+
+  it('compactação na coluna extra: a sala da vaga 8 (coluna 6) muda para a vaga 4 (coluna 5) e, quando o fantasma some, hi cai de 6 para 5', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    const ids = ['/a', '/b', '/c', '/d', '/e', '/f', '/g', '/h', '/i'];
+    const rooms = ids.map((id, n) => room(id, n));
+    const agents = ids.map((id) => agent(`${id}-1`, id, 'working'));
+    sim.applySnapshot(snap(rooms, agents), clock.now);
+    run(sim, clock, 0.5);
+    // vagas 0..8: colunas 0–5 mais a coluna extra 6 (transitório 7.5)
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 0, hi: 6 });
+    const i = sim.rooms.get('/i')!;
+    expect(i.slot).toBe(8);
+    expect(i.layout.rect).toEqual({ x: 96, y: 0, w: 16, h: 12 }); // vaga 8 = coluna 6 norte
+    // a sessão da sala /e (vaga 4 = coluna 5 norte) fecha: a vaga 4 fica livre antes da última sala
+    sim.applySnapshot(snap(rooms.filter((r) => r.id !== '/e'), agents.map((a) => (a.roomId === '/e' ? { ...a, status: 'offline' as const } : a)), 2), clock.now);
+    run(sim, clock, 200, () => !sim.rooms.has('/e'));
+    expect(sim.rooms.has('/e')).toBe(false);
+    // a sala mais distante (/i) se muda para a vaga 4 (reconstruída, apagada); o endereço antigo vira fantasma
+    run(sim, clock, 3, () => i.slot === 4);
+    expect(i.slot).toBe(4);
+    expect(i.layout.rect).toEqual({ x: 80, y: 0, w: 16, h: 12 }); // coluna 5 norte
+    const ghost = [...sim.rooms.values()].find((r) => r.ghost);
+    expect(ghost?.slot).toBe(8);
+    // o fantasma (coluna 6) ainda está presente e quem estava lá vai andando: hi continua 6
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 0, hi: 6 });
+    // o fantasma esvazia, apaga e é desmontado; sem ninguém na coluna 6, o prédio encolhe para as colunas 0–5
+    run(sim, clock, 120, () => sim.building.blocks[0].columns.hi === 5);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 0, hi: 5 });
+    expect(sim.building.rect).toEqual({ x: 0, y: 0, w: 96, h: 29 });
+    expect([...sim.rooms.values()].some((r) => r.ghost)).toBe(false);
+    expect(sim.building.rooms.some((r) => r.rect.x === 96)).toBe(false);
+  });
+
+  it('relayout(true) ignora a trava: encolhe com alguém na coluna e reposiciona quem ficou fora da grade', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0), room('/b', 1)], [agent('ana', '/a', 'working'), agent('bia', '/b', 'working')]), clock.now);
+    run(sim, clock, 0.5);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
+    const bia = sim.chars.get('bia')!;
+    bia.tx = 17; // canto oeste da sala da coluna 1: a 16 tiles do primeiro tile caminhável da grade nova (x 33)
+    sim.rooms.delete('/b');
+    sim.relayout(true);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 2, hi: 4 });
+    expect(sim.building.grid.x0).toBe(32);
+    // sem trava, quem ficou para fora precisa cair num tile caminhável da grade nova (fallback com raio COL_W + 2)
+    expect(sim.building.grid.inside(bia.tx, bia.ty)).toBe(true);
+    expect(sim.building.grid.walkable(bia.tx, bia.ty)).toBe(true);
+    // shrinkPending ficou desligado: o housekeeping (1 s) não muda nada
+    run(sim, clock, 2.5);
+    expect(sim.building.blocks[0].columns).toEqual({ lo: 2, hi: 4 });
   });
 });
 

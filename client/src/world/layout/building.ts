@@ -1,36 +1,28 @@
-// Montagem do prédio: núcleo + corredor + salas de projeto -> grade de caminhabilidade e spots.
+// Montagem do prédio: por bloco, núcleo (no principal) + corredor sobre as colunas de pé; mais as salas de projeto
+// -> grade de caminhabilidade com origem e spots.
 import { FURNITURE } from '../../art/api';
-import { BUILDING_H, COL_W, NORTH_Y, ROOM_H, SOUTH_Y } from '../constants';
 import { BLOCKED, FREE, SEAT, WalkGrid } from '../path/grid';
 import { furnitureBlocks, furnitureIsSeat } from './builder';
-import { layoutCafe, layoutLounge, layoutReception, layoutRestroom } from './core';
+import { coreAreas } from './core';
 import { layoutCorridor } from './corridor';
-import { buildingRect } from './geometry';
+import { isPrincipal, worldBounds, type BlockLayout } from './geometry';
 import type { AreaLayout, SpotDef, TileRect } from './types';
 
 export interface BuildingLayout {
-  cols: number;
+  blocks: BlockLayout[];
+  /** `worldBounds(blocks)`, em tiles: união dos retângulos de pé. */
   rect: TileRect;
-  core: AreaLayout[];
-  corridor: AreaLayout;
+  /** Áreas fixas: núcleo do principal (recepção, WC, copa, lounge) e corredor(es). */
+  areas: AreaLayout[];
   rooms: AreaLayout[];
   grid: WalkGrid;
   spots: SpotDef[];
-}
-
-let coreCache: AreaLayout[] | null = null;
-
-/**
- * Áreas fixas do núcleo nos retângulos de hoje (x 0 e 16), calculadas uma vez. Compat até a Tarefa 5, quando
- * a montagem passa a usar `coreAreas(block)` de core.ts e este cache sai.
- */
-export function coreAreas(): AreaLayout[] {
-  return (coreCache ??= [
-    layoutReception({ x: 0, y: NORTH_Y, w: COL_W, h: ROOM_H }),
-    layoutRestroom({ x: 0, y: SOUTH_Y, w: COL_W, h: ROOM_H }),
-    layoutCafe({ x: COL_W, y: NORTH_Y, w: COL_W, h: ROOM_H }),
-    layoutLounge({ x: COL_W, y: SOUTH_Y, w: COL_W, h: ROOM_H }),
-  ]);
+  /** @deprecated compat até a Tarefa 10: `blocks[0].columns.hi + 1`. */
+  cols: number;
+  /** @deprecated compat até a Tarefa 10: as 4 áreas do núcleo. */
+  core: AreaLayout[];
+  /** @deprecated compat até a Tarefa 10: o corredor do principal. */
+  corridor: AreaLayout;
 }
 
 /** Marca na grade as células caminháveis de uma área, os bloqueios e os assentos. */
@@ -48,18 +40,25 @@ export function paintArea(grid: WalkGrid, area: AreaLayout): void {
   }
 }
 
-export function buildWalkGrid(cols: number, areas: readonly AreaLayout[], version = 0): WalkGrid {
-  const grid = new WalkGrid(cols * COL_W, BUILDING_H, version);
+/** Grade com a origem e o tamanho de `bounds` (tiles), pintada com as áreas dadas. */
+export function buildWalkGrid(bounds: TileRect, areas: readonly AreaLayout[], version = 0): WalkGrid {
+  const grid = WalkGrid.forRect(bounds, version);
   for (const a of areas) paintArea(grid, a);
   return grid;
 }
 
-export function assembleBuilding(cols: number, rooms: readonly AreaLayout[], version = 0): BuildingLayout {
-  const core = coreAreas();
-  const corridor = layoutCorridor(cols);
-  const all = [...core, corridor, ...rooms];
-  const grid = buildWalkGrid(cols, all, version);
+export function assembleBuilding(blocks: readonly BlockLayout[], rooms: readonly AreaLayout[], version = 0): BuildingLayout {
+  const core: AreaLayout[] = [];
+  const corridors: AreaLayout[] = [];
+  for (const block of blocks) {
+    if (isPrincipal(block.id)) core.push(...coreAreas(block.id));
+    corridors.push(layoutCorridor(block));
+  }
+  const areas = [...core, ...corridors];
+  const rect = worldBounds(blocks);
+  const all = [...areas, ...rooms];
+  const grid = buildWalkGrid(rect, all, version);
   const spots: SpotDef[] = [];
   for (const a of all) spots.push(...a.spots);
-  return { cols, rect: buildingRect(cols), core, corridor, rooms: [...rooms], grid, spots };
+  return { blocks: [...blocks], rect, areas, rooms: [...rooms], grid, spots, cols: blocks[0].columns.hi + 1, core, corridor: corridors[0] };
 }

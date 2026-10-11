@@ -7,7 +7,7 @@ import type { WorldOptions } from '../api';
 import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_DEBOUNCE_MS, RUN_SPEED, TILE, WALK_SPEED } from '../constants';
 import { assembleBuilding, type BuildingLayout } from '../layout/building';
 import { RECEPTION_ID } from '../layout/core';
-import { columnsFor, inRect } from '../layout/geometry';
+import { existingBlocks, inRect, occupiedColumns, retainColumns } from '../layout/geometry';
 import { layoutProjectRoom } from '../layout/room';
 import type { SpotDef, SpotKind } from '../layout/types';
 import { PathFinder } from '../path/astar';
@@ -126,7 +126,7 @@ export class Sim {
     storage: StorageLike | null = browserStorage(),
   ) {
     this.social = new Social(this, storage);
-    this.building = assembleBuilding(columnsFor([]), [], 0);
+    this.building = assembleBuilding(existingBlocks([]), [], 0);
     this.finder = new PathFinder(this.building.grid);
     this.spots.setSpots(this.building.spots);
     for (const s of this.spots.ofKind('elevator')) this.elevators.push(new Elevator(this.elevators.length, s.id));
@@ -488,24 +488,21 @@ export class Sim {
 
   // =================================================================== layout
 
-  /** Recalcula o prédio (largura, grade, spots) a partir das salas presentes. */
+  /** Recalcula o prédio (blocos e colunas de pé, grade, spots) a partir das salas presentes. */
   relayout(force = false): void {
     const present = [...this.rooms.values()].filter((r) => r.present);
-    let cols = columnsFor(present.map((r) => r.slot));
-    const cur = this.building.cols;
-    if (cols < cur && !force) {
-      // só encolhe quando ninguém está na faixa que vai sumir
-      const limit = cols * COL_W * TILE;
-      if ([...this.chars.values()].some((c) => !c.gone && c.x >= limit - TILE)) {
-        cols = cur;
-        this.shrinkPending = true;
-      } else this.shrinkPending = false;
-    } else this.shrinkPending = false;
-    const building = assembleBuilding(
-      cols,
-      present.map((r) => r.layout),
-      this.layoutVersion + 1,
-    );
+    let blocks = existingBlocks(present.map((r) => r.slot));
+    this.shrinkPending = false;
+    if (!force) {
+      // trava de encolher, como união: as colunas do layout anterior onde há alguém (não `gone`) continuam de pé e
+      // o prédio é montado com as salas presentes de agora (a sala que saiu vira pátio); enquanto houver retenção,
+      // shrinkPending faz o housekeeping tentar de novo a cada 1 s
+      const tiles = [...this.chars.values()].filter((c) => !c.gone).map((c) => ({ tx: c.tx, ty: c.ty }));
+      const kept = retainColumns(blocks, occupiedColumns(this.building.blocks, tiles));
+      blocks = kept.blocks;
+      this.shrinkPending = kept.retained;
+    }
+    const building = assembleBuilding(blocks, present.map((r) => r.layout), this.layoutVersion + 1);
     this.building = building;
     this.layoutVersion++;
     this.finder.setGrid(building.grid);
@@ -533,7 +530,7 @@ export class Sim {
       }
       if (stale) this.interrupt(ch);
       if (!this.building.grid.walkable(ch.tx, ch.ty) && !ch.atSpot && !ch.inside) {
-        const n = this.building.grid.nearestWalkable(ch.tx, ch.ty);
+        const n = this.building.grid.nearestWalkable(ch.tx, ch.ty, COL_W + 2);
         if (n) {
           ch.tx = n.x;
           ch.ty = n.y;
@@ -1294,7 +1291,7 @@ export class Sim {
   }
 
   private lobbyTile(ch: Character): { x: number; y: number } {
-    const reception = this.building.core.find((a) => a.id === RECEPTION_ID)!;
+    const reception = this.building.areas.find((a) => a.id === RECEPTION_ID)!;
     const r = reception.rect;
     for (let k = 0; k < 20; k++) {
       const x = r.x + 2 + Math.floor(ch.rng() * 12);
