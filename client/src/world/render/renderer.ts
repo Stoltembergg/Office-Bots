@@ -15,6 +15,7 @@ import { cobwebScale, hourglassIcon, HOURGLASS_FLIP_MS, STORM_LIFT } from '../si
 import type { Sim } from '../sim/sim';
 import { buildAnim, furnitureScale, NO_ANIM, sweepDelay, type BuildAnim } from './anim';
 import { daylightModeOf, parseHourParam } from './daylight';
+import { charRect, promoteOverlapping } from './elevated';
 import { RoomFxRenderer } from './github-fx';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
@@ -86,6 +87,7 @@ export class Renderer {
   private elevatedRects: TileRect[] = [];
   /** Personagens sobre uma passarela neste frame (desenhados na camada elevada). */
   private elevated: Character[] = [];
+  private ground: Character[] = [];
   private elevatedEnts: Ent[] = [];
   /** Entradas do pool de entidades usadas neste frame. */
   private used = 0;
@@ -420,6 +422,7 @@ export class Renderer {
       }
     }
     this.elevated.length = 0;
+    this.ground.length = 0;
     for (const ch of this.sim.chars.values()) {
       const head = this.headOf(ch);
       head.visible = false;
@@ -432,6 +435,12 @@ export class Renderer {
       }
       // quem está sobre uma passarela é desenhado na camada elevada, por cima de tudo o que está no chão
       if (this.onBridge(ch.tx, ch.ty)) this.elevated.push(ch);
+      else this.ground.push(ch);
+    }
+    // quem está no chão com o sprite cruzando alguém elevado (fila na porta da passarela) sobe junto
+    const lifted = new Set(promoteOverlapping(this.elevated, this.ground, charRect));
+    for (const ch of this.ground) {
+      if (lifted.has(ch)) this.elevated.push(ch);
       else push(K.Char, ch.depth(), ch, null, 1);
     }
     for (const prop of this.exterior.props) {

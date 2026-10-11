@@ -35,8 +35,8 @@ export function layoutHub(block: BlockId, exit: boolean): AreaLayout {
     b.wall('window', 8.5, undefined, { order: 0.3 });
   }
   b.wall('clock', 5.5);
-  // sobre o balcão do café (lx 1..3): em lx 14 ficaria atrás da cabine, que é móvel alto
-  b.wall('painting', 2, undefined, { order: 0.6 });
+  // pôster entre a pia e a cabine: a face norte do saguão não tem trecho sem móvel embaixo para um quadro de 2 tiles
+  b.wall('poster', 12.5, 'coffee', { order: 0.6 });
 
   // canto de café e água (oeste)
   b.furn('counter', 1, 2, 'drawers', { order: 0.3 });
