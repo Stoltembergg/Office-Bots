@@ -3270,6 +3270,41 @@
   margin-bottom: 8px;
 }
 
+/* "Ver demonstração" com o número de sessões ao lado (1..40, padrão 4). */
+.ui-empty__demo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ui-empty__sessions-label {
+  color: var(--ui-muted);
+  font-size: 12.5px;
+}
+
+.ui-empty__sessions {
+  width: 64px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 9px;
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ui-text);
+  font: 600 14px var(--font-ui);
+  text-align: center;
+}
+
+.ui-root .ui-empty__sessions:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.ui-empty__sessions:disabled {
+  opacity: 0.6;
+}
+
 .ui-splash {
   position: fixed;
   inset: 0;

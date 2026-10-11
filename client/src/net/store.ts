@@ -182,13 +182,13 @@ export class OfficeStore {
     return detail.history;
   }
 
-  /** Liga/desliga os agentes de demonstração no servidor. */
-  async setDemo(enabled: boolean): Promise<boolean> {
+  /** Liga/desliga os agentes de demonstração no servidor; `sessions` é quantas sessões manter abertas (0..40). */
+  async setDemo(enabled: boolean, sessions?: number): Promise<boolean> {
     if (this.mock) return true;
     const res = await fetch('/api/demo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify(sessions === undefined ? { enabled } : { enabled, sessions }),
     });
     return res.ok;
   }

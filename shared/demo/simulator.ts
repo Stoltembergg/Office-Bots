@@ -298,6 +298,11 @@ export class DemoSimulator {
     this.pendingNotices = [];
   }
 
+  /** Alvo atual de sessões principais abertas. */
+  sessions(): number {
+    return this.target;
+  }
+
   /** Muda quantas sessões principais manter abertas (o gerador de timelapse varia isso ao longo do dia). */
   setSessions(n: number): void {
     this.target = Math.max(0, Math.floor(n));
