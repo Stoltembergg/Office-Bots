@@ -7,7 +7,7 @@ import { DEFAULT_WORLD_OPTIONS } from '../api';
 import { CORRIDOR_ID } from '../layout/corridor';
 import { PRINCIPAL, standingColumns } from '../layout/geometry';
 import type { Character } from './character';
-import { SHELL_DONE_TOOL, Sim } from './sim';
+import { cafeSeatAfter, SHELL_DONE_TOOL, Sim } from './sim';
 
 const theme: RoomTheme = {
   carpet: '#4f6d8f',
@@ -90,6 +90,17 @@ function run(sim: Sim, clock: { now: number }, seconds: number, until?: () => bo
 
 function newSim(): Sim {
   return new Sim(art, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness: 'calm' }));
+}
+
+/**
+ * Nove salas com um agente trabalhando em cada: o sim dá a cada sala a menor vaga livre (o slot do servidor é só a
+ * ordem de chegada), então as oito primeiras ficam no principal e a nona (/i) abre o anexo 1 com a passarela.
+ * Os agentes de /a e /i chamam-se 'ana' e 'iza'.
+ */
+function nineRooms(): [RoomInfo[], AgentInfo[]] {
+  const ids = ['/a', '/b', '/c', '/d', '/e', '/f', '/g', '/h', '/i'];
+  const name = (id: string) => (id === '/a' ? 'ana' : id === '/i' ? 'iza' : `${id}-1`);
+  return [ids.map((id, n) => room(id, n)), ids.map((id) => agent(name(id), id, 'working'))];
 }
 
 describe('simulação do escritório', () => {
@@ -678,6 +689,158 @@ describe('salas sem buracos', () => {
     // shrinkPending ficou desligado: o housekeeping (1 s) não muda nada
     run(sim, clock, 2.5);
     expect(sim.building.blocks[0].columns).toEqual({ lo: 2, hi: 4 });
+  });
+
+  it('compactação entre blocos: a 9ª sala (vaga 8, anexo) muda para a vaga 4 do principal e, quando o fantasma some, o anexo e a passarela somem', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    const ids = ['/a', '/b', '/c', '/d', '/e', '/f', '/g', '/h', '/i'];
+    const rooms = ids.map((id, n) => room(id, n));
+    const agents = ids.map((id) => agent(`${id}-1`, id, 'working'));
+    sim.applySnapshot(snap(rooms, agents), clock.now);
+    run(sim, clock, 0.5);
+    expect(sim.building.blocks.map((b) => [b.id.bx, b.id.by, b.columns.lo, b.columns.hi])).toEqual([
+      [0, 0, 0, 5],
+      [0, 1, 2, 3],
+    ]);
+    expect(sim.building.bridges.map((b) => b.id)).toEqual(['passarela:0,1']);
+    expect(sim.building.rect).toEqual({ x: 0, y: 0, w: 96, h: 70 });
+    const i = sim.rooms.get('/i')!;
+    expect(i.slot).toBe(8);
+    expect(i.layout.rect).toEqual({ x: 56, y: 41, w: 16, h: 12 }); // vaga 8 = coluna 3 norte do anexo
+    // a sala /e (vaga 4 = coluna 5 norte do principal) fecha
+    sim.applySnapshot(snap(rooms.filter((r) => r.id !== '/e'), agents.map((a) => (a.roomId === '/e' ? { ...a, status: 'offline' as const } : a)), 2), clock.now);
+    run(sim, clock, 200, () => !sim.rooms.has('/e'));
+    expect(sim.rooms.has('/e')).toBe(false);
+    // /i se muda para a vaga 4; o endereço antigo (anexo) vira fantasma e segura o anexo
+    run(sim, clock, 3, () => i.slot === 4);
+    expect(i.slot).toBe(4);
+    expect(i.layout.rect).toEqual({ x: 80, y: 0, w: 16, h: 12 });
+    expect([...sim.rooms.values()].find((r) => r.ghost)?.slot).toBe(8);
+    expect(sim.building.blocks).toHaveLength(2);
+    // o fantasma esvazia e é desmontado; sem ninguém no anexo nem na passarela, os dois somem
+    run(sim, clock, 300, () => sim.building.blocks.length === 1);
+    expect(sim.building.blocks).toHaveLength(1);
+    expect(sim.building.bridges).toEqual([]);
+    expect(sim.building.rect).toEqual({ x: 0, y: 0, w: 96, h: 29 });
+    expect([...sim.rooms.values()].some((r) => r.ghost)).toBe(false);
+  });
+
+  it('trava por bloco: o anexo fica de pé (com a coluna da pessoa e o miolo) depois que a sala saiu; quando ela sai, anexo e passarela somem', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap(...nineRooms()), clock.now);
+    run(sim, clock, 0.5);
+    const iza = sim.chars.get('iza')!;
+    expect(iza.ty).toBeGreaterThanOrEqual(41); // sentada na sala /i, no anexo
+    sim.rooms.delete('/i');
+    sim.relayout();
+    expect(sim.building.rooms.map((r) => r.id)).toEqual(['/a', '/b', '/c', '/d', '/e', '/f', '/g', '/h']);
+    expect(sim.building.blocks.map((b) => [b.id.bx, b.id.by, b.columns.lo, b.columns.hi])).toEqual([
+      [0, 0, 0, 5],
+      [0, 1, 2, 3],
+    ]);
+    expect(sim.building.bridges).toHaveLength(1);
+    // iza vai embora: o housekeeping (shrinkPending) derruba o anexo e a passarela sozinho
+    sim.spots.releaseAll('iza');
+    sim.chars.delete('iza');
+    run(sim, clock, 2.5, () => sim.building.blocks.length === 1);
+    expect(sim.building.blocks).toHaveLength(1);
+    expect(sim.building.bridges).toEqual([]);
+    expect(sim.building.rect).toEqual({ x: 0, y: 0, w: 96, h: 29 });
+  });
+
+  it('Review Focus 1 — trava por passarela: alguém parado na passarela segura o anexo (só o miolo) e a passarela; quando sai, somem', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap(...nineRooms()), clock.now);
+    run(sim, clock, 0.5);
+    const iza = sim.chars.get('iza')!;
+    // iza larga o lugar e fica parada no meio do primeiro trecho da passarela
+    sim.spots.releaseAll('iza');
+    iza.atSpot = null;
+    iza.homeSpot = null;
+    iza.seated = false;
+    iza.tx = 56;
+    iza.ty = 31;
+    sim.rooms.delete('/i');
+    sim.relayout();
+    expect(sim.building.blocks.map((b) => [b.id.bx, b.id.by, b.columns.lo, b.columns.hi])).toEqual([
+      [0, 0, 0, 5],
+      [0, 1, 2, 2],
+    ]);
+    expect(sim.building.blocks[1].rect).toEqual({ x: 40, y: 41, w: 16, h: 29 });
+    expect(sim.building.bridges.map((b) => b.id)).toEqual(['passarela:0,1']);
+    expect(sim.building.grid.walkable(56, 31)).toBe(true);
+    expect([iza.tx, iza.ty]).toEqual([56, 31]); // ninguém foi teletransportado
+    sim.chars.delete('iza');
+    run(sim, clock, 2.5, () => sim.building.blocks.length === 1);
+    expect(sim.building.blocks).toHaveLength(1);
+    expect(sim.building.bridges).toEqual([]);
+  });
+
+  it('Review Focus 3 — relayout(true) com alguém na rua (fora de toda região) não o leva para o outro lado: fica onde está', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap(...nineRooms()), clock.now);
+    run(sim, clock, 0.5);
+    const iza = sim.chars.get('iza')!;
+    sim.spots.releaseAll('iza');
+    iza.atSpot = null;
+    iza.homeSpot = null;
+    iza.seated = false;
+    // iza na passarela; a passarela some com relayout(true) depois que a sala saiu
+    iza.tx = 56;
+    iza.ty = 31;
+    sim.rooms.delete('/i');
+    sim.relayout(true);
+    expect(sim.building.blocks).toHaveLength(1);
+    // sem região própria, o fallback é o de sempre (tile caminhável mais próximo, raio COL_W + 2): a porta sul do lounge, logo acima
+    expect(sim.building.grid.walkable(iza.tx, iza.ty)).toBe(true);
+    expect(iza.ty).toBeLessThanOrEqual(28);
+  });
+
+  it('serviceSpot: café, água, cabine e pia do mesmo bloco primeiro (quem está no anexo usa o saguão e o WC do anexo; quem está no principal, a copa e os banheiros)', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap(...nineRooms()), clock.now);
+    run(sim, clock, 0.5);
+    const ana = sim.chars.get('ana')!;
+    const iza = sim.chars.get('iza')!;
+    expect(iza.ty).toBeGreaterThanOrEqual(41);
+    // a cabine do banheirinho do saguão e as do WC são do mesmo bloco: vale a mais perto da sala de iza (a do saguão)
+    expect(sim.serviceSpot('stall', iza)!.areaId.startsWith('anexo:0,1:')).toBe(true);
+    expect(sim.serviceSpot('sink', iza)!.areaId.startsWith('anexo:0,1:')).toBe(true);
+    expect(sim.serviceSpot('coffee', iza)!.areaId).toBe('anexo:0,1:saguao');
+    expect(sim.serviceSpot('water', iza)!.areaId.startsWith('anexo:0,1:')).toBe(true);
+    expect(sim.serviceSpot('stall', ana)!.areaId).toBe('core:banheiros');
+    expect(sim.serviceSpot('coffee', ana)!.areaId).toBe('core:copa');
+    expect(sim.serviceSpot('water', ana)!.areaId.startsWith('anexo:')).toBe(false);
+    // `near` manda na escolha dentro da região: a pia mais perto da cabine escolhida é a da mesma área
+    const stall = sim.serviceSpot('stall', iza)!;
+    const sink = sim.serviceSpot('sink', iza, { near: { tx: stall.tx, ty: stall.ty } })!;
+    expect(sink.areaId).toBe(stall.areaId);
+  });
+
+  it('serviceSpot cai para outro bloco quando o seu não tem o serviço livre', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap(...nineRooms()), clock.now);
+    run(sim, clock, 0.5);
+    const iza = sim.chars.get('iza')!;
+    // ocupa todas as cabines do anexo (WC: 3; saguão: 1) com outra pessoa
+    for (const s of sim.spots.ofKind('stall')) if (s.areaId.startsWith('anexo:0,1:')) sim.spots.reserve(s.id, 'ana');
+    expect(sim.serviceSpot('stall', iza)!.areaId).toBe('core:banheiros');
+  });
+
+  it('cafeSeatAfter: sentar na copa só depois do café da copa do principal', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap(...nineRooms()), clock.now);
+    run(sim, clock, 0.5);
+    const coffees = sim.spots.ofKind('coffee');
+    expect(cafeSeatAfter(coffees.find((s) => s.areaId === 'core:copa')!)).toBe(true);
+    expect(cafeSeatAfter(coffees.find((s) => s.areaId === 'anexo:0,1:saguao')!)).toBe(false);
   });
 });
 

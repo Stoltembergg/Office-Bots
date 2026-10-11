@@ -6,6 +6,7 @@ import { SPECIAL, type ShellOutcome } from '../../../shared/activity';
 import { hash32 } from '../../../shared/hash';
 import { TILE } from '../art/api';
 import type { Camera } from './camera';
+import { blockKey } from './layout/geometry';
 import type { Renderer } from './render/renderer';
 import { oldestShell } from './sim/shell';
 import type { Sim } from './sim/sim';
@@ -177,6 +178,7 @@ export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCame
   return {
     state: () => ({
       blocks: sim.building.blocks.map((b) => ({ bx: b.id.bx, by: b.id.by, lo: b.columns.lo, hi: b.columns.hi })),
+      bridges: sim.building.bridges.map((b) => ({ child: blockKey(b.child), rects: b.rects })),
       camera: { x: Math.round(camera.x), y: Math.round(camera.y), zoom: camera.zoom },
       rooms: [...sim.rooms.values()].map((r) => ({
         id: r.id,
