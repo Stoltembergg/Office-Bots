@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FURNITURE, TILE, type FurnitureKind, type RoomTheme } from '../../art/api';
 import { BUILDING_H, COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
 import { assembleBuilding, coreAreas } from './building';
-import { columnsFor, slotAt, slotColumn, slotRect, slotSide } from './geometry';
+import { columnsFor, legacySlotAt, slotColumn, slotRect, slotSide } from './geometry';
 import { layoutProjectRoom, roomVariant } from './room';
 import { layoutExterior, slotShell } from './exterior';
 import { RECEPTION_ID } from './core';
@@ -30,8 +30,8 @@ describe('mapeamento de slots', () => {
     expect(slotSide(0)).toBe('north');
     expect(slotSide(1)).toBe('south');
     expect(slotSide(6)).toBe('north');
-    expect(slotAt(3, 'south')).toBe(3);
-    expect(slotAt(slotColumn(9), slotSide(9))).toBe(9);
+    expect(legacySlotAt(3, 'south')).toBe(3);
+    expect(legacySlotAt(slotColumn(9), slotSide(9))).toBe(9);
   });
 
   it('retângulos das salas não se sobrepõem e respeitam o corredor', () => {
