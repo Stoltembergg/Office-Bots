@@ -38,7 +38,7 @@ export function layoutReception(rect: TileRect): AreaLayout {
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
 
-  // elevadores (é por onde todos chegam e vão embora)
+  // elevadores (decoração: todos chegam e vão embora pela porta da rua, ao sul)
   ELEVATOR_CX.forEach((cx, i) => {
     b.wall('elevator', cx, undefined, { order: 0.2 + i * 0.1 });
     const lx = Math.floor(cx - 0.5);

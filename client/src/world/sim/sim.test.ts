@@ -4,7 +4,9 @@ import type { AppearanceParts } from '../../../../shared/appearance';
 import type { AgentInfo, OfficeSnapshot, RoomInfo, ShellJob } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
+import { FOOT_DY, TILE } from '../constants';
 import { CORRIDOR_ID } from '../layout/corridor';
+import { ENTRANCE_DOOR, SIDEWALK_TY } from '../layout/exterior';
 import { PRINCIPAL, standingColumns } from '../layout/geometry';
 import type { Character } from './character';
 import { cafeSeatAfter, SHELL_DONE_TOOL, Sim } from './sim';
@@ -130,7 +132,7 @@ describe('simulação do escritório', () => {
     expect(b.phase).toBe('building');
     expect(b.lightOn).toBe(false);
     const caio = sim.chars.get('caio')!;
-    expect(caio.step?.t ?? caio.queue[0]?.t).toBe('elevOut');
+    expect(caio.step?.t ?? caio.queue[0]?.t).toBe('walkIn');
     run(sim, clock, 60, () => !!caio.homeSpot && caio.atSpot === caio.homeSpot && !caio.step && !caio.queue.length);
     expect(b.phase).toBe('ready');
     expect(b.lightOn).toBe(true);
@@ -148,7 +150,8 @@ describe('simulação do escritório', () => {
     sim.applySnapshot(snap(rooms, [agent('ana', '/a', 'working'), agent('caio', '/b', 'working')], 2), clock.now);
     const b = sim.rooms.get('/b')!;
     const caio = sim.chars.get('caio')!;
-    run(sim, clock, 3);
+    // chega pela rua (uns 4 s até a porta) e vai reivindicar o interruptor
+    run(sim, clock, 20, () => b.switchClaim === 'caio');
     expect(b.lightOn).toBe(false);
     expect(b.switchClaim).toBe('caio');
     // ainda andando até o interruptor: o status muda duas vezes (o plano é refeito)
@@ -175,13 +178,13 @@ describe('simulação do escritório', () => {
     sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working'), agent('caio', '/b', 'offline')], 3), clock.now);
     run(sim, clock, 20, () => caio.leaving && !b.lightOn);
     expect(b.lightOn).toBe(false);
-    // ainda a caminho do elevador quando a luz apaga
+    // ainda a caminho da porta quando a luz apaga
     expect(sim.chars.has('caio')).toBe(true);
     run(sim, clock, 90, () => !sim.rooms.has('/b'));
     expect(sim.rooms.has('/b')).toBe(false);
   });
 
-  it('saída: o último apaga a luz, vai ao elevador, some e a sala é desmontada', () => {
+  it('saída: o último apaga a luz, vai embora pela rua, some e a sala é desmontada', () => {
     const sim = newSim();
     const clock = { now: T0 };
     const rooms = [room('/a', 0), room('/b', 1)];
@@ -554,7 +557,7 @@ describe('salas sem buracos', () => {
     };
     push();
     let maxStep = 0;
-    // por personagem (quem volta com o mesmo id é outro personagem, que sai do elevador)
+    // por personagem (quem volta com o mesmo id é outro personagem, que chega pela rua)
     const last = new WeakMap<object, { x: number; y: number }>();
     const track = () => {
       for (const ch of sim.chars.values()) {
@@ -1074,5 +1077,67 @@ describe('espera de shell', () => {
     expect(ana.mode).toBe('shell');
     expect(ana.shellCount).toBe(1);
     expect(ana.pose).toBe('wait');
+  });
+});
+
+describe('porta da rua (sem elevador)', () => {
+  const doorX = ENTRANCE_DOOR.tx * TILE + FOOT_DY * 0 + TILE / 2;
+  const doorY = ENTRANCE_DOOR.ty * TILE + FOOT_DY;
+  const walkY = SIDEWALK_TY * TILE + FOOT_DY;
+
+  it('chega pela rua: surge na calçada aparecendo, sobe o caminho de pedra e entra pela porta antes de ir à mesa', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working')]), clock.now);
+    run(sim, clock, 0.2);
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working'), agent('bia', '/a', 'working')], 2), clock.now);
+    const bia = sim.chars.get('bia')!;
+    expect(bia.step?.t ?? bia.queue[0]?.t).toBe('walkIn');
+    run(sim, clock, 0.5);
+    // na linha da calçada, a caminho da entrada, ainda aparecendo
+    expect(Math.round(bia.y)).toBe(walkY);
+    expect(bia.inside).toBe(false);
+    expect(bia.alpha).toBeGreaterThan(0);
+    expect(bia.alpha).toBeLessThan(1);
+    expect(Math.abs(bia.x - doorX)).toBeGreaterThan(6 * TILE);
+    let atDoor = false;
+    run(sim, clock, 40, () => {
+      if (Math.abs(bia.x - doorX) < 1 && bia.y <= doorY + 0.5 && bia.y > doorY - TILE && bia.alpha === 1) atDoor = true;
+      return atDoor;
+    });
+    expect(atDoor).toBe(true);
+    run(sim, clock, 60, () => !!bia.homeSpot && bia.atSpot === bia.homeSpot);
+    expect(bia.atSpot).toBe(bia.homeSpot);
+  });
+
+  it('chegadas simultâneas surgem escalonadas na calçada', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working')]), clock.now);
+    run(sim, clock, 0.2);
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working'), agent('bia', '/a', 'working'), agent('caio', '/a', 'working')], 2), clock.now);
+    const t = [sim.chars.get('bia')!.hiddenUntil, sim.chars.get('caio')!.hiddenUntil];
+    expect(Math.abs(t[1] - t[0])).toBeGreaterThanOrEqual(700);
+  });
+
+  it('vai embora pela rua: sai pela porta, desce até a calçada, anda para um lado e some devagar', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0), room('/b', 1)], [agent('ana', '/a', 'working'), agent('caio', '/b', 'working')]), clock.now);
+    run(sim, clock, 0.5);
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working'), agent('caio', '/b', 'offline')], 2), clock.now);
+    const caio = sim.chars.get('caio')!;
+    expect(caio.mode).toBe('leave');
+    run(sim, clock, 60, () => caio.step?.t === 'walkOut' && caio.step.phase === 1);
+    expect(caio.step?.t).toBe('walkOut');
+    expect(Math.round(caio.y)).toBe(walkY);
+    expect(caio.alpha).toBe(1);
+    const x0 = caio.x;
+    run(sim, clock, 6, () => caio.alpha < 1);
+    expect(caio.alpha).toBeLessThan(1);
+    expect(Math.abs(caio.x - x0)).toBeGreaterThan(3 * TILE - 1);
+    expect(Math.round(caio.y)).toBe(walkY);
+    run(sim, clock, 20, () => !sim.chars.has('caio'));
+    expect(sim.chars.has('caio')).toBe(false);
   });
 });

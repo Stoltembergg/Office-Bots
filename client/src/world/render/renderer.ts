@@ -116,7 +116,6 @@ export class Renderer {
   /** dt do frame atual (s), para as partículas emitidas durante o desenho. */
   private dt = 0;
   private iconCount = 0;
-  private elevatorVis: WallVis[] = [];
   private occupiedSlots = new Set<number>();
   /** Hora forçada (?hora=21:30 na URL ou depuração) ou null para a hora local. */
   hourOverride: number | null = parseHourParam(typeof location === 'undefined' ? '' : location.search);
@@ -172,7 +171,6 @@ export class Renderer {
         want.add(room.id);
       }
       for (const id of [...this.areas.keys()]) if (!want.has(id)) this.areas.delete(id);
-      this.elevatorVis = this.areas.get('core:recepcao')?.wallItems.filter((w) => w.kind === 'elevator') ?? [];
       this.bridgeVis = [...this.areas.values()].filter((v) => v.layout.kind === 'bridge');
       // camada elevada: os trechos da passarela e os tiles de porta em que ela encosta (quem está na porta fica na frente do piso)
       this.elevatedRects = sim.building.bridges.flatMap((br) => [...br.rects, ...br.openings]);
@@ -746,9 +744,8 @@ export class Renderer {
         this.drawWindow(w, hour, now, 1, rise);
         return;
       case 'elevator': {
-        const idx = this.elevatorVis.indexOf(w);
-        const state = this.sim.elevators[idx]?.state ?? 0;
-        const s = wallSprites(this.art, 'elevator', w.variant, state, w.seed);
+        // decoração: chegadas e saídas são pela porta da rua, a porta do elevador fica fechada (estado 0)
+        const s = wallSprites(this.art, 'elevator', w.variant, 0, w.seed);
         if (!s) return;
         const o = wallItemOrigin(w, s.base);
         ctx.drawImage(s.base.canvas, o.x, o.y + rise);

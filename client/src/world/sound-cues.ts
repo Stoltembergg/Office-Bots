@@ -1,6 +1,6 @@
-// Sons do ambiente sugeridos pelo mundo: teclado de quem trabalha à vista, "ding" quando a porta de
-// um elevador abre (alguém chega ou sai) e as rodas (raquetadas do pingue-pongue, fliperama). Só
-// observa a simulação e a câmera; quem decide se toca (preferência, volume, aba oculta) é a UI.
+// Sons do ambiente sugeridos pelo mundo: teclado de quem trabalha à vista, "ding" da porta de entrada
+// (alguém chega ou sai pela rua) e as rodas (raquetadas do pingue-pongue, fliperama). Só observa a
+// simulação e a câmera; quem decide se toca (preferência, volume, aba oculta) é a UI.
 import type { SoundCue } from './api';
 import type { Camera } from './camera';
 import type { Character } from './sim/character';
@@ -19,7 +19,8 @@ interface ViewRect {
 }
 
 export class SoundCues {
-  private doors: number[] = [];
+  /** Passos de entrada/saída que já tocaram o "ding". */
+  private dinged = new WeakSet<object>();
   private keysAt = 0;
   private nextKeysAt = 0;
   private nextArcadeAt = 0;
@@ -37,7 +38,7 @@ export class SoundCues {
     const view = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
     // de longe (zoom baixo) tudo fica mais baixinho
     const near = Math.max(0.45, Math.min(1, 0.25 + this.camera.zoom * 0.25));
-    this.elevators(view, emit);
+    this.doors(view, emit);
     this.keys(now, view, near, emit);
     this.social(now, view, near, emit);
   }
@@ -51,16 +52,19 @@ export class SoundCues {
     return x > v.x0 - m && x < v.x1 + m && y > v.y0 - m && y < v.y1 + m;
   }
 
-  /** "Ding" quando a porta começa a abrir; fora da tela, mais baixo (ainda avisa que alguém chegou). */
-  private elevators(view: ViewRect, emit: (cue: SoundCue) => void): void {
-    this.sim.elevators.forEach((e, i) => {
-      const prev = this.doors[i];
-      this.doors[i] = e.door;
-      if (prev === undefined || prev > 0.01 || e.door <= 0.01) return;
-      const spot = this.sim.spots.get(e.spotId);
-      if (!spot) return;
-      emit({ kind: 'elevator', gain: this.inView(spot.x, spot.y, view, 24) ? 1 : 0.5, pan: this.pan(spot.x, view) });
-    });
+  /**
+   * "Ding" da porta de entrada quando alguém começa a entrar (sobe o caminho de pedra) ou a sair (chega à
+   * calçada); fora da tela, mais baixo (ainda avisa que alguém chegou ou foi embora).
+   */
+  private doors(view: ViewRect, emit: (cue: SoundCue) => void): void {
+    for (const ch of this.sim.chars.values()) {
+      const s = ch.step;
+      if (!s || (s.t !== 'walkIn' && s.t !== 'walkOut')) continue;
+      const at = s.t === 'walkIn' ? s.phase === 2 : s.phase === 1;
+      if (!at || this.dinged.has(s)) continue;
+      this.dinged.add(s);
+      emit({ kind: 'elevator', gain: this.inView(ch.x, ch.y, view, 24) ? 1 : 0.5, pan: this.pan(ch.x, view) });
+    }
   }
 
   /** Rajadas de teclas, mais frequentes quanto mais gente digita na tela. */

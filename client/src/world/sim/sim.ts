@@ -7,6 +7,7 @@ import type { WorldOptions } from '../api';
 import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_DEBOUNCE_MS, RUN_SPEED, TILE, WALK_SPEED } from '../constants';
 import { assembleBuilding, type BuildingLayout } from '../layout/building';
 import { CAFE_ID, RECEPTION_ID } from '../layout/core';
+import { ENTRANCE_DOOR, SIDEWALK_TY } from '../layout/exterior';
 import { existingBlocks, inRect, occupiedRegions, regionAt, regionKey, retainRegions, standingKey } from '../layout/geometry';
 import { layoutProjectRoom } from '../layout/room';
 import type { SpotDef, SpotKind } from '../layout/types';
@@ -29,7 +30,6 @@ import {
   type Mode,
 } from './behavior';
 import { Character, dirOf, facing } from './character';
-import { Elevator } from './elevator';
 import { RoomFxState } from './github';
 import { RoomState } from './room-state';
 import { countShells, latestShellDone, shellLabel, shellStage, shellWaitSince, spinDir, spinPhase, yawnPhase } from './shell';
@@ -74,6 +74,12 @@ const INITIAL_LOUNGE_MIN_IDLE_MS = 90_000;
 /** Ninguém sai para passear nos primeiros segundos depois de abrir a página. */
 const INITIAL_OUTING_DELAY_MS = 5_000;
 const ENTER_MS = 180;
+/** Intervalo entre pessoas surgindo na calçada (chegadas simultâneas não se sobrepõem). */
+const ENTRANCE_STAGGER_MS = 700;
+/** Distância (tiles) da entrada em que quem chega surge e quem sai some. */
+const STREET_WALK_TILES = 9;
+/** Quem vai embora some devagar: alpha por segundo, a partir de 3 tiles da entrada (~2,5 s até sumir). */
+const LEAVE_FADE_PER_S = 0.45;
 
 function between(rng: () => number, a: number, b: number): number {
   return a + rng() * (b - a);
@@ -91,7 +97,8 @@ export class Sim {
   readonly chars = new Map<string, Character>();
   readonly rooms = new Map<string, RoomState>();
   readonly spots = new SpotRegistry();
-  readonly elevators: Elevator[] = [];
+  /** Próximo instante livre para alguém surgir na calçada (chegadas simultâneas escalonadas). */
+  private nextAppearAt = 0;
   building: BuildingLayout;
   readonly finder: PathFinder;
   /** Incrementa quando o prédio muda (salas surgem/somem, largura). */
@@ -134,7 +141,6 @@ export class Sim {
     this.building = assembleBuilding(existingBlocks([]), [], 0);
     this.finder = new PathFinder(this.building.grid);
     this.spots.setSpots(this.building.spots);
-    for (const s of this.spots.ofKind('elevator')) this.elevators.push(new Elevator(this.elevators.length, s.id));
   }
 
   // =================================================================== snapshot
@@ -410,20 +416,20 @@ export class Sim {
     ch.shellDoneAt = latestShellDone(a)?.at ?? 0;
     this.chars.set(a.id, ch);
     if (first) return ch;
-    // chegada pelo elevador
-    const el = this.pickElevator(ch);
-    const spot = this.spots.get(el.spotId)!;
-    ch.placeAtTile(spot.tx, spot.ty);
-    ch.x = spot.x;
-    ch.y = spot.y - 6;
-    ch.dir = 'down';
+    // chegada pela rua: o tile lógico já é o da porta (caminhável); a posição física começa na calçada
+    const side = ch.rng() < 0.5 ? -1 : 1;
+    ch.placeAtTile(ENTRANCE_DOOR.tx, ENTRANCE_DOOR.ty);
+    ch.x += side * STREET_WALK_TILES * TILE;
+    ch.y = SIDEWALK_TY * TILE + FOOT_DY;
+    ch.dir = side > 0 ? 'left' : 'right';
     ch.alpha = 0;
     ch.inside = true;
     ch.arriving = true;
-    ch.hiddenUntil = el.reserveAppear(now);
-    // subagentes disparados juntos não saem do elevador no mesmo instante
+    ch.hiddenUntil = Math.max(now, this.nextAppearAt);
+    this.nextAppearAt = ch.hiddenUntil + ENTRANCE_STAGGER_MS;
+    // subagentes disparados juntos não chegam no mesmo instante
     if (a.kind === 'sub') ch.hiddenUntil += Math.floor(ch.rng() * 600);
-    ch.queue.push({ t: 'elevOut', elev: el.index, phase: 0 });
+    ch.queue.push({ t: 'walkIn', side, phase: 0 });
     return ch;
   }
 
@@ -488,12 +494,6 @@ export class Sim {
     if (!room || !room.present) return;
     const seat = chooseSeat(room.layout.spots, (id) => this.spots.isFree(id, ch.id), ch.info.kind);
     if (seat && this.spots.reserve(seat.id, ch.id)) ch.homeSpot = seat.id;
-  }
-
-  private pickElevator(ch: Character): Elevator {
-    let best = this.elevators[0];
-    for (const e of this.elevators) if (e.load < best.load || (e.load === best.load && ch.rng() < 0.5)) best = e;
-    return best;
   }
 
   // =================================================================== layout
@@ -567,7 +567,6 @@ export class Sim {
 
   update(dt: number, now: number): void {
     this.now = now;
-    for (const e of this.elevators) e.update(dt, now);
     this.updateRooms(now);
     this.social.update(now);
     if (this.roomFx.active.size) this.roomFx.update(this, now);
@@ -865,10 +864,10 @@ export class Sim {
         if (ch.stepT >= s.maxMs) return true;
         return ch.stepT >= s.minMs && s.cond();
       }
-      case 'elevOut':
-        return this.stepElevOut(ch, s, dt, now);
-      case 'elevIn':
-        return this.stepElevIn(ch, s, dt, now);
+      case 'walkIn':
+        return this.stepWalkIn(ch, s, dt, now);
+      case 'walkOut':
+        return this.stepWalkOut(ch, s, dt);
       case 'stall':
         return this.stepStall(ch, s, dt, now);
       case 'switch':
@@ -954,87 +953,66 @@ export class Sim {
     return false;
   }
 
-  private stepElevOut(ch: Character, s: Extract<Step, { t: 'elevOut' }>, dt: number, now: number): boolean {
-    const el = this.elevators[s.elev] ?? this.elevators[0];
-    const spot = this.spots.get(el.spotId)!;
-    ch.dir = 'down';
+  /** Chega pela rua: surge na calçada a 9 tiles da entrada, aparece andando e sobe o caminho de pedra até a porta. */
+  private stepWalkIn(ch: Character, s: Extract<Step, { t: 'walkIn' }>, dt: number, now: number): boolean {
+    const doorX = ENTRANCE_DOOR.tx * TILE + FOOT_DX;
+    const doorY = ENTRANCE_DOOR.ty * TILE + FOOT_DY;
+    const walkY = SIDEWALK_TY * TILE + FOOT_DY;
     if (s.phase === 0) {
       ch.alpha = 0;
       ch.setPose('stand');
-      if (now >= ch.hiddenUntil) {
-        el.request(ch.id);
-        s.phase = 1;
-      }
-      return false;
+      if (now < ch.hiddenUntil) return false;
+      // já está na calçada desde o nascimento (sem pulo visível); daqui em diante é desenhado
+      ch.inside = false;
+      s.phase = 1;
     }
+    const step = WALK_SPEED * ch.speedK * dt;
+    ch.setPose('walk');
     if (s.phase === 1) {
-      ch.x = spot.x;
-      ch.y = spot.y - 6;
-      if (el.door >= 2.5) {
-        ch.inside = false;
-        ch.alpha = Math.min(1, ch.alpha + dt * 5);
-        if (ch.alpha >= 1 && el.isOpen) s.phase = 2;
-      }
+      // pela calçada até a frente da entrada, aparecendo
+      ch.alpha = Math.min(1, ch.alpha + dt * 1.4);
+      ch.dir = s.side > 0 ? 'left' : 'right';
+      const dx = doorX - ch.x;
+      if (Math.abs(dx) <= step) {
+        ch.x = doorX;
+        s.phase = 2;
+      } else ch.x += Math.sign(dx) * step;
       return false;
     }
-    // sai do elevador até o tile da frente
-    const gx = spot.tx * TILE + FOOT_DX;
-    const gy = spot.ty * TILE + FOOT_DY;
-    const dx = gx - ch.x;
-    const dy = gy - ch.y;
-    const d = Math.hypot(dx, dy);
-    const step = WALK_SPEED * dt;
+    // sobe o caminho de pedra até o tile da porta
     ch.alpha = 1;
-    if (d <= step) {
-      ch.x = gx;
-      ch.y = gy;
-      ch.tx = spot.tx;
-      ch.ty = spot.ty;
-      el.release(ch.id, now);
+    ch.dir = 'up';
+    const dy = doorY - ch.y;
+    if (Math.abs(dy) <= step) {
+      ch.placeAtTile(ENTRANCE_DOOR.tx, ENTRANCE_DOOR.ty);
       ch.setPose('stand');
       return true;
     }
-    ch.x += (dx / d) * step;
-    ch.y += (dy / d) * step;
-    ch.setPose('walk');
+    ch.y += Math.sign(dy) * step;
     return false;
   }
 
-  private stepElevIn(ch: Character, s: Extract<Step, { t: 'elevIn' }>, dt: number, now: number): boolean {
-    const el = this.elevators[s.elev] ?? this.elevators[0];
-    const spot = this.spots.get(el.spotId)!;
+  /** Vai embora pela rua: da porta desce o caminho até a calçada, vira para um lado e some andando. */
+  private stepWalkOut(ch: Character, s: Extract<Step, { t: 'walkOut' }>, dt: number): boolean {
+    const walkY = SIDEWALK_TY * TILE + FOOT_DY;
+    const step = WALK_SPEED * ch.speedK * dt;
+    ch.setPose('walk');
     if (s.phase === 0) {
-      ch.dir = 'up';
-      ch.setPose('stand');
-      el.request(ch.id);
-      if (el.isOpen) s.phase = 1;
+      ch.dir = 'down';
+      const dy = walkY - ch.y;
+      if (Math.abs(dy) <= step) {
+        ch.y = walkY;
+        s.phase = 1;
+      } else ch.y += Math.sign(dy) * step;
       return false;
     }
-    if (s.phase === 1) {
-      const gx = spot.x;
-      const gy = spot.y - 6;
-      const dx = gx - ch.x;
-      const dy = gy - ch.y;
-      const d = Math.hypot(dx, dy);
-      const step = WALK_SPEED * dt;
-      ch.dir = 'up';
-      if (d <= step) {
-        ch.x = gx;
-        ch.y = gy;
-        s.phase = 2;
-        ch.dir = 'down';
-        ch.setPose('stand');
-      } else {
-        ch.x += (dx / d) * step;
-        ch.y += (dy / d) * step;
-        ch.setPose('walk');
-      }
-      return false;
-    }
-    ch.alpha = Math.max(0, ch.alpha - dt * 3.5);
-    if (ch.alpha <= 0) {
+    ch.dir = s.side > 0 ? 'right' : 'left';
+    ch.x += s.side * step;
+    const far = Math.abs(ch.x - (ENTRANCE_DOOR.tx * TILE + FOOT_DX)) / TILE;
+    if (far > 3) ch.alpha = Math.max(0, ch.alpha - dt * LEAVE_FADE_PER_S);
+    if (ch.alpha <= 0 || far >= STREET_WALK_TILES + 2) {
+      ch.alpha = 0;
       ch.inside = true;
-      el.release(ch.id, now);
       return true;
     }
     return false;
@@ -1373,10 +1351,9 @@ export class Sim {
         );
       }
     }
-    const el = this.pickElevator(ch);
-    const es = this.spots.get(el.spotId)!;
-    steps.push({ t: 'go', tx: es.tx, ty: es.ty, fx: es.tx * TILE + FOOT_DX + (es.x - (es.tx * TILE + FOOT_DX)) * 0.5, fy: es.ty * TILE + FOOT_DY - 2, dir: 'up' });
-    steps.push({ t: 'elevIn', elev: el.index, phase: 0 }, { t: 'remove' });
+    // pela porta da rua: até o tile da porta pela grade, depois o caminho de pedra e a calçada em px
+    steps.push({ t: 'go', tx: ENTRANCE_DOOR.tx, ty: ENTRANCE_DOOR.ty, dir: 'down' });
+    steps.push({ t: 'walkOut', side: ch.rng() < 0.5 ? -1 : 1, phase: 0 }, { t: 'remove' });
     ch.queue.push(...steps);
     void now;
     return true;
@@ -1734,7 +1711,7 @@ export class Sim {
       room.lightAt = now - 10_000;
     }
     this.updateRooms(now);
-    for (const e of this.elevators) e.reset();
+    this.nextAppearAt = 0;
     this.machineUntil.clear();
     this.social.reset(now);
     for (const ch of [...this.chars.values()]) {
@@ -1814,17 +1791,16 @@ export class Sim {
         if (spot) ch.placeAtTile(spot.tx, spot.ty);
         break;
       }
-      case 'elevOut': {
-        const el = this.elevators[s.elev] ?? this.elevators[0];
-        const spot = this.spots.get(el.spotId);
-        if (spot) ch.placeAtTile(spot.tx, spot.ty);
+      case 'walkIn':
+        ch.placeAtTile(ENTRANCE_DOOR.tx, ENTRANCE_DOOR.ty);
+        ch.alpha = 1;
+        ch.inside = false;
         break;
-      }
       case 'do':
         s.fn();
         break;
       case 'remove':
-      case 'elevIn':
+      case 'walkOut':
         ch.gone = true;
         break;
       default:

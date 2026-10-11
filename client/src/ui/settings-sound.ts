@@ -7,7 +7,7 @@ import type { SoundControl } from './sound';
 const CATEGORY_UI: Readonly<Record<SoundCategory, { label: string; hint: string; sample: SoundKind }>> = {
   alerts: { label: 'Avisos', hint: 'Sino quando alguém precisa de você; estalo quando uma tarefa termina.', sample: 'chime' },
   keys: { label: 'Teclado', hint: 'Digitação baixinha de quem trabalha nas salas à vista.', sample: 'keys' },
-  elevator: { label: 'Elevador', hint: '"Ding" quando alguém chega ou vai embora.', sample: 'elevator' },
+  elevator: { label: 'Porta de entrada', hint: '"Ding" quando alguém chega ou vai embora pela rua.', sample: 'elevator' },
   social: { label: 'Rodas', hint: 'Pingue-pongue e fliperama no lounge.', sample: 'pingpong' },
 };
 

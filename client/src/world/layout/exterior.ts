@@ -13,6 +13,10 @@ export const ENTRANCE_X = blockRect(PRINCIPAL).x + 2 * COL_W + DOOR_LX;
 export const ENTRANCE_W = BRIDGE_W;
 /** Caminho de pedra da porta (y 29) até a calçada (y 31): 2 tiles. */
 export const ENTRANCE_DEPTH = 2;
+/** Tile da porta de entrada (dentro da recepção, meio da abertura de 3 tiles): por onde todos chegam e vão embora. */
+export const ENTRANCE_DOOR = { tx: ENTRANCE_X + 1, ty: blockRect(PRINCIPAL).y + BUILDING_H - 1 } as const;
+/** Linha da calçada (segunda linha da calçada norte da rua principal) por onde os personagens chegam e vão. */
+export const SIDEWALK_TY = ENTRANCE_DOOR.ty + 1 + ENTRANCE_DEPTH + 1;
 
 /** Rua (tiles): perfil da spec 1.6 — h: linhas 2–3 e 9–10 calçada, 4–8 asfalto; v: colunas 1–2 e 8–9 calçada, 3–7 asfalto. */
 export interface Street {

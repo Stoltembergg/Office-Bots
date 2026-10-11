@@ -16,7 +16,6 @@ import {
   shouldRun,
 } from './behavior';
 import { SpotRegistry } from './spots';
-import { Elevator } from './elevator';
 import { buildAnim, furnitureScale, sweepDelay } from '../render/anim';
 import { ambientAt } from '../render/daylight';
 
@@ -157,7 +156,7 @@ describe('assentos e reservas', () => {
   });
 });
 
-describe('salas, luz e elevador', () => {
+describe('salas e luz', () => {
   it('último da sala é quem apaga a luz', () => {
     const chars = [
       { id: 'a', roomId: 'r', leaving: true },
@@ -183,20 +182,6 @@ describe('salas, luz e elevador', () => {
     expect(lightLevel(true, 2000)).toBe(1);
     expect(lightLevel(false, 30)).toBeGreaterThan(0);
     expect(lightLevel(false, 600)).toBe(0);
-  });
-
-  it('elevador abre enquanto há usuários e escalona as chegadas', () => {
-    const e = new Elevator(0, 'e');
-    e.request('a');
-    for (let i = 0; i < 10; i++) e.update(0.05, 0);
-    expect(e.isOpen).toBe(true);
-    expect(e.state).toBe(4);
-    e.release('a', 0);
-    for (let i = 0; i < 40; i++) e.update(0.05, 2000);
-    expect(e.state).toBe(0);
-    const t1 = e.reserveAppear(1000);
-    const t2 = e.reserveAppear(1000);
-    expect(t2).toBeGreaterThan(t1);
   });
 });
 
