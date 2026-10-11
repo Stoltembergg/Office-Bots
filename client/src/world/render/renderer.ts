@@ -5,9 +5,9 @@ import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type S
 import type { WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
-import { BUILDING_H, COL_W, CORE_COLS, CORRIDOR_Y } from '../constants';
+import { BUILDING_H, COL_W, CORRIDOR_Y } from '../constants';
 import { layoutExterior, slotShell, type ExteriorLayout, type SlotShell } from '../layout/exterior';
-import { legacySlotAt } from '../layout/geometry';
+import { isCoreColumn, slotAt } from '../layout/geometry';
 import type { ExteriorProp } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
 import type { Character } from '../sim/character';
@@ -122,7 +122,7 @@ export class Renderer {
     private readonly camera: Camera,
   ) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
-    this.exterior = layoutExterior(sim.building.cols);
+    this.exterior = layoutExterior(sim.building.blocks);
     this.lighting = new Lighting(art, sim);
   }
 
@@ -167,11 +167,11 @@ export class Renderer {
     this.builtAssetsVersion = this.assetsVersion;
   }
 
-  /** Camada base: área externa, pátios dos slots e fechamentos do corredor. */
+  /** Camada base: área externa, pátios das vagas vazias e fechamentos do corredor, por coluna de pé de cada bloco. */
   private buildBase(): void {
     const cols = this.sim.building.cols;
     this.baseCols = cols;
-    this.exterior = layoutExterior(cols);
+    this.exterior = layoutExterior(this.sim.building.blocks);
     const b = this.exterior.bounds;
     this.baseX = b.x * TILE;
     this.baseY = b.y * TILE;
@@ -188,12 +188,15 @@ export class Renderer {
     for (let x = this.baseX + 4; x < this.baseX + c.width; x += 24) ctx.fillRect(x, ly, 12, 2);
     this.shells = [];
     this.shellWindows = [];
-    for (let col = CORE_COLS; col < cols; col++) {
-      for (const side of ['north', 'south'] as const) {
-        const sh = slotShell(legacySlotAt(col, side), col === cols - 1);
-        this.shells.push(sh);
-        paintShell(this.art, ctx, sh.floors, sh.walls);
-        for (const w of sh.windows) this.shellWindows.push(toWallVis(w, `shell:${sh.slot}`));
+    for (const blk of this.sim.building.blocks) {
+      for (let c = blk.columns.lo; c <= blk.columns.hi; c++) {
+        if (isCoreColumn(blk.id, c)) continue;
+        for (const side of ['north', 'south'] as const) {
+          const sh = slotShell(slotAt(blk.id, c, side), { west: c === blk.columns.lo, east: c === blk.columns.hi });
+          this.shells.push(sh);
+          paintShell(this.art, ctx, sh.floors, sh.walls);
+          for (const w of sh.windows) this.shellWindows.push(toWallVis(w, `shell:${sh.slot}`));
+        }
       }
     }
     this.desaturate(ctx);

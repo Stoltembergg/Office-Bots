@@ -4,9 +4,9 @@ import { BUILDING_H, COL_W, CORRIDOR_H, CORRIDOR_Y, ROOM_H, SOUTH_Y } from '../c
 import { assembleBuilding, type BuildingLayout } from './building';
 import * as core from './core';
 import { CORRIDOR_ID, corridorId } from './corridor';
-import { existingBlocks, PRINCIPAL } from './geometry';
+import { existingBlocks, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
 import { layoutProjectRoom, roomVariant } from './room';
-import { layoutExterior, slotShell } from './exterior';
+import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, layoutExterior, slotShell, type SlotShell } from './exterior';
 import type { AreaLayout } from './types';
 
 const theme: RoomTheme = {
@@ -315,15 +315,6 @@ describe('layout do prédio', () => {
     const plants = b.corridor.furniture.filter((f) => f.kind === 'plant_tall' || f.kind === 'plant_small');
     expect(plants.length).toBeLessThanOrEqual(standing * 2);
   });
-
-  it('a área externa e os pátios cobrem o prédio', () => {
-    const ext = layoutExterior(b.cols);
-    expect(ext.bounds.x).toBeLessThan(0);
-    expect(ext.bounds.x + ext.bounds.w).toBeGreaterThan(b.cols * COL_W);
-    const shell = slotShell(5, true);
-    expect(shell.walls.length).toBeGreaterThan(0);
-    expect(shell.props.every((p) => p.slot === 5)).toBe(true);
-  });
 });
 
 /** Móveis de chão altos que escondem o que está pendurado na parede logo atrás. */
@@ -498,5 +489,203 @@ describe('entrada decorativa na face norte da recepção', () => {
 
   it('nenhum item da face norte fica atrás de um móvel alto', () => {
     expect(hiddenWallItems(reception())).toEqual([]);
+  });
+});
+
+describe('área externa por blocos', () => {
+  const PLANTS = new Set(['tree', 'pine', 'bush']);
+  const hedgesOf = (slots: number[]) => layoutExterior(existingBlocks(slots)).props.filter((p) => p.kind === 'hedge' || p.kind === 'flowers');
+  /** Vagas que a cerca viva deixa abertas (whenRoom), conferindo de passagem que nenhuma fica diante do miolo. */
+  const gates = (slots: number[]) => {
+    const hedges = hedgesOf(slots);
+    for (const p of hedges) {
+      const col = Math.floor((p.x - TILE) / TILE / COL_W);
+      if (p.whenRoom !== undefined) expect(col === 2 || col === 3, `whenRoom ${p.whenRoom} diante da coluna ${col}`).toBe(false);
+      if (col === 2 || col === 3) expect(p.whenRoom, `cerca diante da coluna ${col} com whenRoom`).toBeUndefined();
+    }
+    return new Set(hedges.map((p) => p.whenRoom).filter((s): s is number => s !== undefined));
+  };
+  /** O mesmo laço de Renderer.buildBase (contrato do cabeçalho): um pátio por lado em cada coluna de pé fora do miolo, cap só nas pontas lo/hi. */
+  const shellsOf = (slots: number[]) => {
+    const shells: { col: number; sh: SlotShell }[] = [];
+    for (const blk of existingBlocks(slots)) {
+      for (let c = blk.columns.lo; c <= blk.columns.hi; c++) {
+        if (isCoreColumn(blk.id, c)) continue;
+        for (const side of ['north', 'south'] as const) {
+          shells.push({ col: c, sh: slotShell(slotAt(blk.id, c, side), { west: c === blk.columns.lo, east: c === blk.columns.hi }) });
+        }
+      }
+    }
+    return shells;
+  };
+  /** Vagas cujo pátio tem um cap em x (px). */
+  const capsAt = (shells: { col: number; sh: SlotShell }[], x: number) => shells.filter((s) => s.sh.walls.some((w) => w.kind === 'cap' && w.x === x)).map((s) => s.sh.slot);
+
+  it('bounds = retângulo de pé do prédio mais as margens externas', () => {
+    // existingBlocks([0]) → colunas 2–4 (x 32..80); existingBlocks([0, 1]) → colunas 1–4 (x 16..80)
+    expect(layoutExterior(existingBlocks([0])).bounds).toEqual({ x: 12, y: -16, w: 88, h: 69 });
+    expect(layoutExterior(existingBlocks([0, 1])).bounds).toEqual({ x: -4, y: -16, w: 104, h: 69 });
+  });
+
+  it('grama cobre os bounds e a rua ao sul atravessa toda a largura', () => {
+    const ext = layoutExterior(existingBlocks([0, 1]));
+    const b = ext.bounds;
+    expect(b).toEqual({ x: -4, y: -16, w: 104, h: 69 });
+    expect(ext.floors[0]).toMatchObject({ kind: 'grass', x: b.x * TILE, y: b.y * TILE, w: b.w * TILE, h: b.h * TILE });
+    const street = ext.floors.filter((f) => f.kind === 'street');
+    expect(street).toHaveLength(1);
+    expect(street[0]).toMatchObject({ x: b.x * TILE, y: (BUILDING_H + 4) * TILE, w: b.w * TILE, h: 5 * TILE });
+    expect(ext.streetY).toBe((BUILDING_H + 4) * TILE);
+    expect(ext.streetH).toBe(5 * TILE);
+    expect(ext.lanes).toHaveLength(2);
+  });
+
+  it('entrada ao norte da recepção: caminho de pedra em x 39,5..42,5 × y −4..0, totem e banco ao lado', () => {
+    const ext = layoutExterior(existingBlocks([0]));
+    expect(ENTRANCE_X * TILE).toBe(632);
+    const path = ext.floors.filter((f) => f.kind === 'sidewalk' && f.x === ENTRANCE_X * TILE);
+    expect(path).toHaveLength(1);
+    expect(path[0]).toMatchObject({ x: 39.5 * TILE, y: -ENTRANCE_DEPTH * TILE, w: ENTRANCE_W * TILE, h: ENTRANCE_DEPTH * TILE });
+    expect(path[0]).toMatchObject({ y: -4 * TILE, w: 3 * TILE, h: 4 * TILE });
+    const totem = ext.props.filter((p) => p.kind === 'totem');
+    expect(totem).toHaveLength(1);
+    expect(totem[0]).toMatchObject({ x: 37 * TILE + 8, y: -1 * TILE });
+    const bench = ext.props.filter((p) => p.kind === 'bench');
+    expect(bench).toHaveLength(1);
+    expect(bench[0]).toMatchObject({ x: 45 * TILE, y: -1 * TILE + 6 });
+    for (const p of [...totem, ...bench]) expect(p.y >= -4 * TILE && p.y < 0, `${p.kind} fora da faixa y −4..0`).toBe(true);
+  });
+
+  it('a entrada oeste sai: nenhuma calçada, totem ou banco a oeste do prédio', () => {
+    // colunas 1–4: o prédio começa em x 16 e os bounds em x −4, logo tudo a oeste de x 16 é jardim
+    const ext = layoutExterior(existingBlocks([0, 1]));
+    for (const f of ext.floors.filter((f) => f.kind === 'sidewalk')) {
+      expect(f.w === ext.bounds.w * TILE || f.x === ENTRANCE_X * TILE, `calçada avulsa em x ${f.x / TILE}, y ${f.y / TILE}`).toBe(true);
+    }
+    expect(ext.props.filter((p) => (p.kind === 'totem' || p.kind === 'bench') && p.x < 16 * TILE)).toEqual([]);
+    expect(ext.props.filter((p) => p.kind === 'paving')).toEqual([]);
+  });
+
+  it('árvores e arbustos deixam livre a zona da entrada: x [34, 48)·TILE × y [−8, 0)·TILE', () => {
+    for (const slots of [[], [0], [0, 1, 2, 3, 4, 5]]) {
+      const ext = layoutExterior(existingBlocks(slots));
+      const north = ext.props.filter((p) => PLANTS.has(p.kind) && p.y < 0);
+      expect(north.length, `vagas [${slots.join(',')}]: bosque ao norte sumiu`).toBeGreaterThan(0);
+      const inside = north.filter((p) => p.x >= 34 * TILE && p.x < 48 * TILE && p.y >= -8 * TILE);
+      expect(inside, `vagas [${slots.join(',')}]`).toEqual([]);
+    }
+  });
+
+  it('cerca viva: cobre o prédio de pé e só tem whenRoom diante das colunas de sala, nunca do miolo (Review Focus 3)', () => {
+    expect(gates([])).toEqual(new Set());
+    expect(gates([0])).toEqual(new Set([2]));
+    expect(gates([0, 1, 2, 3, 4, 5])).toEqual(new Set([7, 3, 2, 6]));
+    expect(gates([0, 1, 2, 3, 8])).toEqual(new Set([3, 2, 6, 9]));
+    // extensão: de world.x a world.x + world.w − 2, de 2 em 2 tiles (colunas 1–4 → x 16..80)
+    const xs = hedgesOf([0, 1]).map((p) => (p.x - TILE) / TILE);
+    expect(Math.min(...xs)).toBe(16);
+    expect(Math.max(...xs)).toBe(78);
+    expect(xs).toHaveLength(32);
+    expect(isCoreColumn(PRINCIPAL, 2) && isCoreColumn(PRINCIPAL, 3) && !isCoreColumn(PRINCIPAL, 4)).toBe(true);
+  });
+
+  it('pátio: cap a leste só com ends.east e a oeste só com ends.west, com o mesmo y/h (Review Focus 1)', () => {
+    // vaga 0 = coluna 4, norte (x 64..80)
+    const east = slotShell(0, { west: false, east: true });
+    expect(east.slot).toBe(0);
+    expect(east.rect).toEqual({ x: 64, y: 0, w: 16, h: 12 });
+    expect(east.walls.map((w) => w.kind)).toEqual(['face', 'cap']);
+    expect(east.walls[1]).toEqual({ kind: 'cap', x: 64 * TILE + 16 * TILE - 8, y: (CORRIDOR_Y - 2) * TILE, w: TILE / 2, h: 2 * TILE, style: EXTERIOR_WALL });
+    expect(east.windows.map((w) => w.id)).toEqual(['shell:0:janela0', 'shell:0:janela1', 'shell:0:janela2']);
+    // vaga 1 = coluna 1, norte (x 16..32)
+    const west = slotShell(1, { west: true, east: false });
+    expect(west.rect).toEqual({ x: 16, y: 0, w: 16, h: 12 });
+    expect(west.walls.map((w) => w.kind)).toEqual(['face', 'cap']);
+    expect(west.walls[1]).toEqual({ kind: 'cap', x: 16 * TILE, y: (CORRIDOR_Y - 2) * TILE, w: TILE / 2, h: 2 * TILE, style: EXTERIOR_WALL });
+    // vaga 3 = coluna 1, sul (x 16..32, y 17..29): as duas pontas
+    const both = slotShell(3, { west: true, east: true });
+    expect(both.rect).toEqual({ x: 16, y: SOUTH_Y, w: 16, h: 12 });
+    expect(both.walls.map((w) => w.kind)).toEqual(['south', 'cap', 'cap']);
+    const caps = both.walls.filter((w) => w.kind === 'cap');
+    expect(caps.map((w) => w.x).sort((a, b) => a - b)).toEqual([16 * TILE, 32 * TILE - 8]);
+    for (const w of caps) if (w.kind === 'cap') expect({ y: w.y, w: w.w, h: w.h }).toEqual({ y: SOUTH_Y * TILE, w: TILE / 2, h: TILE });
+    // vaga 2 = coluna 4, sul, sem ponta: sem cap; props do pátio pertencem à vaga
+    const none = slotShell(2, { west: false, east: false });
+    expect(none.walls.map((w) => w.kind)).toEqual(['south']);
+    expect(none.props.length).toBeGreaterThan(0);
+    expect(none.props.every((p) => p.slot === 2)).toBe(true);
+    expect(none.props.some((p) => p.kind === 'paving' && p.x === 64 * TILE + 7 * TILE && p.y === BUILDING_H * TILE)).toBe(true);
+  });
+
+  it('pátios do prédio: um por coluna de pé fora do miolo; cap leste só em hi, oeste só em lo (Review Focus 1 e 3)', () => {
+    // colunas de pé 1..6 com a 5 vazia
+    const blocks = existingBlocks([0, 1, 2, 3, 8]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].columns).toEqual({ lo: 1, hi: 6 });
+    const shells = shellsOf([0, 1, 2, 3, 8]);
+    expect(shells.map((s) => s.sh.slot)).toEqual([1, 3, 0, 2, 4, 6, 8, 9]);
+    expect(shells.map((s) => s.col)).toEqual([1, 1, 4, 4, 5, 5, 6, 6]);
+    expect(capsAt(shells, 16 * TILE)).toEqual([1, 3]); // oeste: só a coluna lo = 1
+    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([8, 9]); // leste: só a coluna hi = 6 (x 96..112, fora do envelope)
+    for (const s of shells) {
+      const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
+      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe(s.col === 1 || s.col === 6 ? 1 : 0);
+    }
+    expect(shells.some((s) => s.col === 2 || s.col === 3)).toBe(false);
+  });
+
+  it('pátios com a coluna 1 vazia entre a sala da coluna 0 e o miolo (vaga 5): cap oeste só na coluna 0, nenhum cap a leste porque a ponta leste é o miolo', () => {
+    // existingBlocks([5]) → colunas 0–3: a 0 tem a sala (vaga 5 = 0N), a 1 é pátio dos dois lados, a 2 e a 3 são miolo.
+    // O laço gera o shell também para a vaga 5, que tem sala: quem decide desenhá-lo é o frame (roomInSlot), como hoje.
+    expect(existingBlocks([5])[0].columns).toEqual({ lo: 0, hi: 3 });
+    const shells = shellsOf([5]);
+    expect(shells.map((s) => s.sh.slot)).toEqual([5, 7, 1, 3]);
+    expect(shells.map((s) => s.col)).toEqual([0, 0, 1, 1]);
+    expect(shells[0].sh.rect).toEqual({ x: 0, y: 0, w: 16, h: 12 }); // vaga 5 = coluna 0, norte
+    expect(shells[1].sh.rect).toEqual({ x: 0, y: SOUTH_Y, w: 16, h: 12 }); // vaga 7 = coluna 0, sul
+    expect(capsAt(shells, 0)).toEqual([5, 7]); // oeste: só a coluna lo = 0 (x0 = 0)
+    expect(capsAt(shells, 4 * COL_W * TILE - 8)).toEqual([]); // a ponta leste (hi = 3) é miolo: o laço a pula, sem shell e sem cap
+    for (const s of shells) {
+      const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
+      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe(s.col === 0 ? 1 : 0);
+    }
+    expect(shells.some((s) => s.col === 2 || s.col === 3)).toBe(false);
+    // a cerca viva só abre diante das vagas sul das colunas 0 e 1
+    expect(gates([5])).toEqual(new Set([7, 3]));
+  });
+
+  it('espelho a leste: sala só na coluna 5 (vaga 4) com a coluna 4 vazia no meio: cap leste só na coluna 5, nenhum cap a oeste', () => {
+    // existingBlocks([4]) → colunas 2–5: 2 e 3 miolo, a 4 é pátio dos dois lados, a 5 tem a sala (vaga 4 = 5N) e o pátio da vaga 6 ao sul
+    expect(existingBlocks([4])[0].columns).toEqual({ lo: 2, hi: 5 });
+    const shells = shellsOf([4]);
+    expect(shells.map((s) => s.sh.slot)).toEqual([0, 2, 4, 6]);
+    expect(shells.map((s) => s.col)).toEqual([4, 4, 5, 5]);
+    expect(shells[2].sh.rect).toEqual({ x: 80, y: 0, w: 16, h: 12 }); // vaga 4 = coluna 5, norte
+    expect(capsAt(shells, 5 * COL_W * TILE + COL_W * TILE - TILE / 2)).toEqual([4, 6]); // leste: só a coluna hi = 5 (x = 1528)
+    expect(capsAt(shells, 32 * TILE)).toEqual([]); // a ponta oeste (lo = 2) é miolo: sem shell e sem cap
+    for (const s of shells) {
+      const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
+      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe(s.col === 5 ? 1 : 0);
+    }
+    expect(gates([4])).toEqual(new Set([2, 6]));
+  });
+
+  it('pátios com as colunas 4 e 5 vazias entre o miolo e a sala da coluna 6 (vaga 8): cap leste só na coluna 6, nenhum cap a oeste porque a ponta oeste é o miolo', () => {
+    // existingBlocks([8]) → colunas 2–6: 2 e 3 miolo, 4 e 5 pátio dos dois lados, a 6 tem a sala (vaga 8 = 6N, transitório 7.5) e o pátio da vaga 9 ao sul
+    expect(existingBlocks([8])[0].columns).toEqual({ lo: 2, hi: 6 });
+    const shells = shellsOf([8]);
+    expect(shells.map((s) => s.sh.slot)).toEqual([0, 2, 4, 6, 8, 9]);
+    expect(shells.map((s) => s.col)).toEqual([4, 4, 5, 5, 6, 6]);
+    expect(shells[4].sh.rect).toEqual({ x: 96, y: 0, w: 16, h: 12 }); // vaga 8 = coluna 6, norte (fora do envelope)
+    expect(shells[5].sh.rect).toEqual({ x: 96, y: SOUTH_Y, w: 16, h: 12 }); // vaga 9 = coluna 6, sul
+    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([8, 9]); // leste: só a coluna hi = 6
+    expect(capsAt(shells, 32 * TILE)).toEqual([]); // a ponta oeste (lo = 2) é miolo: sem shell e sem cap
+    for (const s of shells) {
+      const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
+      expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe(s.col === 6 ? 1 : 0);
+    }
+    expect(shells.some((s) => s.col === 2 || s.col === 3)).toBe(false);
+    // a cerca viva abre diante das vagas sul das colunas 4, 5 e 6
+    expect(gates([8])).toEqual(new Set([2, 6, 9]));
   });
 });
