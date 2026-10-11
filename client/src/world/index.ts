@@ -7,8 +7,7 @@ import { DEFAULT_WORLD_OPTIONS, type Selection, type SocialEvent, type SoundCue,
 import { loadWorldAssets, type WorldAssets } from './assets';
 import { Camera, overviewFrame } from './camera';
 import { createDebug, type WorldDebug } from './debug';
-import { BUILDING_H, COL_W } from './constants';
-import { inRect } from './layout/geometry';
+import { inRect, rectPx } from './layout/geometry';
 import { attachInput, type Hit } from './input';
 import { rebaseSnapshot } from './playback';
 import { Overlay } from './render/overlay';
@@ -46,7 +45,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   let hiddenAt = 0;
   let userMoved = false;
   let framed = false;
-  let lastCols = -1;
+  /** Chave (`x,y,w,h` em tiles) do retângulo de pé no último reenquadramento; vazia = ainda não enquadrou. */
+  let lastRectKey = '';
   const abort = new AbortController();
 
   // ------------------------------------------------------------------ tamanho/DPR
@@ -65,7 +65,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     updateBounds();
   };
 
-  const buildingRect = () => ({ x: 0, y: 0, w: sim.building.cols * COL_W * TILE, h: BUILDING_H * TILE });
+  /** Retângulo de pé do prédio (núcleo e colunas com sala), em px de mundo; não começa em x 0. */
+  const buildingRect = () => rectPx(sim.building.rect);
 
   const updateBounds = () => {
     const b = buildingRect();
@@ -244,8 +245,11 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
         events.length = 0;
       }
       renderer.sync();
-      if (sim.building.cols !== lastCols) {
-        lastCols = sim.building.cols;
+      // reenquadra só quando o retângulo de pé muda (não a cada relayout): sala nova numa coluna de pé não mexe na câmera
+      const rect = sim.building.rect;
+      const rectKey = `${rect.x},${rect.y},${rect.w},${rect.h}`;
+      if (rectKey !== lastRectKey) {
+        lastRectKey = rectKey;
         updateBounds();
         if (!framed && sim.initialized) {
           overview(false);
@@ -330,7 +334,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     overlay = new Overlay(renderer.ctx, sim, renderer, camera);
     debug = createDebug(sim, renderer, camera, markMoved);
     cues = new SoundCues(sim, camera);
-    lastCols = -1;
+    lastRectKey = '';
     setHover(null);
   };
 
