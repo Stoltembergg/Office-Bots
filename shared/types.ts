@@ -13,8 +13,28 @@ export type AgentKind = 'main' | 'sub';
  * `provider` é opcional e AUSENTE quer dizer 'claude' (tudo o que existia antes do Codex continua igual).
  * - claude: Claude Code;
  * - codex: OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME).
+ * - hermes: perfis do Hermes trabalhando nos cartões do kanban (server/sources/hermes.ts, só leitura).
  */
-export type Provider = 'claude' | 'codex';
+export type Provider = 'claude' | 'codex' | 'hermes';
+
+/**
+ * Estado do cartão de um perfil do Hermes (escritorio.md, "O que vira o quê"):
+ * - running: cartão `running` (personagem na mesa digitando);
+ * - blocked: bloqueado esperando humano (levantou a mão; `reason` = 1ª linha do motivo);
+ * - guarded: placa vermelha (respawn_guarded repetido, 3+ falhas seguidas, running sem heartbeat >60 min ou bloqueio
+ *   por erro do sistema);
+ * - delivering: acabou de entregar ao revisor (review_requested / reatribuído a reviewer, judge, qa ou auditor).
+ */
+export type HermesCardState = 'running' | 'blocked' | 'guarded' | 'delivering';
+
+export interface HermesCard {
+  board: string;
+  taskId: string;
+  title: string;
+  state: HermesCardState;
+  /** Motivo curto (1ª linha do bloqueio, regra da placa vermelha, para quem entregou). */
+  reason?: string;
+}
 
 /**
  * Estado de alto nível de um agente — é o que dirige o comportamento do personagem.
@@ -185,6 +205,8 @@ export interface AgentInfo {
    * e perguntou pela caixa de entrada há pouco. Ver POST /api/messages.
    */
   canMessage?: boolean;
+  /** Perfil do Hermes (provider 'hermes'): o cartão que ele mostra agora; ausente = à toa. */
+  hermes?: HermesCard;
 }
 
 export interface RoomInfo {

@@ -9,6 +9,7 @@ import type {
   AgentStats,
   AgentStatus,
   FeedItem,
+  HermesCard,
   Notice,
   NoticeLevel,
   OfficeSnapshot,
@@ -99,6 +100,8 @@ export interface MainInput {
   startedAt: number;
   status: AgentStatus;
   waitingFor?: string;
+  /** Nome fixo do personagem (perfis do Hermes: o nome do perfil); ausente = sorteado pela sessão. */
+  name?: string;
 }
 
 export interface SubInput {
@@ -317,7 +320,7 @@ export class Office {
     const roomId = normalizeCwd(p.cwd);
     this.ensureRoom(roomId, now);
     const chosen = this.roomCharacter(roomId, p.id, p.sessionId);
-    const person = chosen ?? this.deps.names.assign(p.sessionId, this.takenNames());
+    const person = chosen ?? (p.name ? { name: p.name, look: 'm' as const } : this.deps.names.assign(p.sessionId, this.takenNames()));
     const info: AgentInfo = {
       id: p.id,
       kind: 'main',
@@ -347,6 +350,32 @@ export class Office {
     this.agents.set(p.id, rec);
     const acc = this.deps.accountName(p.account);
     this.notice('arrive', p.id, 'info', `👋 ${info.name} chegou em ${this.roomName(roomId)}${acc ? ` (${acc})` : ''}`, roomId);
+    this.markDirty();
+  }
+
+  /** Leva um principal para outra sala (perfil do Hermes que passou a mostrar um cartão de outro board). */
+  moveMain(id: string, cwd: string): void {
+    const rec = this.agents.get(id);
+    const roomId = normalizeCwd(cwd);
+    if (!rec || rec.info.roomId === roomId) return;
+    this.ensureRoom(roomId, this.now());
+    rec.info.roomId = roomId;
+    this.markDirty();
+  }
+
+  /** Cartão do Hermes que o agente mostra (undefined = à toa); o título do agente acompanha o do cartão. */
+  setHermes(id: string, card: HermesCard | undefined): void {
+    const rec = this.agents.get(id);
+    if (!rec) return;
+    const info = rec.info;
+    if (JSON.stringify(info.hermes) === JSON.stringify(card)) return;
+    if (card) {
+      info.hermes = { ...card };
+      info.title = card.title;
+    } else {
+      delete info.hermes;
+      delete info.title;
+    }
     this.markDirty();
   }
 
