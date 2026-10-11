@@ -208,7 +208,8 @@ export class Renderer {
       const r = s.rect;
       if (s.axis === 'h') {
         const ly = r.y * TILE + 6 * TILE + TILE / 2 - 1;
-        for (let x = r.x * TILE + 4; x < (r.x + r.w) * TILE; x += 24) {
+        // mesma fase das faixas além da base (x ≡ 4 mod 24 a partir de 0): a emenda não pula
+        for (let x = Math.ceil((r.x * TILE - 4) / 24) * 24 + 4; x < (r.x + r.w) * TILE; x += 24) {
           if (asphaltV.some(([x0, x1]) => x + 12 > x0 && x < x1)) continue;
           // sem tracejado dentro da faixa de pedestres
           if (s.cars && x + 12 > ENTRANCE_X * TILE - 4 && x < (ENTRANCE_X + ENTRANCE_W) * TILE + 4) continue;
@@ -216,7 +217,7 @@ export class Renderer {
         }
       } else {
         const lx = r.x * TILE + 5 * TILE + TILE / 2 - 1;
-        for (let y = r.y * TILE + 4; y < (r.y + r.h) * TILE; y += 24) {
+        for (let y = Math.ceil((r.y * TILE - 4) / 24) * 24 + 4; y < (r.y + r.h) * TILE; y += 24) {
           if (asphaltH.some(([y0, y1]) => y + 12 > y0 && y < y1)) continue;
           ctx.fillRect(lx, y, 2, 12);
         }

@@ -55,7 +55,7 @@ do meio (0.**3**.0).
   afastar mais (zoom mínimo 0,15).
 - **Chegada e saída pela porta.** Ninguém mais usa o elevador: quem chega surge na calçada, sobe o caminho de pedra
   e entra pela porta da recepção; quem vai embora sai pela porta, desce até a calçada, vira para um lado e some
-  andando. O elevador ficou de decoração, com a porta fechada, e o "ding" (Configurações › Sons › Elevador) toca na
+  andando. O elevador ficou de decoração, com a porta fechada, e o "ding" (Configurações › Sons › Porta de entrada) toca na
   porta quando alguém entra ou sai.
 - **Porta nos fundos do lounge.** O lounge ganhou uma porta na parede sul, de onde sai a passarela do anexo; enquanto
   o anexo não existe, ela dá para o jardim e ninguém passa por ela.

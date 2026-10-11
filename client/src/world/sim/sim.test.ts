@@ -4,7 +4,7 @@ import type { AppearanceParts } from '../../../../shared/appearance';
 import type { AgentInfo, OfficeSnapshot, RoomInfo, ShellJob } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
-import { FOOT_DY, TILE } from '../constants';
+import { FOOT_DX, FOOT_DY, TILE } from '../constants';
 import { CORRIDOR_ID } from '../layout/corridor';
 import { ENTRANCE_DOOR, SIDEWALK_TY } from '../layout/exterior';
 import { PRINCIPAL, standingColumns } from '../layout/geometry';
@@ -1081,7 +1081,7 @@ describe('espera de shell', () => {
 });
 
 describe('porta da rua (sem elevador)', () => {
-  const doorX = ENTRANCE_DOOR.tx * TILE + FOOT_DY * 0 + TILE / 2;
+  const doorX = ENTRANCE_DOOR.tx * TILE + FOOT_DX;
   const doorY = ENTRANCE_DOOR.ty * TILE + FOOT_DY;
   const walkY = SIDEWALK_TY * TILE + FOOT_DY;
 

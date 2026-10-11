@@ -135,6 +135,35 @@ describe('pedestres', () => {
     expect(p.ch.dir).toBe('right');
   });
 
+  it('não começa a atravessar com carro em cima da faixa nem com carro que ainda vai cruzá-la; só depois de livre', () => {
+    const l = life();
+    const p = ped(l, (GEO.crossX0 + GEO.crossX1) / 2 - 30, 1, 'n', true);
+    run(l, 0, 2000, 0);
+    expect(p.state).toBe('wait');
+    const red = GREEN_MS + YELLOW_MS + 100;
+    // carro parado em cima da faixa (passou da linha no fim do amarelo); o run sorteia carros, então a lista é zerada
+    l.cars.length = 0;
+    l.cars.push({ x: (GEO.crossX0 + GEO.crossX1) / 2, y: 0, dir: 1, speed: 0, v: 0, variant: 0 });
+    expect(l.crossingClear()).toBe(false);
+    run(l, red, 300, red);
+    expect(p.state).toBe('wait');
+    // carro já além da faixa, indo embora: livre
+    l.cars.length = 0;
+    l.cars.push({ x: GEO.crossX1 + 200, y: 560, dir: 1, speed: 0, v: 0, variant: 0 });
+    expect(l.crossingClear()).toBe(true);
+    // carro antes da linha de parada, vindo: ainda vai parar, livre
+    l.cars.length = 0;
+    l.cars.push({ x: GEO.stopEast - 100, y: 560, dir: 1, speed: 0, v: 0, variant: 0 });
+    expect(l.crossingClear()).toBe(true);
+    // carro entre a linha de parada e a faixa, prestes a passar: ocupado
+    l.cars.length = 0;
+    l.cars.push({ x: GEO.stopEast + 2, y: 560, dir: 1, speed: 0, v: 0, variant: 0 });
+    expect(l.crossingClear()).toBe(false);
+    l.cars.length = 0;
+    run(l, red, 50, red);
+    expect(p.state).toBe('cross');
+  });
+
   it('quem não quer atravessar passa direto pela faixa', () => {
     const l = life();
     const p = ped(l, GEO.crossX0 - 30, 1, 'n', false);

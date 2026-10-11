@@ -57,7 +57,7 @@ export class SoundSettingsGroup {
       'div',
       { class: 'ui-snd__details' },
       h('div', { class: 'ui-set ui-snd__vol' }, h('span', { class: 'ui-set__label', text: 'Volume' }), this.volume, this.volumeOut),
-      h('div', { class: 'ui-set ui-set--stack' }, h('span', { class: 'ui-set__label', text: 'Tocar' }), chipRow, h('span', { class: 'ui-set__hint', text: 'Avisos: sino e estalo · Teclado: quem digita nas salas à vista · Elevador: chegadas e saídas · Rodas: pingue-pongue e fliperama.' })),
+      h('div', { class: 'ui-set ui-set--stack' }, h('span', { class: 'ui-set__label', text: 'Tocar' }), chipRow, h('span', { class: 'ui-set__hint', text: 'Avisos: sino e estalo · Teclado: quem digita nas salas à vista · Porta de entrada: chegadas e saídas · Rodas: pingue-pongue e fliperama.' })),
     );
 
     this.el = h(

@@ -96,6 +96,10 @@ export const CAR_GAP = 44;
 const BRAKE_DIST = 110;
 /** Só começa a atravessar se ainda sobra este tanto de vermelho (a travessia leva ~2,3 s). */
 export const CROSS_MIN_RED_MS = 2_800;
+/** Folga somada ao tempo de travessia calculado pela velocidade do pedestre. */
+export const CROSS_SLACK_MS = 600;
+/** Margem (px) de cada lado da faixa que precisa estar sem carro para alguém começar a atravessar. */
+export const CROSS_CLEAR_PX = 20;
 /** Dois pedestres a menos de isto (px), em sentidos opostos, podem parar para conversar. */
 const TALK_DIST = 14;
 const TALK_CHANCE = 0.35;
@@ -184,10 +188,14 @@ export class StreetLife {
           break;
         }
         case 'wait': {
-          // na beira da faixa, de frente para a rua, até o sinal fechar para os carros (com tempo de sobra)
+          // na beira da faixa, de frente para a rua, até o sinal fechar para os carros, com tempo de sobra para
+          // a travessia deste pedestre (os lentos precisam de mais que CROSS_MIN_RED_MS) e com a faixa livre:
+          // um carro que passou da linha de parada no fim do amarelo ainda está em cima dela
           ch.setPose('stand');
           ch.dir = p.row === 'n' ? 'down' : 'up';
-          if (light === 'red' && redLeft(now, this.t0) >= CROSS_MIN_RED_MS) p.state = 'cross';
+          const target = p.row === 'n' ? this.geo.southY : this.geo.northY;
+          const need = Math.max(CROSS_MIN_RED_MS, (Math.abs(target - ch.y) / p.speed) * 1000 + CROSS_SLACK_MS);
+          if (light === 'red' && redLeft(now, this.t0) >= need && this.crossingClear()) p.state = 'cross';
           break;
         }
         case 'cross': {
@@ -223,6 +231,18 @@ export class StreetLife {
   }
 
   /** Dois que se cruzam na mesma calçada podem parar frente a frente por 3–6 s, trocando emoções. */
+  /** Nenhum carro em cima da faixa (com margem) nem prestes a passar por ela: só quem já passou ou ainda vai parar na linha. */
+  crossingClear(): boolean {
+    const { crossX0, crossX1 } = this.geo;
+    return this.cars.every((c) => {
+      if (c.x >= crossX0 - CROSS_CLEAR_PX && c.x <= crossX1 + CROSS_CLEAR_PX) return false;
+      const passed = c.dir > 0 ? c.x > crossX1 : c.x < crossX0;
+      if (passed) return true;
+      const stop = c.dir > 0 ? this.geo.stopEast : this.geo.stopWest;
+      return (stop - c.x) * c.dir > 0;
+    });
+  }
+
   private maybeTalk(p: Pedestrian, now: number): void {
     if (p.talked) return;
     for (const q of this.peds) {

@@ -14,7 +14,7 @@ const STATUS_HELP: [AgentStatus, string][] = [
   ['shell', 'Ampulheta sobre a cabeça: terminou o turno e fica na mesa esperando um shell terminar.'],
   ['idle', 'Terminou o turno e circula pelo escritório até a próxima instrução.'],
   ['done', 'Subagente que concluiu: entrega o resultado e vai embora.'],
-  ['offline', 'A sessão foi fechada: o personagem vai até o elevador e sai.'],
+  ['offline', 'A sessão foi fechada: o personagem sai pela porta e some pela calçada.'],
 ];
 
 const ICON_HELP: [string, string][] = [
