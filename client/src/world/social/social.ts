@@ -9,7 +9,7 @@ import type { AgentSocial, SocialEvent } from '../api';
 import { mulberry32 } from '../../../../shared/hash';
 import { TILE } from '../constants';
 import { CAFE_ID, LOUNGE_ID, RECEPTION_ID, RESTROOM_ID } from '../layout/core';
-import type { SpotDef } from '../layout/types';
+import type { AreaKind, SpotDef } from '../layout/types';
 import { FREE } from '../path/grid';
 import { isLongIdle } from '../sim/behavior';
 import { facing, type Character } from '../sim/character';
@@ -63,6 +63,8 @@ const LOSS_COLOR = '#ff8a8a';
 
 const KIND_LIST = Object.keys(KINDS) as GatherKind[];
 const PLACES: Readonly<Record<string, string>> = { [LOUNGE_ID]: 'Lounge', [CAFE_ID]: 'Copa', [RECEPTION_ID]: 'Recepção', [RESTROOM_ID]: 'Banheiros' };
+/** Lugar do evento para as áreas sem id fixo (as dos anexos), por kind. */
+const KIND_PLACES: Partial<Record<AreaKind, string>> = { hub: 'Saguão', restroom: 'Banheiros' };
 /** O que se perde/ganha em cada jogo (texto do extrato: "Perdeu no jokenpô para Rafaela"). */
 const MATCH_WHAT: Partial<Record<GatherKind, string>> = {
   rps: 'no jokenpô',
@@ -468,9 +470,23 @@ export class Social {
       case 'kitchen':
         return this.kitchenSeats(n, free, ch.rng);
       case 'mirror': {
-        const sinks = spots.ofKind('sink').filter((s) => s.areaId === RESTROOM_ID && free(s)).sort((a, b) => a.tx - b.tx);
-        if (n === 1) return sinks.length ? { seats: [sinks[Math.floor(ch.rng() * sinks.length)]], pool: [] } : null;
-        for (let i = 0; i + 1 < sinks.length; i++) if (sinks[i + 1].tx === sinks[i].tx + 1) return { seats: [sinks[i], sinks[i + 1]], pool: [] };
+        // pias livres de qualquer banheiro (kind restroom: o do núcleo ou o do anexo; a pia do saguão e a da copa não
+        // contam), agrupadas por área e com o banheiro mais perto de quem puxa primeiro
+        const byArea = new Map<string, SpotDef[]>();
+        for (const s of spots.ofKind('sink')) {
+          if (!free(s)) continue;
+          if (this.sim.building.areas.find((a) => a.id === s.areaId)?.kind !== 'restroom') continue;
+          const list = byArea.get(s.areaId) ?? [];
+          list.push(s);
+          byArea.set(s.areaId, list);
+        }
+        const dist = (list: SpotDef[]) => Math.min(...list.map((s) => Math.abs(s.tx - ch.tx) + Math.abs(s.ty - ch.ty)));
+        const rooms = [...byArea.values()].sort((a, b) => dist(a) - dist(b));
+        for (const sinks of rooms) {
+          sinks.sort((a, b) => a.tx - b.tx);
+          if (n === 1) return { seats: [sinks[Math.floor(ch.rng() * sinks.length)]], pool: [] };
+          for (let i = 0; i + 1 < sinks.length; i++) if (sinks[i + 1].tx === sinks[i].tx + 1) return { seats: [sinks[i], sinks[i + 1]], pool: [] };
+        }
         return null;
       }
     }
@@ -1231,7 +1247,8 @@ export class Social {
     if (this.events.length >= MAX_EVENTS) this.events.shift();
     const first = g.members.find((m) => m.spot);
     const area = first?.spot ? this.sim.spots.get(first.spot)?.areaId : undefined;
-    const place = (area && (PLACES[area] ?? this.sim.rooms.get(area)?.info.name)) || 'Escritório';
+    const kind = area ? this.sim.building.areas.find((a) => a.id === area)?.kind : undefined;
+    const place = (area && (PLACES[area] ?? this.sim.rooms.get(area)?.info.name ?? (kind && KIND_PLACES[kind]))) || 'Escritório';
     this.events.push({ id: `social:${g.id}:${++this.eventSeq}`, at: now, icon, agentId, text, place });
   }
 

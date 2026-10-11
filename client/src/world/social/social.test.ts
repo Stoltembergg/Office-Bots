@@ -236,4 +236,28 @@ describe('vida social', () => {
     expect(info.doing).toMatch(new RegExp(`^${KINDS.talk.emoji} ${KINDS.talk.label} com Caio`));
     expect(sim.social.info('ninguem')).toBeNull();
   });
+
+  it('espelho: a roda vai para o banheiro mais perto de quem puxa — o do anexo para quem está lá, o do núcleo para quem está no principal', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    // nove salas: a nona (/i) cai na vaga 8 e abre o anexo 1 (Sim.createRoom usa a menor vaga livre, não o slot do servidor)
+    const rooms = ['/a', '/b', '/c', '/d', '/e', '/f', '/g', '/h', '/i'].map((id, i) => room(id, i));
+    sim.applySnapshot(snap(rooms, [agent('ana', '/a', 'idle'), agent('iza', '/i', 'idle')]), clock.now);
+    run(sim, clock, 0.5);
+    const ana = sim.chars.get('ana')!;
+    const iza = sim.chars.get('iza')!;
+    // iza no corredor do anexo (y 53..57), ana no corredor do principal (y 12..16)
+    iza.placeAtTile(56, 55);
+    ana.placeAtTile(56, 14);
+    const pair = sim.social.plan('mirror', 2, iza)!;
+    expect(pair.seats).toHaveLength(2);
+    expect(pair.seats.map((s) => s.areaId)).toEqual(['anexo:0,1:wc', 'anexo:0,1:wc']);
+    expect(pair.seats[1].tx).toBe(pair.seats[0].tx + 1);
+    const core = sim.social.plan('mirror', 2, ana)!;
+    expect(core.seats.map((s) => s.areaId)).toEqual(['core:banheiros', 'core:banheiros']);
+    for (let i = 0; i < 20; i++) {
+      const solo = sim.social.plan('mirror', 1, iza)!;
+      expect(solo.seats[0].areaId).toBe('anexo:0,1:wc'); // a pia do saguão (kind hub) nunca entra na roda do espelho
+    }
+  });
 });
