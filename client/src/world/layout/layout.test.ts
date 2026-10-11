@@ -1149,9 +1149,9 @@ describe('área externa por blocos', () => {
     // props com 1, 4 e 8 salas; qualquer mudança que tire ou mova um prop do principal quebra aqui e exige re-pinar
     const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
     for (const [n, count, dg] of [
-      [1, 186, 892799],
-      [4, 209, -103794],
-      [8, 279, -683169],
+      [1, 188, 132789],
+      [4, 211, -590213],
+      [8, 281, -367917],
     ] as const) {
       const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
       expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);
@@ -1226,7 +1226,7 @@ describe('exterior da fase 3 (D5): ruas, props por posição, cercas e pátios p
   });
 
   it('Review Focus 4: nenhum prop em rua, calçada, bloco ou passarela com 17, 33 e 49 salas (menos o mobiliário da calçada); carros só na principal', () => {
-    const sidewalkFurniture = new Set(['lamp', 'bench', 'totem']);
+    const sidewalkFurniture = new Set(['lamp', 'bench', 'totem', 'traffic_light']);
     for (const n of [17, 33, 49]) {
       const { b, e } = ext(n);
       const bridges = bridgesFor(b);

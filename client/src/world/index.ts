@@ -155,7 +155,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     let bestDepth = -Infinity;
     const slack = Math.max(1, 3 / camera.zoom);
     for (const [id, h] of renderer.heads) {
-      if (!h.visible) continue;
+      // pedestres da rua (ids rua:…) são desenhados mas não são agentes: sem clique
+      if (!h.visible || !sim.chars.has(id)) continue;
       if (w.x < h.bx - slack || w.x > h.bx + h.bw + slack || w.y < h.by - slack || w.y > h.by + h.bh + slack) continue;
       if (h.depth > bestDepth) {
         bestDepth = h.depth;

@@ -192,6 +192,9 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   // banco e totem com a marca na calçada, dos dois lados do caminho de pedra (longe dos postes em x 34 e 44)
   place({ kind: 'bench', x: px(ENTRANCE_X + ENTRANCE_W + 4), y: px(south + 2) + 4, seed: 1 }, true);
   place({ kind: 'totem', x: px(ENTRANCE_X - 3) + 8, y: px(south + 2) + 4, seed: 2 }, true);
+  // semáforos da faixa de pedestres na frente da entrada: um em cada calçada, nas pontas opostas da faixa
+  place({ kind: 'traffic_light', x: px(ENTRANCE_X) - 6, y: px(south + 3) + 6, seed: 3 }, true);
+  place({ kind: 'traffic_light', x: px(ENTRANCE_X + ENTRANCE_W) + 6, y: px(south + 9) + 6, seed: 4 }, true);
 
   const streetY = px(south + 4);
   const streetH = px(5);

@@ -3,6 +3,7 @@
 // cinza-azulado escuro, 3–4 tons por material, luz vinda de cima/esquerda.
 import { mulberry32 } from '../../../../shared/hash';
 import type { ExteriorProp } from '../layout/types';
+import type { Light } from './street-life';
 
 export interface PropSprite {
   canvas: HTMLCanvasElement;
@@ -215,6 +216,45 @@ function lampSprite(): PropSprite {
   return { canvas: c, ax: 5, ay: 34 };
 }
 
+/** Semáforo dos carros à beira da calçada: poste com a caixa de três luzes; `state` acende uma delas. */
+export function trafficLightSprite(state: Light): PropSprite {
+  const key = `traffic_light:${state}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const [c, ctx] = makeCanvas(10, 38);
+  shadowEllipse(ctx, 5, 36, 4, 1, 0.25);
+  // poste
+  ctx.fillStyle = '#2e3648';
+  ctx.fillRect(4, 14, 2, 22);
+  ctx.fillStyle = '#4a5468';
+  ctx.fillRect(4, 14, 1, 22);
+  // caixa
+  ctx.fillStyle = '#2e3648';
+  ctx.fillRect(1, 0, 8, 15);
+  ctx.fillStyle = '#3a4152';
+  ctx.fillRect(2, 1, 6, 13);
+  const lights: [string, string, number, Light][] = [
+    ['#6b2b2b', '#ff6b5a', 2, 'red'],
+    ['#6b5a1e', '#ffd24a', 6, 'yellow'],
+    ['#1f5a32', '#5bf08a', 10, 'green'],
+  ];
+  for (const [off, on, y, which] of lights) {
+    const lit = which === state;
+    ctx.fillStyle = lit ? on : off;
+    ctx.fillRect(3, y, 4, 3);
+    if (lit) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(4, y, 1, 1);
+    }
+  }
+  // base
+  ctx.fillStyle = '#3a4152';
+  ctx.fillRect(3, 34, 4, 2);
+  const s = { canvas: c, ax: 5, ay: 36 };
+  cache.set(key, s);
+  return s;
+}
+
 function benchSprite(): PropSprite {
   const [c, ctx] = makeCanvas(26, 14);
   shadowEllipse(ctx, 13, 12, 11, 2, 0.22);
@@ -355,6 +395,10 @@ export function propSprite(prop: ExteriorProp): PropSprite {
       break;
     case 'totem':
       s = totemSprite();
+      break;
+    case 'traffic_light':
+      // o renderer desenha o estado atual do sinal; aqui só o padrão
+      s = trafficLightSprite('red');
       break;
     default:
       // 'paving' e outros tipos desenhados pelo próprio renderer

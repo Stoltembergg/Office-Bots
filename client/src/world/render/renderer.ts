@@ -5,11 +5,12 @@ import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type S
 import type { WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
-import { layoutExterior, slotShell, streetSides, type ExteriorLayout, type SlotShell } from '../layout/exterior';
+import type { AgentInfo } from '../../../../shared/types';
+import { ENTRANCE_W, ENTRANCE_X, layoutExterior, slotShell, streetSides, type ExteriorLayout, type SlotShell } from '../layout/exterior';
 import { inRect, isCoreColumn, slotAt, standingKey, STREET_W } from '../layout/geometry';
 import type { ExteriorProp, FloorPatch, TileRect } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
-import type { Character } from '../sim/character';
+import { Character } from '../sim/character';
 import type { RoomState } from '../sim/room-state';
 import { cobwebScale, hourglassIcon, HOURGLASS_FLIP_MS, STORM_LIFT } from '../sim/shell';
 import type { Sim } from '../sim/sim';
@@ -20,7 +21,8 @@ import { FIELD_CELL, fieldCells, fieldProp } from './field';
 import { RoomFxRenderer } from './github-fx';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
-import { carSprite, propSprite, shadowSprite } from './props';
+import { carSprite, propSprite, shadowSprite, trafficLightSprite } from './props';
+import { StreetLife, streetGeometry, type Car } from './street-life';
 import { countBadge, fallbackIcon } from './shell-sprites';
 import { buildAreaVis, furnitureSprites, opaqueBounds, paintShell, toWallVis, WALL_MARGIN, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
 
@@ -38,14 +40,6 @@ interface Ent {
   ref: FurnVis | Character | ExteriorProp | Car | null;
   area: AreaVis | null;
   scale: number;
-}
-
-interface Car {
-  x: number;
-  y: number;
-  dir: 1 | -1;
-  speed: number;
-  variant: number;
 }
 
 /** Posição da cabeça (px de mundo) de cada personagem desenhado neste frame. */
@@ -99,8 +93,8 @@ export class Renderer {
   private layoutVersion = -1;
   private assetsVersion = 0;
   private builtAssetsVersion = 0;
-  cars: Car[] = [];
-  private nextCarAt = 0;
+  /** Pedestres, semáforo e carros da rua (render/street-life.ts). */
+  readonly street: StreetLife;
   /** Faixas das ruas repetidas além da camada base (D1 de "rua viva"): o mundo não acaba na borda dos bounds. */
   private strips: { axis: 'h' | 'v'; rect: TileRect; pattern: CanvasPattern }[] = [];
   /** Campo de árvores procedural além dos bounds, por célula (cache do que já foi sorteado). */
@@ -137,6 +131,7 @@ export class Renderer {
   ) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.exterior = layoutExterior(sim.building.blocks, sim.building.bridges);
+    this.street = new StreetLife(streetGeometry(this.exterior), (seed) => this.makePedestrian(seed));
     this.lighting = new Lighting(art, sim);
   }
 
@@ -192,6 +187,7 @@ export class Renderer {
   /** Camada base: área externa, pátios das vagas vazias e fechamentos do corredor, por coluna de pé de cada bloco. */
   private buildBase(): void {
     this.exterior = layoutExterior(this.sim.building.blocks, this.sim.building.bridges);
+    this.street.geo = streetGeometry(this.exterior);
     const b = this.exterior.bounds;
     this.baseX = b.x * TILE;
     this.baseY = b.y * TILE;
@@ -214,6 +210,8 @@ export class Renderer {
         const ly = r.y * TILE + 6 * TILE + TILE / 2 - 1;
         for (let x = r.x * TILE + 4; x < (r.x + r.w) * TILE; x += 24) {
           if (asphaltV.some(([x0, x1]) => x + 12 > x0 && x < x1)) continue;
+          // sem tracejado dentro da faixa de pedestres
+          if (s.cars && x + 12 > ENTRANCE_X * TILE - 4 && x < (ENTRANCE_X + ENTRANCE_W) * TILE + 4) continue;
           ctx.fillRect(x, ly, 12, 2);
         }
       } else {
@@ -223,6 +221,14 @@ export class Renderer {
           ctx.fillRect(lx, y, 2, 12);
         }
       }
+    }
+    // faixa de pedestres na frente da entrada: barras brancas atravessando o asfalto da rua principal
+    const main = streets.find((s) => s.cars);
+    if (main) {
+      const y0 = (main.rect.y + 4) * TILE;
+      const y1 = (main.rect.y + 9) * TILE;
+      ctx.fillStyle = 'rgba(245,245,240,0.85)';
+      for (let y = y0 + 3; y + 4 <= y1 - 2; y += 8) ctx.fillRect(ENTRANCE_X * TILE + 2, y, ENTRANCE_W * TILE - 4, 4);
     }
     this.buildStrips(streets);
     this.shells = [];
@@ -456,8 +462,9 @@ export class Renderer {
       }
       this.drawStripsBeyond(vx0, vy0, vx1, vy1);
     }
-    // carros de uma borda à outra da união (base ∪ visão): nunca fora do asfalto, mesmo com a câmera afastada
-    this.updateCars(now, dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60);
+    // carros e pedestres de uma borda à outra da união (base ∪ visão): nunca fora do asfalto ou da calçada,
+    // mesmo com a câmera afastada
+    this.street.update(now, dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60);
     const visible = (x: number, y: number, w: number, h: number) => x < vx1 && x + w > vx0 && y < vy1 && y + h > vy0;
 
     // ---- camada base (só a parte visível)
@@ -545,6 +552,12 @@ export class Renderer {
       if (lifted.has(ch)) this.elevated.push(ch);
       else push(K.Char, ch.depth(), ch, null, 1);
     }
+    // pedestres da rua: personagens sem agente, só desenhados
+    for (const p of this.street.peds) {
+      const ch = p.ch;
+      if (ch.alpha <= 0.01 || !visible(ch.x - 24, ch.y - 48, 48, 56)) continue;
+      push(K.Char, ch.depth(), ch, null, 1);
+    }
     for (const prop of this.exterior.props) {
       if (!visible(prop.x - 24, prop.y - 56, 48, 60)) continue;
       let alpha = 1;
@@ -622,7 +635,7 @@ export class Renderer {
 
   /** Remove entradas de personagens que já saíram. */
   pruneHeads(): void {
-    for (const id of this.heads.keys()) if (!this.sim.chars.has(id)) this.heads.delete(id);
+    for (const id of this.heads.keys()) if (!this.sim.chars.has(id) && !this.street.has(id)) this.heads.delete(id);
   }
 
   /** Entrada do pool de entidades deste frame, acrescentada a `list`. */
@@ -1234,7 +1247,41 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Carros da rua (para a luz: faróis à noite). */
+  get cars(): readonly Car[] {
+    return this.street.cars;
+  }
+
+  /** Pedestre da rua: personagem com aparência pela semente e sem agente por trás (id rua:…). */
+  private makePedestrian(seed: number): Character {
+    const look = seed % 2 ? 'f' : 'm';
+    const info: AgentInfo = {
+      id: `rua:${seed.toString(36)}`,
+      kind: 'main',
+      roomId: '',
+      name: '',
+      look,
+      role: 'pedestre',
+      sessionId: '',
+      account: '',
+      status: 'idle',
+      recent: [],
+      tasks: [],
+      startedAt: 0,
+      lastEventAt: 0,
+      statusSince: 0,
+      stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 },
+      seed,
+    };
+    return new Character(info, this.art.appearanceFromSeed(seed, { look, sub: false }));
+  }
+
   private drawProp(prop: ExteriorProp, alpha: number): void {
+    if (prop.kind === 'traffic_light') {
+      const s = trafficLightSprite(this.street.light(this.clock()));
+      this.ctx.drawImage(s.canvas, Math.round(prop.x - s.ax), Math.round(prop.y - s.ay));
+      return;
+    }
     if (prop.kind === 'paving') {
       const c = this.pavingCanvas(prop);
       if (alpha < 1) this.ctx.globalAlpha = alpha;
@@ -1305,16 +1352,6 @@ export class Renderer {
         if (p) push(K.Prop, p.y, p, null, 1);
       }
     }
-  }
-
-  private updateCars(now: number, dt: number, x0: number, x1: number): void {
-    if (now >= this.nextCarAt) {
-      this.nextCarAt = now + 4000 + Math.random() * 9000;
-      const lane = this.exterior.lanes[Math.floor(Math.random() * this.exterior.lanes.length)];
-      if (lane) this.cars.push({ x: lane.dir > 0 ? x0 : x1, y: lane.y, dir: lane.dir, speed: 38 + Math.random() * 30, variant: Math.floor(Math.random() * 6) });
-    }
-    for (const c of this.cars) c.x += c.dir * c.speed * Math.min(dt, 0.1);
-    if (this.cars.length) this.cars = this.cars.filter((c) => c.x >= x0 - 10 && c.x <= x1 + 10);
   }
 
   private drawPingPong(now: number): void {
