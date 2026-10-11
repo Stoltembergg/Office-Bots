@@ -1,6 +1,6 @@
 // Montagem do prédio: núcleo + corredor + salas de projeto -> grade de caminhabilidade e spots.
 import { FURNITURE } from '../../art/api';
-import { BUILDING_H, COL_W } from '../constants';
+import { BUILDING_H, COL_W, NORTH_Y, ROOM_H, SOUTH_Y } from '../constants';
 import { BLOCKED, FREE, SEAT, WalkGrid } from '../path/grid';
 import { furnitureBlocks, furnitureIsSeat } from './builder';
 import { layoutCafe, layoutLounge, layoutReception, layoutRestroom } from './core';
@@ -20,9 +20,17 @@ export interface BuildingLayout {
 
 let coreCache: AreaLayout[] | null = null;
 
-/** Áreas fixas do núcleo (calculadas uma vez). */
+/**
+ * Áreas fixas do núcleo nos retângulos de hoje (x 0 e 16), calculadas uma vez. Compat até a Tarefa 5, quando
+ * a montagem passa a usar `coreAreas(block)` de core.ts e este cache sai.
+ */
 export function coreAreas(): AreaLayout[] {
-  return (coreCache ??= [layoutReception(), layoutRestroom(), layoutCafe(), layoutLounge()]);
+  return (coreCache ??= [
+    layoutReception({ x: 0, y: NORTH_Y, w: COL_W, h: ROOM_H }),
+    layoutRestroom({ x: 0, y: SOUTH_Y, w: COL_W, h: ROOM_H }),
+    layoutCafe({ x: COL_W, y: NORTH_Y, w: COL_W, h: ROOM_H }),
+    layoutLounge({ x: COL_W, y: SOUTH_Y, w: COL_W, h: ROOM_H }),
+  ]);
 }
 
 /** Marca na grade as células caminháveis de uma área, os bloqueios e os assentos. */

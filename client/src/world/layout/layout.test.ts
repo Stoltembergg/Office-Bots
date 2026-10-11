@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { FURNITURE, TILE, type FurnitureKind, type RoomTheme } from '../../art/api';
 import { BUILDING_H, COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
 import { assembleBuilding, coreAreas } from './building';
-import { columnsFor, legacySlotAt, slotColumn, slotRect, slotSide } from './geometry';
+import { PRINCIPAL, columnsFor, legacySlotAt, slotColumn, slotRect, slotSide } from './geometry';
 import { layoutProjectRoom, roomVariant } from './room';
 import { layoutExterior, slotShell } from './exterior';
-import { RECEPTION_ID } from './core';
+import * as core from './core';
 import type { AreaLayout } from './types';
 
 const theme: RoomTheme = {
@@ -56,7 +56,7 @@ describe('layout do prédio', () => {
   const rooms = roomsFor(slots);
   const cols = columnsFor(slots);
   const b = assembleBuilding(cols, rooms);
-  const reception = coreAreas().find((a) => a.id === RECEPTION_ID)!;
+  const reception = coreAreas().find((a) => a.id === core.RECEPTION_ID)!;
   const elevator = reception.spots.find((s) => s.kind === 'elevator')!;
   const reach = b.grid.reachableFrom(elevator.tx, elevator.ty);
   const reachable = (x: number, y: number) => reach[b.grid.key(x, y)] === 1;
@@ -234,5 +234,100 @@ describe('itens de parede', () => {
     const restroom = coreAreas().find((a) => a.kind === 'restroom')!;
     expect(restroom.wallItems.some((w) => w.kind === 'door_frame')).toBe(true);
     for (const room of roomsFor([1, 3, 7])) expect(room.wallItems.some((w) => w.kind === 'door_frame'), room.id).toBe(true);
+  });
+});
+
+describe('núcleo por bloco (coreAreas)', () => {
+  const areas = () => core.coreAreas(PRINCIPAL);
+  const byId = (id: string) => areas().find((a) => a.id === id)!;
+  const inside = (r: { x: number; y: number; w: number; h: number }, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+
+  it('monta recepção, WC, copa e lounge nas colunas 2 e 3 do principal, com os ids de hoje', () => {
+    expect(areas().map((a) => a.id)).toEqual(['core:recepcao', 'core:banheiros', 'core:copa', 'core:lounge']);
+    expect(byId('core:recepcao').rect).toEqual({ x: 32, y: 0, w: 16, h: 12 });
+    expect(byId('core:banheiros').rect).toEqual({ x: 32, y: 17, w: 16, h: 12 });
+    expect(byId('core:copa').rect).toEqual({ x: 48, y: 0, w: 16, h: 12 });
+    expect(byId('core:lounge').rect).toEqual({ x: 48, y: 17, w: 16, h: 12 });
+    // os elevadores (cx 3 e 6,5 locais) acompanham a coluna
+    expect(byId('core:recepcao').spots.filter((s) => s.kind === 'elevator').map((s) => s.tx)).toEqual([34, 38]);
+  });
+
+  it('as portas do WC e do lounge acompanham o retângulo da área e continuam caminháveis', () => {
+    expect(byId('core:banheiros').door).toEqual({ x: 39, y: 17, w: 2, h: 2 });
+    expect(byId('core:banheiros').walkable).toContainEqual({ x: 39, y: 17, w: 2, h: 2 });
+    expect(byId('core:lounge').door).toEqual({ x: 55, y: 17, w: 3, h: 2 });
+    expect(byId('core:lounge').walkable).toContainEqual({ x: 55, y: 17, w: 3, h: 2 });
+  });
+
+  it('nada fica fora do retângulo da área (nenhum número absoluto sobrou)', () => {
+    for (const a of areas()) {
+      const r = a.rect;
+      const px = { x: r.x * TILE, y: r.y * TILE, w: r.w * TILE, h: r.h * TILE };
+      for (const t of [...a.walkable, ...(a.blocked ?? []), ...(a.door ? [a.door] : [])]) {
+        expect(inside(r, t.x, t.y) && inside(r, t.x + t.w - 1, t.y + t.h - 1), `${a.id} tiles ${t.x},${t.y} ${t.w}×${t.h}`).toBe(true);
+      }
+      for (const f of a.furniture) expect(inside(r, f.tx, f.ty), f.id).toBe(true);
+      for (const s of a.spots) expect(inside(r, s.tx, s.ty), s.id).toBe(true);
+      for (const w of a.wallItems) expect(w.cx >= px.x && w.cx <= px.x + px.w && w.baseY >= px.y && w.baseY <= px.y + px.h, w.id).toBe(true);
+      for (const w of [...a.walls, ...a.floors, ...a.rugs]) expect(w.x >= px.x && w.x + w.w <= px.x + px.w && w.y >= px.y && w.y <= px.y + px.h, `${a.id} px ${w.x},${w.y}`).toBe(true);
+    }
+  });
+
+  it('chamar de novo para o mesmo bloco devolve o mesmo array (cache por blockKey)', () => {
+    expect(core.coreAreas(PRINCIPAL)).toBe(areas());
+    expect(core.coreAreas({ bx: 0, by: 0 })).toBe(areas());
+  });
+
+  it('as funções de área aceitam o retângulo antigo (x 0 e 16): nada se move antes da virada', () => {
+    const reception = core.layoutReception({ x: 0, y: 0, w: 16, h: 12 });
+    expect(reception.rect).toEqual({ x: 0, y: 0, w: 16, h: 12 });
+    expect(reception.walkable).toEqual([{ x: 1, y: 2, w: 14, h: 10 }]);
+    expect(core.layoutRestroom({ x: 0, y: 17, w: 16, h: 12 }).door).toEqual({ x: 7, y: 17, w: 2, h: 2 });
+    expect(core.layoutCafe({ x: 16, y: 0, w: 16, h: 12 }).rect).toEqual({ x: 16, y: 0, w: 16, h: 12 });
+    expect(core.layoutLounge({ x: 16, y: 17, w: 16, h: 12 }).door).toEqual({ x: 23, y: 17, w: 3, h: 2 });
+    // compat até a Tarefa 5: o prédio de hoje continua montando o núcleo em x 0 e 16
+    expect(coreAreas().map((a) => a.rect.x)).toEqual([0, 0, 16, 16]);
+  });
+});
+
+describe('entrada decorativa na face norte da recepção', () => {
+  /** A recepção na coluna 2 do principal (x 32..48). */
+  const reception = () => core.layoutReception({ x: 32, y: 0, w: 16, h: 12 });
+  /** Largura em tiles de um item de parede: a porta fechada cobre 3 tiles (o footprint de `door_frame` é o da `single`). */
+  const tilesOf = (w: { kind: FurnitureKind; variant?: string }) => (w.kind === 'door_frame' && w.variant === 'closed' ? 3 : FURNITURE[w.kind].footprint.w);
+
+  it('há uma porta fechada de 3 tiles em lx 7,5..10,5, só desenho: sem vão na face, sem porta e sem mudar o walk', () => {
+    const r = reception();
+    const doors = r.wallItems.filter((w) => w.kind === 'door_frame');
+    expect(doors).toHaveLength(1);
+    expect(doors[0].variant).toBe('closed');
+    expect(doors[0].on).toBe('face');
+    expect(doors[0].cx).toBe((32 + 9) * TILE);
+    for (const w of r.walls) if (w.kind === 'face') expect(w.doorways).toBeUndefined();
+    expect(r.door).toBeUndefined();
+    expect(r.walkable).toEqual([{ x: 33, y: 2, w: 14, h: 10 }]);
+  });
+
+  it('elevadores, porta, placa, relógio e quadro cabem na face sem se sobrepor', () => {
+    const spans = reception()
+      .wallItems.filter((w) => w.on === 'face')
+      .map((w) => ({ kind: w.kind, x0: w.cx - (tilesOf(w) * TILE) / 2, x1: w.cx + (tilesOf(w) * TILE) / 2 }))
+      .sort((a, b) => a.x0 - b.x0);
+    expect([...spans.map((s) => s.kind)].sort()).toEqual(['clock', 'door_frame', 'elevator', 'elevator', 'painting', 'sign']);
+    for (let i = 1; i < spans.length; i++) expect(spans[i].x0, `${spans[i].kind} sobre ${spans[i - 1].kind}`).toBeGreaterThanOrEqual(spans[i - 1].x1);
+    // dentro da face (lx 0,5..15,5; as caps ocupam 0..0,5 e 15,5..16)
+    for (const s of spans) expect(s.x0 >= 32.5 * TILE && s.x1 <= 47.5 * TILE, s.kind).toBe(true);
+    // elevadores (2..4 e 5,5..7,5) e placa (10,5..13,5) onde o contrato manda; a porta logo a leste do segundo elevador
+    const at = (kind: FurnitureKind) => spans.filter((s) => s.kind === kind).map((s) => [s.x0 / TILE - 32, s.x1 / TILE - 32]);
+    expect(at('elevator')).toEqual([
+      [2, 4],
+      [5.5, 7.5],
+    ]);
+    expect(at('door_frame')).toEqual([[7.5, 10.5]]);
+    expect(at('sign')).toEqual([[10.5, 13.5]]);
+  });
+
+  it('nenhum item da face norte fica atrás de um móvel alto', () => {
+    expect(hiddenWallItems(reception())).toEqual([]);
   });
 });

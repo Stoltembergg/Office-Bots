@@ -1,8 +1,10 @@
-// Núcleo do prédio (colunas 0 e 1): recepção com elevadores, banheiros, copa e lounge.
+// Núcleo do prédio principal (colunas 2 e 3 do bloco): recepção com elevadores, banheiros, copa e lounge.
+// Cada área recebe o retângulo (16×12, tiles absolutos) da coluna em que fica; tudo dentro dela é local a ele.
 import type { WallStyle } from '../../art/api';
-import { COL_W, NORTH_Y, ROOM_H, SOUTH_Y, TILE } from '../constants';
+import { TILE } from '../constants';
 import { AreaBuilder, SEATED_SORT_BIAS } from './builder';
-import type { AreaLayout } from './types';
+import { blockColumnRect, blockKey, type BlockId } from './geometry';
+import type { AreaLayout, TileRect } from './types';
 
 export const RECEPTION_ID = 'core:recepcao';
 export const RESTROOM_ID = 'core:banheiros';
@@ -22,8 +24,8 @@ export const CORE_WALLS = {
 /** Centros (em tiles locais) dos dois elevadores na face norte da recepção. */
 export const ELEVATOR_CX = [3, 6.5] as const;
 
-export function layoutReception(): AreaLayout {
-  const b = new AreaBuilder(RECEPTION_ID, 'reception', { x: 0, y: NORTH_Y, w: COL_W, h: ROOM_H });
+export function layoutReception(rect: TileRect): AreaLayout {
+  const b = new AreaBuilder(RECEPTION_ID, 'reception', rect);
   const wall = CORE_WALLS.reception;
   b.floor('marble', 0, 0, 16, 12, 101);
   b.rug(1.5, 2.2, 6.5, 2.6, '#3d5a80', 102);
@@ -38,9 +40,14 @@ export function layoutReception(): AreaLayout {
     const lx = Math.floor(cx - 0.5);
     b.spot('elevator', lx, 2, 'up', { x: b.px(cx), y: b.py(2) + 2, group: `elevator:${i}` });
   });
-  b.wall('sign', 11, undefined, { order: 0.9 });
-  b.wall('clock', 8.15, undefined, { order: 0.7 });
-  b.wall('painting', 14.25, undefined, { order: 0.6 });
+  // entrada decorativa (spec 4): porta fechada de 3 tiles em lx 7,5..10,5, logo a leste do segundo elevador.
+  // Só desenho: sem vão na face, sem `door` e sem tile caminhável (quem chega e vai embora usa os elevadores).
+  b.wall('door_frame', 9, 'closed', { order: 0.05 });
+  // face norte sem sobreposição: elevadores 2..4 e 5,5..7,5 | relógio 4,25..5,25 | porta 7,5..10,5 |
+  // placa 10,5..13,5 | quadro 13,5..15,5 (a cap leste começa em 15,5)
+  b.wall('sign', 12, undefined, { order: 0.9 });
+  b.wall('clock', 4.75, undefined, { order: 0.7 });
+  b.wall('painting', 14.5, undefined, { order: 0.6 });
 
   b.furn('plant_tall', 1, 2, 'monstera', { order: 0.2 });
   b.furn('plant_tall', 14, 4, 'ficus', { order: 0.21 });
@@ -71,8 +78,8 @@ export function layoutReception(): AreaLayout {
   return a;
 }
 
-export function layoutRestroom(): AreaLayout {
-  const b = new AreaBuilder(RESTROOM_ID, 'restroom', { x: 0, y: SOUTH_Y, w: COL_W, h: ROOM_H });
+export function layoutRestroom(rect: TileRect): AreaLayout {
+  const b = new AreaBuilder(RESTROOM_ID, 'restroom', rect);
   const wall = CORE_WALLS.restroom;
   b.floor('tile_white', 0, 0, 16, 12, 201);
   // tapetinho só na frente das pias (nada de tapete grande no meio do banheiro)
@@ -84,7 +91,7 @@ export function layoutRestroom(): AreaLayout {
   b.cap(15.5, 0, 0.5, 12, wall);
   b.walk(1, 2, 14, 9);
   b.walk(7, 0, 2, 2);
-  b.area.door = { x: 7, y: SOUTH_Y, w: 2, h: 2 };
+  b.area.door = { x: b.x0 + 7, y: b.y0, w: 2, h: 2 };
 
   // pias com espelho
   for (let i = 0; i < 3; i++) {
@@ -115,8 +122,8 @@ export function layoutRestroom(): AreaLayout {
   return b.build();
 }
 
-export function layoutCafe(): AreaLayout {
-  const b = new AreaBuilder(CAFE_ID, 'cafe', { x: COL_W, y: NORTH_Y, w: COL_W, h: ROOM_H });
+export function layoutCafe(rect: TileRect): AreaLayout {
+  const b = new AreaBuilder(CAFE_ID, 'cafe', rect);
   const wall = CORE_WALLS.cafe;
   b.floor('tile_check', 0, 0, 16, 12, 301);
   // frontão de mármore atrás da bancada + parede clara com janelas
@@ -186,8 +193,8 @@ export function layoutCafe(): AreaLayout {
   return b.build();
 }
 
-export function layoutLounge(): AreaLayout {
-  const b = new AreaBuilder(LOUNGE_ID, 'lounge', { x: COL_W, y: SOUTH_Y, w: COL_W, h: ROOM_H });
+export function layoutLounge(rect: TileRect): AreaLayout {
+  const b = new AreaBuilder(LOUNGE_ID, 'lounge', rect);
   const wall = CORE_WALLS.lounge;
   b.floor('wood', 0, 0, 16, 12, 401);
   b.rug(1.5, 3.2, 7, 5.2, '#4f8a5b', 402);
@@ -200,7 +207,7 @@ export function layoutLounge(): AreaLayout {
   b.cap(15.5, 0, 0.5, 12, wall);
   b.walk(1, 2, 14, 9);
   b.walk(7, 0, 3, 2);
-  b.area.door = { x: COL_W + 7, y: SOUTH_Y, w: 3, h: 2 };
+  b.area.door = { x: b.x0 + 7, y: b.y0, w: 3, h: 2 };
 
   b.wall('tv', 4.5, undefined, { order: 0.4 });
   b.wall('painting', 1.75, undefined, { order: 0.5 });
@@ -245,4 +252,24 @@ export function layoutLounge(): AreaLayout {
   b.spot('watch', 10, 5, 'down', { group: 'watch:pingpong', dx: 2 });
   b.spot('watch', 12, 5, 'down', { group: 'watch:pingpong', dx: -2 });
   return b.build();
+}
+
+const coreCache = new Map<string, AreaLayout[]>();
+
+/**
+ * As quatro áreas do núcleo de um bloco: recepção e WC na coluna 2, copa e lounge na coluna 3 (no principal,
+ * x 32..64). Calculadas uma vez por bloco (chave `blockKey`): a mesma lista volta a cada chamada.
+ */
+export function coreAreas(block: BlockId): AreaLayout[] {
+  const key = blockKey(block);
+  const cached = coreCache.get(key);
+  if (cached) return cached;
+  const areas = [
+    layoutReception(blockColumnRect(block, 2, 'north')),
+    layoutRestroom(blockColumnRect(block, 2, 'south')),
+    layoutCafe(blockColumnRect(block, 3, 'north')),
+    layoutLounge(blockColumnRect(block, 3, 'south')),
+  ];
+  coreCache.set(key, areas);
+  return areas;
 }
