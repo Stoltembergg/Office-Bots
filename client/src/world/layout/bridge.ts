@@ -1,6 +1,7 @@
 // Passarela entre blocos (spec 3.6/3.7) como área: piso de chapas e tiles caminháveis nos trechos, sem paredes,
 // guarda-corpo em cada borda de tile que não dá em outro trecho nem numa porta. Não entra na camada base: o render
 // desenha a passarela numa camada elevada, depois de tudo o que está no chão.
+import { TILE } from '../constants';
 import { AreaBuilder } from './builder';
 import { inRect, type BridgeLayout } from './geometry';
 import type { AreaLayout, TileRect } from './types';
@@ -40,7 +41,9 @@ export function layoutBridge(bridge: BridgeLayout): AreaLayout {
       for (let tx = r.x; tx < r.x + r.w; tx++) {
         for (const [side, dx, dy] of SIDES) {
           if (on(tx + dx, ty + dy) || opening(tx + dx, ty + dy)) continue;
-          b.furn('railing', tx - rect.x, ty - rect.y, side, { order: 0.9 });
+          // as variantes laterais são desenhadas no centro do tile; o deslocamento em px as leva à borda (ver `railing` em common.ts)
+          const shift = side === 'w' ? -TILE / 2 : side === 'e' ? TILE / 2 : undefined;
+          b.furn('railing', tx - rect.x, ty - rect.y, side, { order: 0.9, dx: shift });
         }
       }
     }

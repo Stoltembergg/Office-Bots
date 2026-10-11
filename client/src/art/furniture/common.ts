@@ -768,7 +768,7 @@ export function railing(variant: string | undefined): BufFurniture {
   };
   if (variant === 'w' || variant === 'e') {
     // Desenhado no centro do tile, com a âncora dentro do sprite; quem posiciona leva para a borda com
-    // dx = -8 (oeste) ou +8 (leste). O brilho do montante fica do lado de fora da passarela.
+    // dx = -8 (oeste) ou +8 (leste). O brilho do montante fica do lado de dentro da passarela, voltado para o piso.
     const dkX = variant === 'w' ? 7 : 8;
     const hiX = variant === 'w' ? 8 : 7;
     const postV = (y0: number, y1: number) => {

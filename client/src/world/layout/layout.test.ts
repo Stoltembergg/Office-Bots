@@ -6,7 +6,7 @@ import { layoutBridge } from './bridge';
 import { assembleBuilding, type BuildingLayout } from './building';
 import * as core from './core';
 import { CORRIDOR_ID, corridorId } from './corridor';
-import { bridgesFor, existingBlocks, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
+import { bridgesFor, existingBlocks, inRect, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
 import { annexRestroomId, hubAreas, hubId, layoutHub } from './hub';
 import { layoutProjectRoom, roomVariant } from './room';
 import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, layoutExterior, slotShell, type SlotShell } from './exterior';
@@ -307,8 +307,13 @@ describe('montagem por blocos', () => {
   });
 });
 
-describe('layout do prédio', () => {
-  const slots = [0, 1, 2, 3, 4, 7];
+/** Invariantes do prédio inteiro, nos dois cenários: só o principal (fase 1) e o anexo 1 cheio mais a coluna 6 do principal. */
+const BUILDING_SCENARIOS: [string, number[]][] = [
+  ['principal com 6 salas', [0, 1, 2, 3, 4, 7]],
+  ['anexo 1 cheio e coluna 6 do principal (17 salas)', Array.from({ length: 17 }, (_, i) => i)],
+];
+
+describe.each(BUILDING_SCENARIOS)('layout do prédio: %s', (_name, slots) => {
   const rooms = roomsFor(slots);
   const b = assembleBuilding(existingBlocks(slots), rooms);
   const reception = b.areas.find((a) => a.id === core.RECEPTION_ID)!;
@@ -316,7 +321,7 @@ describe('layout do prédio', () => {
   const elevator = reception.spots.find((s) => s.kind === 'elevator')!;
   const reach = b.grid.reachableFrom(elevator.tx, elevator.ty);
   const reachable = (x: number, y: number) => reach[b.grid.key(x, y)] === 1;
-  // colunas de pé 0..5 (vagas 5 → 0N, 7 → 0S a oeste; 4 → 5N a leste); 4 delas são de projeto
+  // colunas de pé do principal (0..5 com 6 salas; 0..6 com 17); 2 delas são o núcleo, as outras de projeto
   const standing = b.blocks[0].columns.hi - b.blocks[0].columns.lo + 1;
   const project = standing - 2;
 
@@ -337,9 +342,9 @@ describe('layout do prédio', () => {
       expect(door).toBeDefined();
       for (let x = door.x; x < door.x + door.w; x++) {
         for (let y = door.y; y < door.y + door.h; y++) expect(b.grid.walkable(x, y)).toBe(true);
-        // tile do corredor imediatamente fora da porta
+        // tile do corredor (do bloco da sala) imediatamente fora da porta
         const outside = room.side === 'north' ? door.y + door.h : door.y - 1;
-        expect(outside >= CORRIDOR_Y && outside < SOUTH_Y).toBe(true);
+        expect(b.areas.some((a) => a.kind === 'corridor' && inRect(a.rect, x, outside)), `${room.id}: porta não dá num corredor`).toBe(true);
         expect(reachable(x, outside)).toBe(true);
       }
       // o interior inteiro (fora móveis) é alcançável
@@ -488,7 +493,9 @@ describe('variações das salas de projeto', () => {
 
 describe('itens de parede', () => {
   it('quadros, janelas, TV, placas e espelhos não ficam atrás de móveis altos', () => {
-    for (const area of [...core.coreAreas(PRINCIPAL), ...roomsFor([0, 1, 2, 3, 4, 7])]) expect(hiddenWallItems(area), area.id).toEqual([]);
+    const A1 = { bx: 0, by: 1 };
+    const areas = [...core.coreAreas(PRINCIPAL), ...hubAreas(A1, true), layoutHub(A1, false), ...roomsFor([0, 1, 2, 3, 4, 7])];
+    for (const area of areas) expect(hiddenWallItems(area), area.id).toEqual([]);
   });
 
   it('passagens nas faces das paredes têm batente', () => {
@@ -694,6 +701,10 @@ describe('passarela como área (layoutBridge)', () => {
     expect(by('n').map((f) => f.tx).sort((a, b) => a - b)).toEqual([47, 48, 49, 50, 51, 52, 53, 54]);
     expect(by('s').map((f) => f.tx).sort((a, b) => a - b)).toEqual([50, 51, 52, 53, 54, 55, 56, 57]);
     expect(area.furniture.every((f) => f.kind === 'railing')).toBe(true);
+    // as variantes laterais são desenhadas no centro do tile e levadas à borda por `dx` (contrato de `railing` em common.ts)
+    expect(by('w').every((f) => f.dx === -8)).toBe(true);
+    expect(by('e').every((f) => f.dx === 8)).toBe(true);
+    expect([...by('n'), ...by('s')].every((f) => f.dx === undefined)).toBe(true);
   });
 
   it('cache por id', () => {

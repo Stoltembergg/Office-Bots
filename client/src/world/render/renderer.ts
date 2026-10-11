@@ -7,7 +7,7 @@ import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
 import { layoutExterior, slotShell, type ExteriorLayout, type SlotShell } from '../layout/exterior';
 import { inRect, isCoreColumn, slotAt, standingKey } from '../layout/geometry';
-import type { ExteriorProp } from '../layout/types';
+import type { ExteriorProp, TileRect } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
 import type { Character } from '../sim/character';
 import type { RoomState } from '../sim/room-state';
@@ -82,6 +82,8 @@ export class Renderer {
   shellWindows: WallVis[] = [];
   /** Áreas das passarelas (kind `bridge`): desenhadas na camada elevada, não nas passadas do chão. */
   private bridgeVis: AreaVis[] = [];
+  /** Tiles da camada elevada: trechos das passarelas e os tiles de porta em que elas encostam. */
+  private elevatedRects: TileRect[] = [];
   /** Personagens sobre uma passarela neste frame (desenhados na camada elevada). */
   private elevated: Character[] = [];
   private elevatedEnts: Ent[] = [];
@@ -165,6 +167,8 @@ export class Renderer {
       for (const id of [...this.areas.keys()]) if (!want.has(id)) this.areas.delete(id);
       this.elevatorVis = this.areas.get('core:recepcao')?.wallItems.filter((w) => w.kind === 'elevator') ?? [];
       this.bridgeVis = [...this.areas.values()].filter((v) => v.layout.kind === 'bridge');
+      // camada elevada: os trechos da passarela e os tiles de porta em que ela encosta (quem está na porta fica na frente do piso)
+      this.elevatedRects = sim.building.bridges.flatMap((br) => [...br.rects, ...br.openings]);
     }
     // salas: (re)constrói quando surgem, mudam de layout ou de versão (nome/tema)
     this.occupiedSlots.clear();
@@ -570,10 +574,9 @@ export class Renderer {
     this.drawEnts(ents, now, sel);
   }
 
-  /** O tile está sobre uma passarela (tile caminhável de uma área `bridge`)? */
+  /** O tile está na camada elevada (trecho de passarela ou tile de porta em que ela encosta)? */
   private onBridge(tx: number, ty: number): boolean {
-    for (const vis of this.bridgeVis) for (const r of vis.layout.walkable) if (inRect(r, tx, ty)) return true;
-    return false;
+    return this.elevatedRects.some((r) => inRect(r, tx, ty));
   }
 
   roomInSlot(slot: number): RoomState | undefined {
