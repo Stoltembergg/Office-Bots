@@ -3,7 +3,7 @@
 import type { WallStyle } from '../../art/api';
 import { TILE } from '../constants';
 import { AreaBuilder, SEATED_SORT_BIAS } from './builder';
-import { blockColumnRect, blockKey, BRIDGE_W, DOOR_LX, LOUNGE_EXIT_H, type BlockId, type Side } from './geometry';
+import { blockColumnRect, blockKey, BRIDGE_W, DOOR_LX, HUB_DOOR_H, LOUNGE_EXIT_H, type BlockId, type Side } from './geometry';
 import type { AreaLayout, TileRect } from './types';
 
 export const RECEPTION_ID = 'core:recepcao';
@@ -138,39 +138,39 @@ export function layoutCafe(rect: TileRect): AreaLayout {
   const b = new AreaBuilder(CAFE_ID, 'cafe', rect);
   const wall = CORE_WALLS.cafe;
   b.floor('tile_check', 0, 0, 16, 12, 301);
-  // frontão de mármore atrás da bancada + parede clara com janelas
-  b.face(0.5, 9, CORE_WALLS.cafeSplash);
-  b.face(9.5, 6, wall);
+  // frontão de mármore atrás da bancada (oeste) + porta norte de 3 tiles (D4: saída para a passarela de A6, em lx 7..10)
+  // + parede clara com janela (leste)
+  b.face(0.5, 6.5, CORE_WALLS.cafeSplash);
+  b.face(10, 5.5, wall);
+  b.wall('door_frame', DOOR_LX + BRIDGE_W / 2, 'wide3', { order: 0.05 });
+  b.walk(DOOR_LX, 0, BRIDGE_W, HUB_DOOR_H);
+  b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0, w: BRIDGE_W, h: HUB_DOOR_H };
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
 
-  // bancada encostada na parede norte
+  // bancada encostada na parede norte, a oeste da porta
   b.furn('fridge', 1, 2, undefined, { order: 0.2 });
   b.spot('fridge', 1, 3, 'up', { dy: -3 });
   b.furn('counter', 2, 2, 'drawers', { order: 0.22 });
   b.furn('counter_sink', 3, 2, undefined, { order: 0.24 });
   b.spot('sink', 3, 3, 'up', { dy: -3 });
-  b.furn('counter', 4, 2, 'plain', { order: 0.26 });
+  b.furn('microwave', 4, 2, undefined, { order: 0.26 });
   for (const lx of [5, 6]) {
     const m = b.furn('coffee_machine', lx, 2, undefined, { order: 0.28 });
     b.spot('coffee', lx, 3, 'up', { dy: -3, furnitureId: m });
   }
-  b.furn('microwave', 7, 2, undefined, { order: 0.3 });
-  b.furn('counter', 8, 2, 'drawers', { order: 0.32 });
   b.wall('shelf_wall', 3, undefined, { order: 0.4 });
   // cardápio do café acima das cafeteiras
   b.wall('poster', 5.5, 'coffee', { order: 0.45 });
-  b.wall('clock', 7.5, undefined, { order: 0.6 });
 
-  const vend = b.furn('vending_machine', 9, 2, undefined, { order: 0.34 });
-  b.spot('snack', 9, 3, 'up', { dy: -3, furnitureId: vend });
-  b.furn('water_cooler', 10, 2, undefined, { order: 0.36 });
-  b.spot('water', 10, 3, 'up', { dy: -3 });
-  // janelas (nada alto na frente delas)
-  b.wall('window', 12, undefined, { order: 0.4 });
-  b.wall('window', 14.25, undefined, { order: 0.45 });
-  b.spot('window', 11, 2, 'up', { dx: 8, dy: 1 });
-  b.spot('window', 13, 2, 'up', { dx: 12, dy: 1 });
+  // a leste da porta: máquina de lanche, bebedouro e a janela (nada alto na frente dela)
+  const vend = b.furn('vending_machine', 10, 2, undefined, { order: 0.34 });
+  b.spot('snack', 10, 3, 'up', { dy: -3, furnitureId: vend });
+  b.furn('water_cooler', 11, 2, undefined, { order: 0.36 });
+  b.spot('water', 11, 3, 'up', { dy: -3 });
+  b.wall('window', 13.25, undefined, { order: 0.4 });
+  b.spot('window', 12, 2, 'up', { dx: 12, dy: 1 });
+  b.spot('window', 13, 2, 'up', { dx: 8, dy: 1 });
 
   // mesa comunitária comprida no centro, sobre um tapete, com cadeiras dos dois lados
   b.rug(2.6, 4.15, 8.8, 3.7, '#b98a5e', 302);

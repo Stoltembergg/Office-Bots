@@ -6,7 +6,7 @@ import { layoutBridge } from './bridge';
 import { furnitureBlocks, furnitureIsSeat } from './builder';
 import { coreAreas } from './core';
 import { layoutCorridor } from './corridor';
-import { blockKey, bridgesFor, isPrincipal, worldBounds, type BlockLayout, type BridgeLayout } from './geometry';
+import { bridgesFor, hubDoor, isPrincipal, worldBounds, type BlockLayout, type BridgeLayout } from './geometry';
 import { hubAreas } from './hub';
 import type { AreaLayout, SpotDef, TileRect } from './types';
 
@@ -51,7 +51,7 @@ export function assembleBuilding(blocks: readonly BlockLayout[], rooms: readonly
   const corridors: AreaLayout[] = [];
   for (const block of blocks) {
     if (isPrincipal(block.id)) core.push(...coreAreas(block.id));
-    else core.push(...hubAreas(block.id, bridges.some((b) => blockKey(b.child) === blockKey(block.id))));
+    else core.push(...hubAreas(block.id, hubDoor(block.id, bridges)));
     corridors.push(layoutCorridor(block));
   }
   const walkways = bridges.map(layoutBridge);
