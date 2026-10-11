@@ -1,6 +1,6 @@
 // Geometria do prédio: modelo de blocos (spec seção 1: envelopes, ordem dos blocos, vagas por bloco,
 // colunas de pé). Puro e testável.
-import { BUILDING_H, COL_W, NORTH_Y, ROOM_H, SOUTH_Y, TILE } from '../constants';
+import { BUILDING_H, COL_W, CORRIDOR_Y, NORTH_Y, ROOM_H, SOUTH_Y, TILE } from '../constants';
 import type { TileRect } from './types';
 
 export type Side = 'north' | 'south';
@@ -22,8 +22,6 @@ export const ANNEX_COLS = 5;
 export const STREET_W = 12;
 /** Passo entre fileiras de blocos (tiles): 41. */
 export const ROW_STEP = BUILDING_H + STREET_W;
-/** Transitório (spec 7.5): quantos blocos da ordem existem nesta fase. Fase 2 = 2 (principal e anexo 1). */
-export const IMPLEMENTED_BLOCKS = 2;
 /** Chegada do bloco: decide a ordem das vagas (spec 1.2) e a coluna de ligação (1.3). */
 export type Arrival = 'core' | 'hub' | 'west' | 'east';
 export interface SlotAddress {
@@ -155,30 +153,21 @@ export const SLOT_ORDER: Readonly<Record<Arrival, readonly (readonly [number, Si
   east: [[4, 'north'], [4, 'south'], [3, 'north'], [3, 'south'], [1, 'north'], [1, 'south'], [0, 'north'], [0, 'south']],
 };
 
-/** Bloco da vaga global. Vagas de blocos ainda não implementados (⌊slot/8⌋ ≥ k) ficam no principal (spec 7.5). */
-export function blockFor(slot: number, k = IMPLEMENTED_BLOCKS): BlockId {
-  const n = Math.floor(slot / ROOMS_PER_BLOCK);
-  return n < k ? blockOrder(n) : PRINCIPAL;
+/** Bloco da vaga global: o ⌊slot/8⌋-ésimo da ordem dos blocos (spec 1.4). */
+export function blockFor(slot: number): BlockId {
+  return blockOrder(Math.floor(Math.max(0, slot) / ROOMS_PER_BLOCK));
 }
 
-/** Endereço (bloco, coluna, lado) da vaga global; transitório 7.5: colunas extras (6, 7, 8...) a leste do principal. */
-export function slotAddress(slot: number, k = IMPLEMENTED_BLOCKS): SlotAddress {
+/** Endereço (bloco, coluna, lado) da vaga global (spec 1.2). */
+export function slotAddress(slot: number): SlotAddress {
   slot = Math.max(0, slot);
-  const n = Math.floor(slot / ROOMS_PER_BLOCK);
-  if (n < k) {
-    const block = blockOrder(n);
-    const [col, side] = SLOT_ORDER[arrivalOf(block)][slot % ROOMS_PER_BLOCK];
-    return { block, col, side };
-  }
-  const e = slot - ROOMS_PER_BLOCK * k;
-  return { block: PRINCIPAL, col: MAIN_COLS + Math.floor(e / 2), side: e % 2 === 0 ? 'north' : 'south' };
+  const block = blockOrder(Math.floor(slot / ROOMS_PER_BLOCK));
+  const [col, side] = SLOT_ORDER[arrivalOf(block)][slot % ROOMS_PER_BLOCK];
+  return { block, col, side };
 }
 
-/** Inverso de slotAddress. Lança se (col, side) não é vaga do bloco (coluna de miolo). */
-export function slotAt(block: BlockId, col: number, side: Side, k = IMPLEMENTED_BLOCKS): number {
-  if (isPrincipal(block) && col >= MAIN_COLS) {
-    return ROOMS_PER_BLOCK * k + 2 * (col - MAIN_COLS) + (side === 'north' ? 0 : 1);
-  }
+/** Inverso de slotAddress. Lança se (col, side) não é vaga do bloco (coluna de miolo ou fora do envelope). */
+export function slotAt(block: BlockId, col: number, side: Side): number {
   const i = SLOT_ORDER[arrivalOf(block)].findIndex(([c, s]) => c === col && s === side);
   if (i < 0) throw new Error(`coluna ${col} ${side} não é vaga do bloco ${blockKey(block)}`);
   return ROOMS_PER_BLOCK * blockIndex(block) + i;
@@ -195,11 +184,11 @@ export function blockColumnRect(block: BlockId, col: number, side: Side): TileRe
  * deste bloco, a ponta por onde chega a passarela (bloco lateral) e, por filho, o miolo (filho vertical)
  * ou a ponta voltada para ele (filho lateral).
  */
-export function standingColumns(block: BlockId, slots: Iterable<number>, children: Iterable<BlockId> = [], k = IMPLEMENTED_BLOCKS): ColumnSpan {
+export function standingColumns(block: BlockId, slots: Iterable<number>, children: Iterable<BlockId> = []): ColumnSpan {
   const cols = new Set<number>(coreColumns(block));
   const key = blockKey(block);
   for (const s of slots) {
-    const a = slotAddress(s, k);
+    const a = slotAddress(s);
     if (blockKey(a.block) === key) cols.add(a.col);
   }
   const arrival = arrivalOf(block);
@@ -212,7 +201,7 @@ export function standingColumns(block: BlockId, slots: Iterable<number>, childre
   return { lo: Math.min(...cols), hi: Math.max(...cols) };
 }
 
-/** Retângulo de pé: o envelope recortado em x às colunas lo..hi. Pode passar do envelope (7.5). */
+/** Retângulo de pé: o envelope recortado em x às colunas lo..hi. */
 export function standingRect(block: BlockId, span: ColumnSpan): TileRect {
   const env = blockRect(block);
   return { x: env.x + span.lo * COL_W, y: env.y, w: (span.hi - span.lo + 1) * COL_W, h: BUILDING_H };
@@ -227,13 +216,13 @@ export function standingKey(blocks: readonly BlockLayout[]): string {
  * Blocos existentes (spec 1.3): os das vagas, seus ancestrais e o principal, ordenados por blockIndex. `keep` são
  * blocos mantidos sem vaga (trava de encolher, spec 7.2): entram com os ancestrais e ficam só com o miolo.
  */
-export function existingBlocks(slots: Iterable<number>, k = IMPLEMENTED_BLOCKS, keep: readonly BlockId[] = []): BlockLayout[] {
+export function existingBlocks(slots: Iterable<number>, keep: readonly BlockId[] = []): BlockLayout[] {
   const slotList = [...slots];
   const ids = new Map<string, BlockId>([[blockKey(PRINCIPAL), PRINCIPAL]]);
   const add = (from: BlockId) => {
     for (let b: BlockId | null = from; b !== null; b = parentOf(b)) ids.set(blockKey(b), b);
   };
-  for (const s of slotList) add(blockFor(s, k));
+  for (const s of slotList) add(blockFor(s));
   for (const b of keep) add(b);
   const ordered = [...ids.values()].sort((a, b) => blockIndex(a) - blockIndex(b));
   return ordered.map((id) => {
@@ -241,7 +230,7 @@ export function existingBlocks(slots: Iterable<number>, k = IMPLEMENTED_BLOCKS, 
       const p = parentOf(o);
       return p !== null && blockKey(p) === blockKey(id);
     });
-    const columns = standingColumns(id, slotList, children, k);
+    const columns = standingColumns(id, slotList, children);
     return { id, envelope: blockRect(id), columns, rect: standingRect(id, columns) };
   });
 }
@@ -337,10 +326,10 @@ export function occupiedRegions(blocks: readonly BlockLayout[], bridges: readonl
  * Trava de encolher por regiões (spec 7.2): os blocos das vagas presentes mais os blocos (e ancestrais) das
  * referências, com as colunas estendidas até cobri-las. `retained` diz se algo além do layout fresco ficou de pé.
  */
-export function retainRegions(slots: Iterable<number>, refs: readonly RegionRef[], k = IMPLEMENTED_BLOCKS): { blocks: BlockLayout[]; retained: boolean } {
+export function retainRegions(slots: Iterable<number>, refs: readonly RegionRef[]): { blocks: BlockLayout[]; retained: boolean } {
   const slotList = [...slots];
-  const fresh = existingBlocks(slotList, k);
-  const kept = existingBlocks(slotList, k, refs.map((r) => r.block));
+  const fresh = existingBlocks(slotList);
+  const kept = existingBlocks(slotList, refs.map((r) => r.block));
   const out = retainColumns(kept, refs.filter(isColumnRef));
   return { blocks: out.blocks, retained: out.retained || kept.length !== fresh.length };
 }
@@ -370,35 +359,101 @@ export function bridgeId(child: BlockId): string {
   return `passarela:${blockKey(child)}`;
 }
 
-/**
- * Trechos da passarela do bloco filho ao pai (spec 3.6). Fase 2: só o anexo 1 (0, 1), em Z sobre a rua: sai pela
- * porta sul do lounge (coluna 3 do principal), corre para oeste e entra pela porta norte do saguão (coluna 2 do
- * anexo). Qualquer outro bloco lança (passarelas horizontais e colunas de ligação são da fase 3).
- */
-export function bridgeRects(child: BlockId): TileRect[] {
-  const parent = parentOf(child);
-  if (!parent || child.bx !== 0 || child.by !== 1) throw new Error(`passarela de ${blockKey(child)} ainda não implementada (fase 3)`);
-  const from = blockRect(parent);
-  const to = blockRect(child);
-  const exitX = from.x + coreColumns(parent)[1] * COL_W + DOOR_LX;
-  const entryX = to.x + coreColumns(child)[0] * COL_W + DOOR_LX;
-  const y0 = from.y + from.h;
-  return [
-    { x: exitX, y: y0, w: BRIDGE_W, h: 4 },
-    { x: Math.min(exitX, entryX), y: y0 + 4, w: Math.abs(exitX - entryX) + BRIDGE_W, h: 3 },
-    { x: entryX, y: y0 + 7, w: BRIDGE_W, h: to.y - (y0 + 7) },
-  ];
+/** Lado do saguão no bloco (D1): norte quando a passarela própria chega por cima (fileira 1); sul nos demais anexos. */
+export function hubSide(b: BlockId): Side {
+  return b.by === 1 ? 'north' : 'south';
 }
 
-/** Tiles das portas em que a passarela encosta: a porta sul do lounge (1 linha) e a porta norte do saguão (2 linhas). */
+/**
+ * Porta externa do saguão (D1): o lado dela, ou null quando a parede fica fechada. Abre pela passarela própria
+ * (chegada `hub`) ou, no bloco lateral da fileira 0, pela passarela do filho (bx, 1), que sai pela parede sul.
+ */
+export function hubDoor(b: BlockId, bridges: readonly BridgeLayout[]): Side | null {
+  const key = blockKey(b);
+  for (const br of bridges) {
+    if (blockKey(br.child) === key && arrivalOf(b) === 'hub') return hubSide(b);
+    if (blockKey(br.parent) === key && arrivalOf(br.child) === 'hub' && br.child.by === 1) return 'south';
+  }
+  return null;
+}
+
+/**
+ * Trechos e aberturas da passarela do filho até o pai (spec 1.5, D2). Aberturas na ordem pai, filho.
+ * - Z do principal: lounge (coluna 3) → saguão de A1 (0, 1), ou copa (coluna 3) → saguão de A6 (0, −1), espelhado em y.
+ * - Vertical reta (demais chegadas `hub`): saída sul do saguão do pai (coluna 2) → porta norte do saguão do filho.
+ * - Horizontal (chegadas `west`/`east`): da ponta do corredor do pai à do filho, nas 3 linhas caminháveis do corredor.
+ */
+function bridgeGeometry(child: BlockId): { rects: TileRect[]; openings: TileRect[] } {
+  const parent = parentOf(child);
+  if (!parent) throw new Error('o principal não tem passarela');
+  const from = blockRect(parent);
+  const to = blockRect(child);
+  const arrival = arrivalOf(child);
+  if (arrival === 'hub' && child.bx === 0) {
+    const exitX = from.x + coreColumns(parent)[1] * COL_W + DOOR_LX;
+    const entryX = to.x + coreColumns(child)[0] * COL_W + DOOR_LX;
+    const xMid = Math.min(exitX, entryX);
+    const wMid = Math.abs(exitX - entryX) + BRIDGE_W;
+    if (child.by === 1) {
+      const y0 = from.y + from.h;
+      return {
+        rects: [
+          { x: exitX, y: y0, w: BRIDGE_W, h: 4 },
+          { x: xMid, y: y0 + 4, w: wMid, h: 3 },
+          { x: entryX, y: y0 + 7, w: BRIDGE_W, h: to.y - (y0 + 7) },
+        ],
+        openings: [
+          { x: exitX, y: y0 - LOUNGE_EXIT_H, w: BRIDGE_W, h: LOUNGE_EXIT_H },
+          { x: entryX, y: to.y, w: BRIDGE_W, h: HUB_DOOR_H },
+        ],
+      };
+    }
+    const y1 = from.y;
+    const top = to.y + to.h;
+    return {
+      rects: [
+        { x: exitX, y: y1 - 4, w: BRIDGE_W, h: 4 },
+        { x: xMid, y: y1 - 7, w: wMid, h: 3 },
+        { x: entryX, y: top, w: BRIDGE_W, h: y1 - 7 - top },
+      ],
+      openings: [
+        { x: exitX, y: y1, w: BRIDGE_W, h: HUB_DOOR_H },
+        { x: entryX, y: top - LOUNGE_EXIT_H, w: BRIDGE_W, h: LOUNGE_EXIT_H },
+      ],
+    };
+  }
+  if (arrival === 'hub') {
+    const x = from.x + coreColumns(parent)[0] * COL_W + DOOR_LX;
+    const y0 = from.y + from.h;
+    return {
+      rects: [{ x, y: y0, w: BRIDGE_W, h: to.y - y0 }],
+      openings: [
+        { x, y: y0 - LOUNGE_EXIT_H, w: BRIDGE_W, h: LOUNGE_EXIT_H },
+        { x, y: to.y, w: BRIDGE_W, h: HUB_DOOR_H },
+      ],
+    };
+  }
+  const y = from.y + CORRIDOR_Y + 1;
+  const east = child.bx > parent.bx;
+  const x0 = east ? from.x + from.w : to.x + to.w;
+  const x1 = east ? to.x : from.x;
+  return {
+    rects: [{ x: x0, y, w: x1 - x0, h: BRIDGE_W }],
+    openings: [
+      { x: east ? x0 - 1 : x1, y, w: 1, h: BRIDGE_W },
+      { x: east ? x1 : x0 - 1, y, w: 1, h: BRIDGE_W },
+    ],
+  };
+}
+
+/** Trechos retangulares da passarela do bloco filho, do pai ao filho. */
+export function bridgeRects(child: BlockId): TileRect[] {
+  return bridgeGeometry(child).rects;
+}
+
+/** Tiles das portas (ou das pontas de corredor) em que a passarela encosta: pai primeiro, filho depois. */
 export function bridgeOpenings(child: BlockId): TileRect[] {
-  const rects = bridgeRects(child);
-  const first = rects[0];
-  const last = rects[rects.length - 1];
-  return [
-    { x: first.x, y: first.y - LOUNGE_EXIT_H, w: first.w, h: LOUNGE_EXIT_H },
-    { x: last.x, y: last.y + last.h, w: last.w, h: HUB_DOOR_H },
-  ];
+  return bridgeGeometry(child).openings;
 }
 
 /** Passarelas dos blocos existentes: uma por bloco que não é o principal, até o pai. */
@@ -407,7 +462,8 @@ export function bridgesFor(blocks: readonly BlockLayout[]): BridgeLayout[] {
   for (const b of blocks) {
     const parent = parentOf(b.id);
     if (!parent) continue;
-    out.push({ id: bridgeId(b.id), child: b.id, parent, rects: bridgeRects(b.id), openings: bridgeOpenings(b.id) });
+    const g = bridgeGeometry(b.id);
+    out.push({ id: bridgeId(b.id), child: b.id, parent, rects: g.rects, openings: g.openings });
   }
   return out;
 }

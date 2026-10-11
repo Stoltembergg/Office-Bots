@@ -7,7 +7,6 @@ import * as geometry from './geometry';
 import {
   ANNEX_COLS,
   BRIDGE_W,
-  IMPLEMENTED_BLOCKS,
   MAIN_COLS,
   PRINCIPAL,
   ROOMS_PER_BLOCK,
@@ -30,6 +29,8 @@ import {
   columnAt,
   coreColumns,
   existingBlocks,
+  hubDoor,
+  hubSide,
   isColumnRef,
   isCoreColumn,
   isPrincipal,
@@ -53,8 +54,7 @@ import {
 const B = (bx: number, by: number): BlockId => ({ bx, by });
 
 describe('constantes do modelo', () => {
-  it('fase 2: dois blocos implementados (principal e anexo 1), 8 vagas por bloco, envelopes de 6 e 5 colunas, rua de 12, passo de fileira 41', () => {
-    expect(IMPLEMENTED_BLOCKS).toBe(2);
+  it('8 vagas por bloco, envelopes de 6 e 5 colunas, rua de 12, passo de fileira 41', () => {
     expect(ROOMS_PER_BLOCK).toBe(8);
     expect(MAIN_COLS).toBe(6);
     expect(ANNEX_COLS).toBe(5);
@@ -153,28 +153,10 @@ describe('parentOf / arrivalOf (spec 1.4)', () => {
   });
 });
 
-describe('vagas: slotAddress / slotAt / blockFor (spec 1.2 e 7.5)', () => {
-  const k1: [number, number, Side][] = [
-    [0, 4, 'north'],
-    [1, 1, 'north'],
-    [2, 4, 'south'],
-    [3, 1, 'south'],
-    [4, 5, 'north'],
-    [5, 0, 'north'],
-    [6, 5, 'south'],
-    [7, 0, 'south'],
-    [8, 6, 'north'],
-    [9, 6, 'south'],
-    [10, 7, 'north'],
-    [11, 7, 'south'],
-  ];
-  it.each(k1)('k = 1: vaga %i → principal, coluna %i, %s; slotAt devolve a vaga', (slot, col, side) => {
-    expect(slotAddress(slot, 1)).toEqual({ block: PRINCIPAL, col, side });
-    expect(blockFor(slot, 1)).toEqual(PRINCIPAL);
-    expect(slotAt(PRINCIPAL, col, side, 1)).toBe(slot);
-  });
-
-  const k2: [number, BlockId, number, Side][] = [
+describe('vagas: slotAddress / slotAt / blockFor (spec 1.2; fase 3: sem transitório)', () => {
+  const table: [number, BlockId, number, Side][] = [
+    [0, PRINCIPAL, 4, 'north'],
+    [1, PRINCIPAL, 1, 'north'],
     [7, PRINCIPAL, 0, 'south'],
     [8, B(0, 1), 3, 'north'],
     [9, B(0, 1), 1, 'north'],
@@ -184,14 +166,23 @@ describe('vagas: slotAddress / slotAt / blockFor (spec 1.2 e 7.5)', () => {
     [13, B(0, 1), 0, 'north'],
     [14, B(0, 1), 4, 'south'],
     [15, B(0, 1), 0, 'south'],
-    [16, PRINCIPAL, 6, 'north'],
-    [17, PRINCIPAL, 6, 'south'],
-    [18, PRINCIPAL, 7, 'north'],
+    [16, B(1, 0), 0, 'north'],
+    [17, B(1, 0), 0, 'south'],
+    [24, B(1, 1), 3, 'north'],
+    [32, B(-1, 0), 4, 'north'],
+    [40, B(-1, 1), 3, 'north'],
+    [48, B(0, -1), 3, 'north'],
+    [56, B(1, -1), 0, 'north'],
+    [120, B(3, 0), 0, 'north'],
   ];
-  it.each(k2)('k = 2 (padrão): vaga %i → bloco %j, coluna %i, %s; slotAt devolve a vaga', (slot, block, col, side) => {
+  it.each(table)('vaga %i → bloco %j, coluna %i, %s; slotAt devolve a vaga', (slot, block, col, side) => {
     expect(slotAddress(slot)).toEqual({ block, col, side });
     expect(blockFor(slot)).toEqual(block);
     expect(slotAt(block, col, side)).toBe(slot);
+  });
+
+  it('slotAt lança para coluna fora do envelope (não há mais colunas extras)', () => {
+    expect(() => slotAt(PRINCIPAL, 6, 'north')).toThrow(Error);
   });
 
   it('SLOT_ORDER tem as quatro ordens da spec 1.2', () => {
@@ -201,45 +192,27 @@ describe('vagas: slotAddress / slotAt / blockFor (spec 1.2 e 7.5)', () => {
     expect(SLOT_ORDER.east).toEqual([[4, 'north'], [4, 'south'], [3, 'north'], [3, 'south'], [1, 'north'], [1, 'south'], [0, 'north'], [0, 'south']]);
   });
 
-  it('k = 15: vagas 8, 16, 17 e 24 caem em A1 (0,1), A2 (1,0) e A3 (1,1)', () => {
-    expect(slotAddress(8, 15)).toEqual({ block: B(0, 1), col: 3, side: 'north' });
-    expect(slotAddress(16, 15)).toEqual({ block: B(1, 0), col: 0, side: 'north' });
-    expect(slotAddress(17, 15)).toEqual({ block: B(1, 0), col: 0, side: 'south' });
-    expect(slotAddress(24, 15)).toEqual({ block: B(1, 1), col: 3, side: 'north' });
-    expect(blockFor(16, 15)).toEqual(B(1, 0));
-    expect(blockFor(16)).toEqual(PRINCIPAL);
-  });
-
   const blocks: [string, number, BlockId][] = [
     ['principal (core)', 0, PRINCIPAL],
     ['A1 (0,1), hub', 1, B(0, 1)],
     ['A2 (1,0), west', 2, B(1, 0)],
     ['A4 (−1,0), east', 4, B(-1, 0)],
   ];
-  it.each(blocks)('k = 15: ida e volta das 8 vagas do bloco %s', (_name, n, block) => {
+  it.each(blocks)('ida e volta das 8 vagas do bloco %s', (_name, n, block) => {
     const order = SLOT_ORDER[arrivalOf(block)];
     for (let i = 0; i < 8; i++) {
       const slot = 8 * n + i;
       const [col, side] = order[i];
-      expect(slotAddress(slot, 15)).toEqual({ block, col, side });
-      expect(slotAt(block, col, side, 15)).toBe(slot);
+      expect(slotAddress(slot)).toEqual({ block, col, side });
+      expect(slotAt(block, col, side)).toBe(slot);
     }
-  });
-
-  it('transitório 7.5: colunas ≥ 6 do principal são as vagas a partir de 8k (k = 2: 16, 17, 18, 19…)', () => {
-    expect(slotAt(PRINCIPAL, 6, 'north')).toBe(16);
-    expect(slotAt(PRINCIPAL, 7, 'south')).toBe(19);
-    expect(slotAt(PRINCIPAL, 6, 'north', 1)).toBe(8);
-    expect(slotAt(PRINCIPAL, 7, 'south', 1)).toBe(11);
-    expect(slotAt(PRINCIPAL, 6, 'north', 15)).toBe(120);
-    expect(slotAddress(120, 15)).toEqual({ block: PRINCIPAL, col: 6, side: 'north' });
   });
 
   it('Review Focus 3: slotAt lança Error para coluna de miolo (2 e 3 no principal, 2 no anexo)', () => {
     expect(() => slotAt(PRINCIPAL, 2, 'north')).toThrow(Error);
     expect(() => slotAt(PRINCIPAL, 3, 'south')).toThrow(Error);
-    expect(() => slotAt(B(0, 1), 2, 'north', 15)).toThrow(Error);
-    expect(() => slotAt(B(1, 0), 2, 'south', 15)).toThrow(Error);
+    expect(() => slotAt(B(0, 1), 2, 'north')).toThrow(Error);
+    expect(() => slotAt(B(1, 0), 2, 'south')).toThrow(Error);
   });
 });
 
@@ -263,16 +236,17 @@ describe('standingColumns (spec 1.3)', () => {
     [[0, 1, 2, 3, 4, 5], 0, 5],
     [[8], 2, 3],
     [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 0, 5],
-    [[16], 2, 6],
-    [[0, 1, 2, 3, 4, 5, 6, 7, 16, 17], 0, 6],
+    [[0, 1, 2, 3, 4, 5, 6, 7, 16], 0, 5],
+    [[16], 2, 3],
     [[5], 0, 3],
   ];
-  it.each(principal)('principal, k = 2: vagas %j → {lo %i, hi %i} (as vagas 8..15 são do anexo e não contam)', (slots, lo, hi) => {
+  it.each(principal)('principal: vagas %j → {lo %i, hi %i} (vagas de outros blocos não contam)', (slots, lo, hi) => {
     expect(standingColumns(PRINCIPAL, slots)).toEqual({ lo, hi });
   });
 
-  it('Review Focus 1 (fase 1): sala na coluna extra com a coluna 5 vazia: vagas [0,1,2,3,16] → {1, 6}', () => {
-    expect(standingColumns(PRINCIPAL, [0, 1, 2, 3, 16])).toEqual({ lo: 1, hi: 6 });
+  it('Review Focus 1 (fase 3): a vaga 16 é de A2; o principal só ganha a coluna 5 pelo filho lateral: [0,1,2,3,16] + filho (1,0) → {1, 5}', () => {
+    expect(standingColumns(PRINCIPAL, [0, 1, 2, 3, 16])).toEqual({ lo: 1, hi: 4 });
+    expect(standingColumns(PRINCIPAL, [0, 1, 2, 3, 16], [B(1, 0)])).toEqual({ lo: 1, hi: 5 });
   });
 
   it('aceita Set além de array', () => {
@@ -286,13 +260,13 @@ describe('standingColumns (spec 1.3)', () => {
   });
 
   it('anexo lateral inclui a ponta por onde chega (0 com o pai a oeste, 4 com o pai a leste)', () => {
-    expect(standingColumns(B(1, 0), [], [], 15)).toEqual({ lo: 0, hi: 2 });
-    expect(standingColumns(B(-1, 0), [], [], 15)).toEqual({ lo: 2, hi: 4 });
-    expect(standingColumns(B(0, 1), [8], [], 15)).toEqual({ lo: 2, hi: 3 });
+    expect(standingColumns(B(1, 0), [])).toEqual({ lo: 0, hi: 2 });
+    expect(standingColumns(B(-1, 0), [])).toEqual({ lo: 2, hi: 4 });
+    expect(standingColumns(B(0, 1), [8])).toEqual({ lo: 2, hi: 3 });
   });
 
   it('vagas de outros blocos não contam', () => {
-    expect(standingColumns(B(1, 0), [0, 1, 8], [], 15)).toEqual({ lo: 0, hi: 2 });
+    expect(standingColumns(B(1, 0), [0, 1, 8])).toEqual({ lo: 0, hi: 2 });
   });
 });
 
@@ -330,20 +304,8 @@ describe('existingBlocks', () => {
     expect(blocks[0].rect).toEqual({ x: 16, y: 0, w: 64, h: 29 });
   });
 
-  it('k = 1: vagas ≥ 8 ficam no principal (um bloco só), em colunas extras a leste', () => {
-    const blocks = existingBlocks(new Set([8, 9, 16]), 1);
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0].columns).toEqual({ lo: 2, hi: 10 });
-  });
-
-  it('k = 2: vagas ≥ 16 ficam no principal, em colunas extras a leste (7.5)', () => {
-    const blocks = existingBlocks(new Set([16, 17, 24]));
-    expect(blocks).toHaveLength(1);
-    expect(blocks[0].columns).toEqual({ lo: 2, hi: 10 });
-  });
-
-  it('k = 15: vaga 16 mantém o filho (1,0) e o pai (0,0), que ganha a coluna 5', () => {
-    const blocks = existingBlocks([16], 15);
+  it('vaga 16 mantém o filho (1,0) e o pai (0,0), que ganha a coluna 5', () => {
+    const blocks = existingBlocks([16]);
     expect(blocks.map((b) => b.id)).toEqual([PRINCIPAL, B(1, 0)]);
     expect(blocks[0].columns).toEqual({ lo: 2, hi: 5 });
     expect(blocks[0].rect).toEqual({ x: 32, y: 0, w: 64, h: 29 });
@@ -352,15 +314,15 @@ describe('existingBlocks', () => {
     expect(blocks[1].rect).toEqual({ x: 108, y: 0, w: 48, h: 29 });
   });
 
-  it('k = 15: ancestrais entram em cadeia e a lista sai ordenada por blockIndex', () => {
+  it('ancestrais entram em cadeia e a lista sai ordenada por blockIndex', () => {
     // A9 (2,0) → A2 (1,0) → principal; A1 (0,1) → principal.
-    const blocks = existingBlocks([72, 8], 15);
+    const blocks = existingBlocks([72, 8]);
     expect(blocks.map((b) => b.id)).toEqual([PRINCIPAL, B(0, 1), B(1, 0), B(2, 0)]);
     // A2 fica de pé da ponta oeste (pai) à ponta leste (filho A9).
     expect(blocks[2].columns).toEqual({ lo: 0, hi: 4 });
   });
 
-  it('k = 2: a vaga 8 cria o anexo 1 com o miolo e a coluna 3; o principal fica só com o miolo (ganha nada do filho hub além dele)', () => {
+  it('a vaga 8 cria o anexo 1 com o miolo e a coluna 3; o principal fica só com o miolo (ganha nada do filho hub além dele)', () => {
     const blocks = existingBlocks([8]);
     expect(blocks.map((b) => b.id)).toEqual([PRINCIPAL, B(0, 1)]);
     expect(blocks[0].columns).toEqual({ lo: 2, hi: 3 });
@@ -370,29 +332,30 @@ describe('existingBlocks', () => {
     expect(blocks[1].rect).toEqual({ x: 40, y: 41, w: 32, h: 29 });
   });
 
-  it('k = 2: oito salas no principal e a nona no anexo', () => {
+  it('oito salas no principal e a nona no anexo', () => {
     const blocks = existingBlocks([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     expect(blocks[0].columns).toEqual({ lo: 0, hi: 5 });
     expect(blocks[0].rect).toEqual({ x: 0, y: 0, w: 96, h: 29 });
     expect(blocks[1].columns).toEqual({ lo: 2, hi: 3 });
   });
 
-  it('k = 2: a vaga 16 (7.5) não cria anexo; 17 salas enchem o anexo (0..4) e abrem a coluna 6 do principal', () => {
-    expect(existingBlocks([16]).map((b) => b.id)).toEqual([PRINCIPAL]);
-    expect(existingBlocks([16])[0].columns).toEqual({ lo: 2, hi: 6 });
+  it('17 salas: anexo 1 cheio e A2 (1,0) com a coluna 0; o principal ganha a coluna 5 pelo filho lateral', () => {
     const blocks = existingBlocks(Array.from({ length: 17 }, (_, i) => i));
-    expect(blocks[0].columns).toEqual({ lo: 0, hi: 6 });
+    expect(blocks.map((b) => b.id)).toEqual([PRINCIPAL, B(0, 1), B(1, 0)]);
+    expect(blocks[0].columns).toEqual({ lo: 0, hi: 5 });
     expect(blocks[1].columns).toEqual({ lo: 0, hi: 4 });
+    expect(blocks[2].columns).toEqual({ lo: 0, hi: 2 });
+    expect(blocks[2].rect).toEqual({ x: 108, y: 0, w: 48, h: 29 });
   });
 
   it('keep: um bloco sem vaga entra (com os ancestrais) só com o miolo — Review Focus 2', () => {
-    const blocks = existingBlocks([], 2, [B(0, 1)]);
+    const blocks = existingBlocks([], [B(0, 1)]);
     expect(blocks.map((b) => b.id)).toEqual([PRINCIPAL, B(0, 1)]);
     expect(blocks[1].columns).toEqual({ lo: 2, hi: 2 });
     expect(blocks[1].rect).toEqual({ x: 40, y: 41, w: 16, h: 29 });
     expect(blocks[0].columns).toEqual({ lo: 2, hi: 3 });
     // keep não repete um bloco que já veio das vagas
-    expect(existingBlocks([8], 2, [B(0, 1)])).toEqual(existingBlocks([8]));
+    expect(existingBlocks([8], [B(0, 1)])).toEqual(existingBlocks([8]));
   });
 
   it('standingKey: bloco e colunas de pé, na ordem dos blocos', () => {
@@ -419,10 +382,9 @@ describe('passarela do anexo 1 (spec 3.6): Z sobre a rua, do lounge ao saguão',
     ]);
   });
 
-  it('id pela chave do bloco filho; outros blocos ainda não têm passarela (fase 3) e lançam', () => {
+  it('id pela chave do bloco filho; o principal não tem passarela e lança', () => {
     expect(bridgeId(B(0, 1))).toBe('passarela:0,1');
-    expect(() => bridgeRects(B(1, 0))).toThrow(/fase 3/);
-    expect(() => bridgeRects(PRINCIPAL)).toThrow(/fase 3/);
+    expect(() => bridgeRects(PRINCIPAL)).toThrow(/principal/);
   });
 
   it('bridgesFor: uma por anexo existente, nenhuma só com o principal', () => {
@@ -436,6 +398,74 @@ describe('passarela do anexo 1 (spec 3.6): Z sobre a rua, do lounge ao saguão',
       rects: bridgeRects(B(0, 1)),
       openings: bridgeOpenings(B(0, 1)),
     });
+  });
+});
+
+describe('passarelas de todos os tipos (D2)', () => {
+  it('Z da copa → A6 (0,−1): espelho do Z do lounge; aberturas na porta norte da copa e na saída sul do saguão de A6', () => {
+    expect(bridgeRects(B(0, -1))).toEqual([
+      { x: 55, y: -4, w: 3, h: 4 },
+      { x: 47, y: -7, w: 11, h: 3 },
+      { x: 47, y: -12, w: 3, h: 5 },
+    ]);
+    expect(bridgeOpenings(B(0, -1))).toEqual([
+      { x: 55, y: 0, w: 3, h: 2 },
+      { x: 47, y: -13, w: 3, h: 1 },
+    ]);
+  });
+
+  it('vertical reta A3 (1,1): da saída sul do saguão de A2 à porta norte do saguão de A3', () => {
+    expect(bridgeRects(B(1, 1))).toEqual([{ x: 147, y: 29, w: 3, h: 12 }]);
+    expect(bridgeOpenings(B(1, 1))).toEqual([
+      { x: 147, y: 28, w: 3, h: 1 },
+      { x: 147, y: 41, w: 3, h: 2 },
+    ]);
+  });
+
+  it('horizontal A2 (1,0): 12 tiles na altura do corredor, aberturas de 1 tile dentro dos dois corredores', () => {
+    expect(bridgeRects(B(1, 0))).toEqual([{ x: 96, y: 13, w: 12, h: 3 }]);
+    expect(bridgeOpenings(B(1, 0))).toEqual([
+      { x: 95, y: 13, w: 1, h: 3 },
+      { x: 108, y: 13, w: 1, h: 3 },
+    ]);
+  });
+
+  it('horizontal A4 (−1,0) a oeste, A7 (1,−1) saindo de A6 (20 tiles, recuo do anexo central) e A9 (2,0)', () => {
+    expect(bridgeRects(B(-1, 0))).toEqual([{ x: -12, y: 13, w: 12, h: 3 }]);
+    expect(bridgeOpenings(B(-1, 0))).toEqual([
+      { x: 0, y: 13, w: 1, h: 3 },
+      { x: -13, y: 13, w: 1, h: 3 },
+    ]);
+    expect(bridgeRects(B(1, -1))).toEqual([{ x: 88, y: -28, w: 20, h: 3 }]);
+    expect(bridgeRects(B(2, 0))).toEqual([{ x: 188, y: 13, w: 12, h: 3 }]);
+  });
+
+  it('bridgesFor com A2 e A3: duas passarelas, pais certos', () => {
+    const blocks = existingBlocks([16, 24]);
+    expect(bridgesFor(blocks).map((b) => [b.id, blockKey(b.parent)])).toEqual([
+      ['passarela:1,0', '0,0'],
+      ['passarela:1,1', '1,0'],
+    ]);
+  });
+});
+
+describe('lado e porta do saguão (D1)', () => {
+  it('hubSide: norte em (0,1) e (bx,1); sul em (0,−1) e nos laterais', () => {
+    expect(hubSide(B(0, 1))).toBe('north');
+    expect(hubSide(B(1, 1))).toBe('north');
+    expect(hubSide(B(0, -1))).toBe('south');
+    expect(hubSide(B(1, 0))).toBe('south');
+    expect(hubSide(B(-1, -1))).toBe('south');
+  });
+
+  it('hubDoor: pela passarela própria (hub) ou pela do filho (bx,1); laterais sem filho e fileira −1 lateral: null', () => {
+    expect(hubDoor(B(1, 0), bridgesFor(existingBlocks([16])))).toBeNull();
+    const b24 = bridgesFor(existingBlocks([24]));
+    expect(hubDoor(B(1, 0), b24)).toBe('south');
+    expect(hubDoor(B(1, 1), b24)).toBe('north');
+    expect(hubDoor(B(0, 1), bridgesFor(existingBlocks([8])))).toBe('north');
+    expect(hubDoor(B(0, -1), bridgesFor(existingBlocks([48])))).toBe('south');
+    expect(hubDoor(B(1, -1), bridgesFor(existingBlocks([56])))).toBeNull();
   });
 });
 
@@ -471,22 +501,22 @@ describe('worldBounds', () => {
     expect(worldBounds([])).toEqual(existingBlocks([])[0].rect);
   });
 
-  it('união dos retângulos de pé (k = 15, anexo a oeste com x negativo)', () => {
-    const blocks = existingBlocks([32], 15); // A4 (−1,0)
+  it('união dos retângulos de pé (anexo a oeste com x negativo)', () => {
+    const blocks = existingBlocks([32]); // A4 (−1,0)
     expect(blocks[0].rect).toEqual({ x: 0, y: 0, w: 64, h: 29 });
     expect(blocks[1].rect).toEqual({ x: -60, y: 0, w: 48, h: 29 });
     expect(worldBounds(blocks)).toEqual({ x: -60, y: 0, w: 124, h: 29 });
   });
 
-  it('união com bloco na fileira norte (k = 15, A6 em y negativo)', () => {
-    const blocks = existingBlocks([48], 15); // A6 (0,−1): vaga 48 → coluna 3 norte; o principal fica só com o miolo
+  it('união com bloco na fileira norte (A6 em y negativo)', () => {
+    const blocks = existingBlocks([48]); // A6 (0,−1): vaga 48 → coluna 3 norte; o principal fica só com o miolo
     expect(blocks[0].rect).toEqual({ x: 32, y: 0, w: 32, h: 29 });
     expect(blocks[1].rect).toEqual({ x: 40, y: -41, w: 32, h: 29 });
     expect(worldBounds(blocks)).toEqual({ x: 32, y: -41, w: 40, h: 70 });
   });
 
-  it('só o principal (7.5): é o retângulo de pé dele, inclusive além do envelope', () => {
-    expect(worldBounds(existingBlocks([0, 1, 2, 3, 16]))).toEqual({ x: 16, y: 0, w: 96, h: 29 });
+  it('principal com A2: a vaga 16 abre o anexo a leste (x 108..156) e a rua entre eles entra na união', () => {
+    expect(worldBounds(existingBlocks([0, 1, 2, 3, 16]))).toEqual({ x: 16, y: 0, w: 140, h: 29 });
   });
 
   it('com passarelas: união dos retângulos de pé e dos trechos (a passarela não alarga, mas une as fileiras)', () => {
