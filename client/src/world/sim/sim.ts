@@ -135,7 +135,26 @@ export class Sim {
    * de mais de uma sala), a sala de reunião, enquanto ela existir.
    */
   roomOf(a: AgentInfo): string {
-    return a.meeting && this.meetingRoomId && this.rooms.has(this.meetingRoomId) ? this.meetingRoomId : a.roomId;
+    if (a.meeting && this.meetingRoomId && this.rooms.has(this.meetingRoomId)) return this.meetingRoomId;
+    // (um só colega de outra sala na demanda: ele fica na sala de quem passou o trabalho, enquanto ela existir)
+    if (a.guestOf && this.rooms.has(a.guestOf.room)) return a.guestOf.room;
+    return a.roomId;
+  }
+
+  /**
+   * O personagem está em serviço? Vale para quem participa de uma demanda em andamento (duty: em qualquer etapa
+   * dela, até ela terminar), para quem está na sala de reunião, na sala de um colega (guestOf) ou recebendo alguém
+   * (hosting), e para o agente fixo com a sessão de uma demanda aberta. Em serviço ele não passeia: só sai
+   * da sala para a água e o banheiro, e não entra em roda de conversa nem em jogo.
+   */
+  onDuty(ch: Character): boolean {
+    const a = ch.info;
+    if (this.inMeeting(ch)) return true;
+    if (a.guestOf && ch.roomId === a.guestOf.room) return true;
+    if (a.hosting) return true;
+    // (participa de uma demanda em andamento, mesmo que a etapa do momento seja de outro)
+    if (a.duty && a.kind === 'main') return true;
+    return a.kind === 'main' && !!a.staff && !a.parked && a.status !== 'offline' && a.status !== 'done';
   }
 
   /** O personagem está na sala de reunião por causa de uma demanda entre salas? */
@@ -288,7 +307,8 @@ export class Sim {
 
   /** A aparência com que a sala deve estar desenhada: a dela e, sem estilo próprio, o geral do escritório. */
   private styleKeyOf(r: RoomInfo): string {
-    return `${roomStyleKey(r.style)}@${r.style?.look ? '' : this.officeStyle}@${this.officeColors.primary ?? ''}@${this.officeColors.secondary ?? ''}`;
+    // (o limite de agentes entra: a sala mostra tantas mesas quanto ele)
+    return `${roomStyleKey(r.style)}@${r.style?.look ? '' : this.officeStyle}@${this.officeColors.primary ?? ''}@${this.officeColors.secondary ?? ''}@${r.maxAgents ?? ''}`;
   }
 
   /**
@@ -327,7 +347,7 @@ export class Sim {
     room.info = r;
     room.styleKey = this.styleKeyOf(r);
     room.theme = this.themeOf(r);
-    room.layout = layoutProjectRoom({ id: room.id, slot: room.slot, seed: room.seed, style: r.style }, room.theme);
+    room.layout = layoutProjectRoom({ id: room.id, slot: room.slot, seed: room.seed, style: r.style, desks: r.maxAgents }, room.theme);
     room.switchClaim = null;
     room.version++;
   }
@@ -336,7 +356,7 @@ export class Sim {
     const theme = this.themeOf(r);
     // a primeira vaga livre do prédio (o slot do servidor só dá a ordem de chegada); a sala do dono, ao lado do lounge
     const slot = this.freeSlot(r.office ? OWNER_SLOT : r.decor ? MEETING_SLOT : undefined);
-    const layout = layoutProjectRoom({ id: r.id, slot, seed: r.seed, style: r.style }, theme);
+    const layout = layoutProjectRoom({ id: r.id, slot, seed: r.seed, style: r.style, desks: r.maxAgents }, theme);
     // (a sala de cenário já nasce acesa: não há quem acenda)
     const rs = new RoomState(r, theme, layout, first ? 'ready' : 'building', now, first || !!r.decor, slot);
     rs.styleKey = this.styleKeyOf(r);
@@ -363,6 +383,7 @@ export class Sim {
   }
 
   private updateAgent(ch: Character, a: AgentInfo, now: number): void {
+    const emServicoAntes = this.onDuty(ch);
     const prevStatus = ch.info.status;
     const hadShells = !!ch.info.shells?.length;
     const prevLook = lookSig(ch.info);
@@ -382,6 +403,10 @@ export class Sim {
       ch.homeSpot = null;
       ch.roomId = sala;
       // sai já do que estiver fazendo (café, roda de conversa, jogo): a reunião começou, ou acabou
+      ch.nextOutingAt = 0;
+      this.interrupt(ch);
+    } else if (!emServicoAntes && this.onDuty(ch)) {
+      // entrou em serviço (a demanda dele começou) no meio de um passeio: larga o que estava fazendo e volta a sentar
       ch.nextOutingAt = 0;
       this.interrupt(ch);
     }
@@ -550,7 +575,7 @@ export class Sim {
     ch.nextOutingAt = now + INITIAL_OUTING_DELAY_MS + this.sitMs(ch) * ch.rng();
     const relaxing =
       // (quem está em reunião começa na sala de reunião, não no sofá do lounge)
-      !this.inMeeting(ch) &&
+      !this.onDuty(ch) &&
       ch.mode === 'idle' &&
       !!home &&
       roomsSeated.has(ch.roomId) &&
@@ -614,8 +639,31 @@ export class Sim {
         return;
       }
     }
+    // Visitante (trabalha na sala de quem passou o trabalho): a cadeira de visita mais perto da mesa de quem recebe.
+    const visita = this.guestSeat(presente, ch);
+    if (visita && this.spots.reserve(visita.id, ch.id)) {
+      ch.homeSpot = visita.id;
+      return;
+    }
     const seat = chooseSeat(presente.layout.spots, (id) => !reservadas.has(id) && this.spots.isFree(id, ch.id), ch.info.kind);
     if (seat && this.spots.reserve(seat.id, ch.id)) ch.homeSpot = seat.id;
+  }
+
+  /** Para o visitante: a cadeira de visita (ou a poltrona) livre mais perto da mesa de quem o recebe, se houver. */
+  private guestSeat(room: RoomState, ch: Character): SpotDef | null {
+    const g = ch.info.guestOf;
+    if (!g || g.room !== room.id || ch.info.kind !== 'main') return null;
+    let mesa: SpotDef | undefined;
+    for (const c of this.chars.values()) {
+      if (c.info.kind === 'main' && c.info.staff === g.staff && c.info.roomId === g.room && c.homeSpot) mesa = this.spots.get(c.homeSpot) ?? undefined;
+    }
+    const r = room.layout.rect;
+    const alvo = mesa ? { x: mesa.tx, y: mesa.ty } : { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+    for (const kind of ['stool', 'nook'] as const) {
+      const livres = room.layout.spots.filter((s) => s.kind === kind && this.spots.isFree(s.id, ch.id));
+      if (livres.length) return livres.sort((a, b) => Math.hypot(a.tx - alvo.x, a.ty - alvo.y) - Math.hypot(b.tx - alvo.x, b.ty - alvo.y))[0];
+    }
+    return null;
   }
 
   /** A mesa marcada para este agente fixo nas configurações da sala dele (RoomStyle.seats), se o layout a tem. */
@@ -871,7 +919,7 @@ export class Sim {
   moveRoom(room: RoomState, slot: number, now: number): void {
     const before = room.layout;
     const ghostId = `${room.id}#mudança${++this.moveSeq}`;
-    const ghostLayout = layoutProjectRoom({ id: ghostId, slot: room.slot, seed: room.seed, style: room.info.style }, room.theme);
+    const ghostLayout = layoutProjectRoom({ id: ghostId, slot: room.slot, seed: room.seed, style: room.info.style, desks: room.info.maxAgents }, room.theme);
     const ghost = new RoomState({ ...room.info, id: ghostId, seed: room.seed }, room.theme, ghostLayout, 'ready', now, false, room.slot);
     ghost.ghost = true;
     ghost.listed = false;
@@ -887,7 +935,7 @@ export class Sim {
     });
 
     room.slot = slot;
-    room.layout = layoutProjectRoom({ id: room.id, slot, seed: room.seed, style: room.info.style }, room.theme);
+    room.layout = layoutProjectRoom({ id: room.id, slot, seed: room.seed, style: room.info.style, desks: room.info.maxAgents }, room.theme);
     room.setPhase('building', now);
     // (a sala de cenário não tem quem acenda: ela mesma fica acesa)
     room.lightOn = !!room.info.decor;
@@ -1414,7 +1462,8 @@ export class Sim {
       if (now >= ch.nextSocialAt) {
         ch.nextSocialAt = now + idleSitMs(ch.rng, this.options().liveliness) * 1.3;
         const p = personaFor(ch.info.seed);
-        if (this.social.hasCompany(ch, now) && ch.rng() < 0.5 + p.sociability * 0.4 && this.social.tryInitiate(ch, now, true)) return true;
+        // (em serviço não entra em roda, nem esperando um shell)
+        if (!this.onDuty(ch) && this.social.hasCompany(ch, now) && ch.rng() < 0.5 + p.sociability * 0.4 && this.social.tryInitiate(ch, now, true)) return true;
       }
     }
     return false;
@@ -1675,7 +1724,7 @@ export class Sim {
    * quando, para a água ou o banheiro.
    */
   private sitMs(ch: Character): number {
-    if (this.inMeeting(ch)) return between(ch.rng, MEETING_SIT_MS[0], MEETING_SIT_MS[1]);
+    if (this.onDuty(ch)) return between(ch.rng, MEETING_SIT_MS[0], MEETING_SIT_MS[1]);
     return idleSitMs(ch.rng, this.options().liveliness);
   }
 
@@ -1709,7 +1758,7 @@ export class Sim {
     const rng = ch.rng;
     const persona = personaFor(ch.info.seed);
     // em reunião: só sai da sala para beber água ou ir ao banheiro, e volta
-    const reuniao = this.inMeeting(ch);
+    const reuniao = this.onDuty(ch);
     // colegas à toa: a vontade é de companhia (a personalidade dosa) — TV, jogo, papo, aposta...
     if (!reuniao && this.social.hasCompany(ch, now) && rng() < 0.45 + persona.sociability * 0.4 && this.social.tryInitiate(ch, now, false)) return true;
     const livre: Partial<Record<IdleActivity, boolean>> = {

@@ -539,13 +539,37 @@ interface ProjetoPublicado {
   demandas: Array<Record<string, unknown> & { id: string; etapas: Array<Record<string, unknown>> }>;
 }
 
+/** Onde fica, no escritório, quem está numa demanda em andamento que junta agentes de mais de uma sala. */
+export interface LugaresDasDemandas {
+  /** Na sala de reunião: chaves "sala\nagente" (a sala é a do agente). */
+  reuniao: Set<string>;
+  /** Na sala de quem passou o trabalho: chave do visitante -> a sala e o agente que o recebe. */
+  visitas: Map<string, { room: string; staff: string }>;
+  /** Quem está recebendo um visitante na própria sala (fica nela até a demanda terminar). */
+  anfitrioes: Set<string>;
+  /**
+   * Todos os agentes de alguma demanda em andamento, mesmo com gente de uma sala só e mesmo quem não é o da etapa
+   * do momento: ficam em serviço (sentados; só água e banheiro) até a demanda terminar.
+   */
+  emServico: Set<string>;
+}
+
 /**
- * Quem está em reunião: os agentes de toda demanda em andamento que envolve agentes de mais de uma sala (a equipe
- * dona da demanda e as salas que conversam com ela: a Diretoria e as ligadas). Devolve as chaves "sala\nagente"
- * (a sala é a do agente, não a da demanda). Demanda só com gente de uma sala não é reunião.
+ * Para cada demanda em andamento com agentes de mais de uma sala (a equipe dona, a Diretoria, as salas ligadas e
+ * quem criou a demanda de outra sala, como o dono do escritório):
+ *  - **dois agentes** (quem passou o trabalho e um colega): o colega vai para a sala de quem passou. Quem recebe é,
+ *    nesta ordem, o dono do escritório, quem criou a demanda, o agente da Diretoria; empate, o da primeira etapa;
+ *  - **três ou mais**: todos na sala de reunião.
+ * Quem recebe dois visitantes ou mais ao mesmo tempo (duas demandas) também vai com eles para a sala de reunião.
+ * Demanda só com gente de uma sala não muda ninguém de lugar.
  */
-export function agentesEmReuniao(projetos: readonly ProjetoPublicado[], equipes: Equipes): Set<string> {
-  const out = new Set<string>();
+export function lugaresDasDemandas(projetos: readonly ProjetoPublicado[], equipes: Equipes): LugaresDasDemandas {
+  const reuniao = new Set<string>();
+  const visitas = new Map<string, { room: string; staff: string }>();
+  const recebe = new Map<string, Set<string>>();
+  const emServico = new Set<string>();
+  const chave = (casa: string, slug: string) => `${casa}\n${slug}`;
+  const dirige = (casa: string) => [...equipes].some(([pasta, e]) => pasta !== casa && e.diretoria === casa);
   for (const p of projetos) {
     const equipe = equipes.get(p.projeto);
     if (!equipe) continue;
@@ -553,17 +577,63 @@ export function agentesEmReuniao(projetos: readonly ProjetoPublicado[], equipes:
     const casaDe = (slug: string) => casas.find((c) => equipes.get(c)?.agentes.some((a) => a.slug === slug));
     for (const d of p.demandas) {
       if (d.estado !== 'rodando' || d.arquivadaEm) continue;
-      const envolvidos = new Map<string, string>();
+      // Os envolvidos, na ordem: quem criou a demanda de outra sala (se houver) e os agentes das etapas.
+      const envolvidos = new Map<string, { casa: string; slug: string }>();
+      const o = (d.origem ?? {}) as { projeto?: unknown; agente?: unknown };
+      let criou = '';
+      if (typeof o.projeto === 'string' && typeof o.agente === 'string') {
+        const casa = normalizeCwd(o.projeto);
+        if (equipes.get(casa)?.agentes.some((a) => a.slug === o.agente)) {
+          criou = chave(casa, o.agente);
+          envolvidos.set(criou, { casa, slug: o.agente });
+        }
+      }
       for (const e of d.etapas) {
         const slug = typeof e.quem === 'string' ? e.quem : typeof e.agente === 'string' ? e.agente : '';
         const casa = slug ? casaDe(slug) : undefined;
-        if (casa) envolvidos.set(`${casa}\n${slug}`, casa);
+        if (casa && !envolvidos.has(chave(casa, slug))) envolvidos.set(chave(casa, slug), { casa, slug });
       }
-      if (new Set(envolvidos.values()).size < 2) continue;
-      for (const k of envolvidos.keys()) out.add(k);
+      for (const k of envolvidos.keys()) emServico.add(k);
+      if (new Set([...envolvidos.values()].map((x) => x.casa)).size < 2) continue;
+      if (envolvidos.size >= 3) {
+        for (const k of envolvidos.keys()) reuniao.add(k);
+        continue;
+      }
+      const [a, b] = [...envolvidos.entries()];
+      const peso = ([k, x]: [string, { casa: string; slug: string }]) => (equipes.get(x.casa)?.escritorio ? 3 : k === criou ? 2 : dirige(x.casa) ? 1 : 0);
+      const [quemRecebe, visitante] = peso(b) > peso(a) ? [b, a] : [a, b];
+      visitas.set(visitante[0], { room: quemRecebe[1].casa, staff: quemRecebe[1].slug });
+      recebe.set(quemRecebe[0], (recebe.get(quemRecebe[0]) ?? new Set()).add(visitante[0]));
     }
   }
-  return out;
+  // Quem recebe dois ou mais ao mesmo tempo, ou já está numa reunião, leva os visitantes para a sala de reunião.
+  const anfitrioes = new Set<string>();
+  for (const [k, visitantes] of recebe) {
+    const ainda = [...visitantes].filter((v) => !reuniao.has(v) && visitas.get(v)?.room === k.split('\n')[0] && visitas.get(v)?.staff === k.split('\n')[1]);
+    // (se o visitante já está numa reunião por outra demanda, quem o receberia vai trabalhar com ele lá)
+    const visitanteEmReuniao = [...visitantes].some((v) => reuniao.has(v));
+    if (ainda.length >= 2 || reuniao.has(k) || visitanteEmReuniao) {
+      reuniao.add(k);
+      for (const v of ainda) reuniao.add(v);
+    } else if (ainda.length === 1) anfitrioes.add(k);
+  }
+  for (const k of reuniao) {
+    visitas.delete(k);
+    anfitrioes.delete(k);
+  }
+  // (visitante cujo anfitrião foi para a reunião por outra demanda acompanha)
+  for (const [v, onde] of [...visitas]) {
+    if (reuniao.has(chave(onde.room, onde.staff))) {
+      visitas.delete(v);
+      reuniao.add(v);
+    }
+  }
+  return { reuniao, visitas, anfitrioes, emServico };
+}
+
+/** Quem está na sala de reunião (ver lugaresDasDemandas). */
+export function agentesEmReuniao(projetos: readonly ProjetoPublicado[], equipes: Equipes): Set<string> {
+  return lugaresDasDemandas(projetos, equipes).reuniao;
 }
 
 /** Lê os arquivos que o serviço do host publica (um por projeto). Arquivo torto fica de fora; nada lança. */

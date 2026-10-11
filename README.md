@@ -335,7 +335,7 @@ um **chip colorido com a letra da conta** (C, D…).
   o seletor de cores); e o lado da ilha de mesas. A sala muda na hora, e a escolha fica guardada (só com o
   Habblaud acessível apenas pelo próprio computador, como renomear a sala).
   Numa sala de equipe, a seção **Agentes da sala** mostra quantos agentes fixos ela tem e deixa definir o **limite**
-  (até o número de mesas do layout); com a sala selecionada, aparece um **+** sobre cada mesa livre, que abre
+  (até o número de mesas do layout; a sala monta uma mesa para cada agente do limite); com a sala selecionada, aparece um **+** sobre cada mesa livre, que abre
   "Novo agente" já nela. Sala cheia não aceita agente novo. Para organizar quem senta onde, com a sala aberta,
   **arraste o agente até a mesa** no próprio escritório (se a mesa for de outro, os dois trocam).
 - **Feed:** as últimas atividades de todo o escritório.
@@ -453,9 +453,10 @@ Outras peças:
 - **Sala do dono**: `npm run equipe:install` cria a sala do dono em `~/.habblaud/escritorio`, com o agente
   `dono` (`equipe escritorio` recria). No prédio, ela fica sempre na vaga ao lado do lounge, e a vaga em frente,
   do outro lado do corredor, recebe uma **sala de reunião** só de cenário (mesa de conferência com doze cadeiras;
-  ninguém mora nela, e ela não aparece na lista). Quando uma demanda em andamento junta agentes de duas salas ou
-  mais, todos os envolvidos vão para essa sala de reunião e ficam lá até a demanda terminar, saindo só para a água
-  e o banheiro. Só as sessões da sala do dono rodam o comando `equipe` sem perguntar. As demandas do
+  ninguém mora nela, e ela não aparece na lista). Enquanto trabalha numa demanda, o agente fixo só sai da
+  sala para a água e o banheiro. Demanda com um colega só de outra sala: ele trabalha na sala de quem passou o
+  trabalho (o dono ou o diretor), na cadeira de visita. Com três ou mais envolvidos de salas diferentes, todos vão
+  para a sala de reunião até a demanda terminar. Só as sessões da sala do dono rodam o comando `equipe` sem perguntar. As demandas do
   dono têm fila própria: ele manda uma demanda a um agente, espera (`equipe esperar`) e lê a resposta
   (`equipe ver <id>`) sem segurar a fila das equipes. De dentro da sessão de qualquer agente, o comando recusa o
   que mexe em chave, login, serviço e permissão (`equipe chave`, `login`, `servico`, `permissao`, `liberar`,

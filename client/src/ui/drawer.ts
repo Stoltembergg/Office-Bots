@@ -1318,7 +1318,7 @@ class RoomView {
         this.limiteInput.value = String(l.limite);
         setAttr(this.limiteInput, 'min', String(Math.max(1, l.tem)));
         setAttr(this.limiteInput, 'max', String(l.mesas));
-        setText(this.limiteDica, `O layout desta sala tem ${l.mesas} ${l.mesas === 1 ? 'mesa' : 'mesas'}: o limite vai até aí. Para mais agentes, escolha um layout com mais mesas em "Aparência da sala".`);
+        setText(this.limiteDica, `A sala mostra uma mesa para cada agente do limite. Este layout vai até ${l.mesas} ${l.mesas === 1 ? 'mesa' : 'mesas'}; para mais agentes, escolha um layout maior em "Aparência da sala".`);
       }
       this.syncLimite();
       // Mesas: quem senta onde se organiza arrastando o agente no escritório (ui/mesas.ts); aqui, a dica e o desfazer.

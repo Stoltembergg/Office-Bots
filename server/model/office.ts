@@ -69,6 +69,8 @@ export interface OfficeDeps {
    * Agentes fixos em reunião agora ("sala\nagente"; server/equipe/pedidos.ts, agentesEmReuniao); ausente = ninguém.
    */
   meetings?: () => ReadonlySet<string>;
+  /** Quem está na sala de um colega (chave "sala\nagente" -> a sala e o agente que recebe) e quem recebe. */
+  visits?: () => { visitas: ReadonlyMap<string, { room: string; staff: string }>; anfitrioes: ReadonlySet<string>; emServico?: ReadonlySet<string> };
   /** Estilo geral do escritório (model/room-styles.ts); ausente = o clássico. */
   officeStyle?: () => OfficeStyleId;
   /** Cores do escritório escolhidas (model/room-styles.ts); ausente ou vazio = as do estilo. */
@@ -1396,11 +1398,30 @@ export class Office {
 
   private markMeetings(agents: AgentInfo[]): AgentInfo[] {
     const em = this.deps.meetings?.();
-    if (!em?.size) return agents;
-    const marcados = new Set<string>();
-    for (const a of agents) if (a.staff && a.kind === 'main' && em.has(`${a.roomId}\n${a.staff}`)) marcados.add(a.id);
-    if (!marcados.size) return agents;
-    return agents.map((a) => (marcados.has(a.id) || (a.parentId && marcados.has(a.parentId)) ? { ...a, meeting: true } : a));
+    const v = this.deps.visits?.();
+    if (!em?.size && !v?.visitas.size && !v?.emServico?.size) return agents;
+    // Por agente fixo: em reunião, na sala de um colega (guestOf) ou recebendo alguém na própria (hosting).
+    const marca = new Map<string, Partial<AgentInfo>>();
+    for (const a of agents) {
+      if (!a.staff || a.kind !== 'main') continue;
+      const k = `${a.roomId}\n${a.staff}`;
+      const m: Partial<AgentInfo> = {};
+      if (em?.has(k)) m.meeting = true;
+      else if (v?.visitas.has(k)) m.guestOf = { ...v.visitas.get(k)! };
+      else if (v?.anfitrioes.has(k)) m.hosting = true;
+      // (em serviço: está em alguma demanda em andamento, mesmo que a etapa do momento não seja a dele)
+      if (v?.emServico?.has(k)) m.duty = true;
+      if (Object.keys(m).length) marca.set(a.id, m);
+    }
+    if (!marca.size) return agents;
+    // (o subagente acompanha quem o abriu)
+    return agents.map((a) => {
+      const m = marca.get(a.id) ?? (a.parentId ? marca.get(a.parentId) : undefined);
+      if (!m) return a;
+      // (o subagente acompanha o lugar de quem o abriu; "recebendo" e "em serviço" são só do agente fixo)
+      const { hosting: _h, duty: _d, ...lugar } = m;
+      return { ...a, ...(a.parentId && !marca.has(a.id) ? lugar : m) };
+    });
   }
 
   /** As cores escolhidas, ou nada quando ninguém escolheu (o campo nem vai para a tela). */

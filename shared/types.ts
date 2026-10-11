@@ -155,6 +155,18 @@ export interface AgentInfo {
   staff?: string;
   /** Agente fixo sem sessão aberta agora: está no escritório esperando demanda (não tem terminal nem sessão). */
   parked?: boolean;
+  /**
+   * O agente trabalha, numa demanda em andamento, com um só colega de outra sala (o dono do escritório ou um
+   * diretor que passou o trabalho): ele fica na sala desse colega até a demanda terminar.
+   */
+  guestOf?: { room: string; staff: string };
+  /** O agente está recebendo um visitante na própria sala (ver guestOf): fica nela até a demanda terminar. */
+  hosting?: boolean;
+  /**
+   * O agente fixo participa de uma demanda em andamento (em qualquer etapa dela, já feita, rodando ou na fila):
+   * fica em serviço até ela terminar. No escritório ele fica sentado e só sai para a água e o banheiro.
+   */
+  duty?: boolean;
   /** Agente fixo: a IA e o nível dele (o que está fixo, o mínimo e se pode escolher a IA do colega). Ver shared/ia.ts. */
   ai?: AgentAi;
   /**

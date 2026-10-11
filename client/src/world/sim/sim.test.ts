@@ -1099,3 +1099,141 @@ describe('mesas marcadas (a pessoa organiza quem senta onde)', () => {
   });
 });
 
+
+describe('em serviço: quem trabalha fica na sala; um colega só vai para a sala de quem passou o trabalho', () => {
+  const diretoria: RoomInfo = { ...room('/dir', 0), team: true, style: { layout: 'diretoria' }, maxAgents: 4 };
+  const marketing: RoomInfo = { ...room('/mkt', 1), team: true, style: { layout: 'equipe' }, maxAgents: 12 };
+  const dono: RoomInfo = { ...room('/dono', 2), office: true, team: true, style: { layout: 'individual' } };
+  const salas = [diretoria, marketing, dono];
+  const dentro = (sim: Sim, id: string, sala: string) => {
+    const ch = sim.chars.get(id)!;
+    const r = sim.rooms.get(sala)!.layout.rect;
+    return ch.tx >= r.x && ch.tx < r.x + r.w && ch.ty >= r.y && ch.ty < r.y + r.h;
+  };
+  /** Vinte minutos de escritório agitado: onde cada um parou fora da sala `casa`, e se alguém entrou em roda. */
+  const passeios = (sim: Sim, clock: { now: number }, casa: (id: string) => string, quem: string[]) => {
+    const fora = new Set<string>();
+    let roda = '';
+    for (let i = 0; i < 1200 * 30; i++) {
+      clock.now += 1000 / 30;
+      sim.update(1 / 30, clock.now);
+      for (const id of quem) {
+        const ch = sim.chars.get(id)!;
+        if (ch.gathering) roda = id;
+        const lugar = ch.atSpot ? sim.building.spots.find((sp) => sp.id === ch.atSpot) : undefined;
+        if (lugar && lugar.areaId !== casa(id)) fora.add(lugar.kind);
+      }
+    }
+    return { fora: [...fora].sort(), roda };
+  };
+
+  it('agente fixo com a sessão de uma demanda aberta: mesmo sem estar digitando, só sai para a água e o banheiro', () => {
+    const sim = new Sim(art, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness: 'lively' }));
+    const clock = { now: T0 };
+    // Os dois com a sessão aberta (não estão "parados"), esperando: é quando os outros passeiam.
+    sim.applySnapshot(snap(salas, [agent('ana', '/mkt', 'idle', { staff: 'copywriter' }), agent('caio', '/mkt', 'idle', { staff: 'designer' })]), T0);
+    for (const id of ['ana', 'caio']) expect(sim.onDuty(sim.chars.get(id)!), id).toBe(true);
+    const r = passeios(sim, clock, () => '/mkt', ['ana', 'caio']);
+    expect(r.roda).toBe('');
+    expect(r.fora.every((k) => k === 'water' || k === 'stall' || k === 'sink'), r.fora.join(',')).toBe(true);
+    // Parado (sem sessão), sem demanda nenhuma: não está em serviço, e passeia como sempre.
+    sim.applySnapshot(snap(salas, [agent('ana', '/mkt', 'idle', { staff: 'copywriter', parked: true }), agent('caio', '/mkt', 'idle', { staff: 'designer', parked: true })], 2), clock.now);
+    for (const id of ['ana', 'caio']) expect(sim.onDuty(sim.chars.get(id)!), id).toBe(false);
+    // Sessão comum (sem agente fixo) também não entra na regra.
+    sim.applySnapshot(snap(salas, [agent('solta', '/mkt', 'idle')], 3), clock.now);
+    expect(sim.onDuty(sim.chars.get('solta')!)).toBe(false);
+  });
+
+  it('quem participa de uma demanda em andamento fica em serviço mesmo parado, sem ser o da etapa do momento', () => {
+    const sim = new Sim(art, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness: 'lively' }));
+    const clock = { now: T0 };
+    // O CMO já fez a parte dele e espera a próxima (parado, sem sessão); o CTO está na etapa do momento.
+    const gente = (emDemanda: boolean) => [agent('cmo', '/dir', 'idle', { staff: 'cmo', parked: true, ...(emDemanda ? { duty: true } : {}) }), agent('cto', '/dir', 'working', { staff: 'cto', ...(emDemanda ? { duty: true } : {}) })];
+    sim.applySnapshot(snap(salas, gente(true)), T0);
+    expect(sim.onDuty(sim.chars.get('cmo')!)).toBe(true);
+    // Começa sentado na sala dele (não no lounge), e em vinte minutos só sai para a água e o banheiro.
+    expect(dentro(sim, 'cmo', '/dir')).toBe(true);
+    const r = passeios(sim, clock, () => '/dir', ['cmo']);
+    expect(r.roda).toBe('');
+    expect(r.fora.every((k) => k === 'water' || k === 'stall' || k === 'sink'), r.fora.join(',')).toBe(true);
+    let sentado = 0;
+    for (let i = 0; i < 600 * 30; i++) {
+      clock.now += 1000 / 30;
+      sim.update(1 / 30, clock.now);
+      if (sim.chars.get('cmo')!.seated && dentro(sim, 'cmo', '/dir')) sentado++;
+    }
+    expect(sentado / (600 * 30)).toBeGreaterThan(0.75);
+    // A demanda terminou: volta a passear como sempre.
+    sim.applySnapshot(snap(salas, gente(false), 2), clock.now);
+    expect(sim.onDuty(sim.chars.get('cmo')!)).toBe(false);
+    // Estava passeando quando a demanda dele começou: larga o passeio e volta a sentar na sala dele.
+    // (acabou de ficar livre: quem está parado há mais de dez minutos cochila na mesa e não passeia)
+    const livre = gente(false).map((x) => ({ ...x, statusSince: clock.now }));
+    sim.applySnapshot(snap(salas, livre, 3), clock.now);
+    run(sim, clock, 500, () => !dentro(sim, 'cmo', '/dir') && !!sim.chars.get('cmo')!.atSpot);
+    expect(dentro(sim, 'cmo', '/dir')).toBe(false);
+    sim.applySnapshot(snap(salas, gente(true), 4), clock.now);
+    run(sim, clock, 60, () => dentro(sim, 'cmo', '/dir') && !!sim.chars.get('cmo')!.seated);
+    expect(dentro(sim, 'cmo', '/dir')).toBe(true);
+    expect(sim.chars.get('cmo')!.seated).toBe(true);
+  });
+
+  it('um colega só: ele vai para a sala de quem passou o trabalho, senta na cadeira de visita ao lado dele e volta quando acaba', () => {
+    const sim = new Sim(art, () => ({ ...DEFAULT_WORLD_OPTIONS, liveliness: 'lively' }));
+    const clock = { now: T0 };
+    const gente = (visita: boolean) => [
+      agent('cmo', '/dir', 'idle', { staff: 'cmo', parked: true, ...(visita ? { hosting: true } : {}) }),
+      agent('ana', '/mkt', 'working', { staff: 'copywriter', ...(visita ? { guestOf: { room: '/dir', staff: 'cmo' } } : {}) }),
+      agent('caio', '/mkt', 'idle', { staff: 'designer', parked: true }),
+    ];
+    sim.applySnapshot(snap(salas, gente(false)), T0);
+    run(sim, clock, 5);
+    expect(sim.chars.get('ana')!.roomId).toBe('/mkt');
+    sim.applySnapshot(snap(salas, gente(true), 2), clock.now);
+    expect(sim.chars.get('ana')!.roomId).toBe('/dir');
+    expect(sim.chars.get('caio')!.roomId).toBe('/mkt');
+    run(sim, clock, 90, () => !!sim.chars.get('ana')!.seated && dentro(sim, 'ana', '/dir'));
+    const ana = sim.chars.get('ana')!;
+    const cmo = sim.chars.get('cmo')!;
+    expect(dentro(sim, 'ana', '/dir')).toBe(true);
+    expect(ana.seated).toBe(true);
+    // Sentou numa cadeira de visita (não numa mesa da Diretoria), a do gabinete do CMO: a mais perto da mesa dele.
+    const spots = sim.rooms.get('/dir')!.layout.spots;
+    const cadeira = spots.find((s) => s.id === ana.homeSpot)!;
+    const mesa = spots.find((s) => s.id === cmo.homeSpot)!;
+    expect(cadeira.kind).toBe('stool');
+    expect(mesa.kind).toBe('desk');
+    expect(Math.hypot(cadeira.tx - mesa.tx, cadeira.ty - mesa.ty)).toBeLessThanOrEqual(2);
+    // As mesas livres da Diretoria continuam livres (o "+" de novo agente não conta o visitante).
+    expect(sim.freeDesks('/dir')).toHaveLength(3);
+    // Os dois ficam em serviço: quem recebe não sai para passear enquanto o colega trabalha na sala dele.
+    expect(sim.onDuty(ana)).toBe(true);
+    expect(sim.onDuty(cmo)).toBe(true);
+    const r = passeios(sim, clock, () => '/dir', ['ana', 'cmo']);
+    expect(r.roda).toBe('');
+    expect(r.fora.every((k) => k === 'water' || k === 'stall' || k === 'sink'), r.fora.join(',')).toBe(true);
+    // A demanda acabou: a visitante volta para a sala dela.
+    sim.applySnapshot(snap(salas, gente(false), 3), clock.now);
+    expect(sim.chars.get('ana')!.roomId).toBe('/mkt');
+    run(sim, clock, 90, () => dentro(sim, 'ana', '/mkt') && !!sim.chars.get('ana')!.seated);
+    expect(dentro(sim, 'ana', '/mkt')).toBe(true);
+    expect(sim.onDuty(sim.chars.get('cmo')!)).toBe(false);
+  });
+
+  it('visita à sala do dono: senta numa das cadeiras diante da mesa dele; sem a sala de quem recebe, fica na dela', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap(salas, [agent('chefe', '/dono', 'idle', { staff: 'dono', parked: true, hosting: true }), agent('ana', '/mkt', 'working', { staff: 'copywriter', guestOf: { room: '/dono', staff: 'dono' } })]), T0);
+    expect(sim.chars.get('ana')!.roomId).toBe('/dono');
+    run(sim, clock, 60, () => !!sim.chars.get('ana')!.seated);
+    const spots = sim.rooms.get('/dono')!.layout.spots;
+    const cadeira = spots.find((s) => s.id === sim.chars.get('ana')!.homeSpot)!;
+    const mesa = spots.find((s) => s.id === sim.chars.get('chefe')!.homeSpot)!;
+    expect(cadeira.kind).toBe('stool');
+    expect(Math.hypot(cadeira.tx - mesa.tx, cadeira.ty - mesa.ty)).toBeLessThanOrEqual(3.5);
+    // Sala de quem recebe não existe no escritório: a visitante fica na sala dela.
+    const outro = newSim();
+    outro.applySnapshot(snap([marketing], [agent('ana', '/mkt', 'working', { staff: 'copywriter', guestOf: { room: '/sumiu', staff: 'x' } })]), T0);
+    expect(outro.chars.get('ana')!.roomId).toBe('/mkt');
+  });
+});

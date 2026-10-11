@@ -29,6 +29,11 @@ export interface RoomInput {
   seed: number;
   /** Aparência escolhida para a sala; ausente = a sorteada pela semente. */
   style?: RoomStyle;
+  /**
+   * Quantas mesas a sala mostra: o limite de agentes dela (RoomInfo.maxAgents). Ausente = todas as do layout.
+   * Menos que as do layout: as últimas (na ordem em que seriam ocupadas) não são montadas.
+   */
+  desks?: number;
 }
 
 const PLANTS_TALL = ['palm', 'ficus', 'monstera', 'bonsai'] as const;
@@ -204,13 +209,15 @@ export function layoutProjectRoom(room: RoomInput, theme: RoomTheme): AreaLayout
   const deskV = theme.deskVariant;
   const chairV = theme.chairVariant;
   const ranks = [2, 0, 4];
+  // quantos lugares de trabalho montar (o limite de agentes da sala); sem limite, todos os do layout
+  const lugares = room.desks !== undefined && Number.isInteger(room.desks) && room.desks >= 1 ? room.desks : Infinity;
   if (v.conference) {
     // sala de reunião: a mesa de conferência no meio da sala, sobre um tapete, com seis cadeiras de cada lado
     rug(3.5, 3.4, 9, 5.2, theme.carpet, room.seed + 4);
     furn('conference_table', 5, 5, deskV, { order: 0.4 });
     for (let i = 0; i < 6; i++) {
-      seat('stool', 'office_chair_front', 5 + i, 4, 'down', chairV, { order: 0.55 + i * 0.01 });
-      seat('stool', 'office_chair', 5 + i, 7, 'up', chairV, { order: 0.62 + i * 0.01 });
+      if (2 * i < lugares) seat('stool', 'office_chair_front', 5 + i, 4, 'down', chairV, { order: 0.55 + i * 0.01 });
+      if (2 * i + 1 < lugares) seat('stool', 'office_chair', 5 + i, 7, 'up', chairV, { order: 0.62 + i * 0.01 });
     }
   }
   if (v.solo) {
@@ -235,6 +242,8 @@ export function layoutProjectRoom(room: RoomInput, theme: RoomTheme): AreaLayout
       const mx = lado ? 12 : 2; // a mesa (dois tiles) e a cadeira, centrada nela
       [3, 8].forEach((cy, k) => {
         const n = lado + k * 2;
+        // (gabinete além do limite de agentes da sala fica sem mesa)
+        if (n >= lugares) return;
         const mesa = furn('desk_back', mx, cy + 1, deskV, { order: 0.35 + n * 0.02, seat: `N${n}` });
         seat('desk', 'office_chair_front', mx, cy, 'down', chairV, { dx: TILE / 2, deskId: mesa, rank: n, side: 'N', order: 0.55 + n * 0.02 });
         // cadeira de visita, de costas para a câmera (serve de lugar para subagente)
@@ -245,14 +254,24 @@ export function layoutProjectRoom(room: RoomInput, theme: RoomTheme): AreaLayout
     }
   }
   const ilhas = v.solo || v.conference || v.cabins ? [] : v.twin ? [1, 9] : [2];
+  // Com limite menor que as mesas do layout, cada ilha monta só as primeiras (na ordem em que seriam ocupadas: a
+  // coluna do meio, depois a do lado). Nas duas ilhas, metade para cada lado, sempre a partir do corredor.
+  const total = Math.min(lugares, ilhas.length * 6);
   ilhas.forEach((x0, k) => {
+    const daIlha = ilhas.length === 2 ? (k === 0 ? Math.ceil(total / 2) : Math.floor(total / 2)) : total;
+    // (na ilha da esquerda das duas, a ordem das colunas espelha: as mesas ficam do lado do corredor)
+    const ordem = ilhas.length === 2 && k === 0 ? [ranks[2], ranks[1], ranks[0]] : ranks;
     for (let i = 0; i < 3; i++) {
       const lx = x0 + i * 2;
       const n = k * 3 + i;
-      const back = furn('desk_back', lx, 5, deskV, { order: 0.35 + n * 0.05, seat: `N${n}` });
-      const front = furn('desk', lx, 6, deskV, { order: 0.4 + n * 0.05, seat: `S${n}` });
-      seat('desk', 'office_chair_front', lx, 4, 'down', chairV, { dx: TILE / 2, deskId: back, rank: k * 6 + ranks[i] + 1, side: 'N', order: 0.55 + n * 0.03 });
-      seat('desk', 'office_chair', lx, 7, 'up', chairV, { dx: TILE / 2, deskId: front, rank: k * 6 + ranks[i], side: 'S', order: 0.6 + n * 0.03 });
+      if (ordem[i] + 1 < daIlha) {
+        const back = furn('desk_back', lx, 5, deskV, { order: 0.35 + n * 0.05, seat: `N${n}` });
+        seat('desk', 'office_chair_front', lx, 4, 'down', chairV, { dx: TILE / 2, deskId: back, rank: k * 6 + ordem[i] + 1, side: 'N', order: 0.55 + n * 0.03 });
+      }
+      if (ordem[i] < daIlha) {
+        const front = furn('desk', lx, 6, deskV, { order: 0.4 + n * 0.05, seat: `S${n}` });
+        seat('desk', 'office_chair', lx, 7, 'up', chairV, { dx: TILE / 2, deskId: front, rank: k * 6 + ordem[i], side: 'S', order: 0.6 + n * 0.03 });
+      }
     }
   });
   if (!v.conference && !v.twin && !v.cabins) furn('trash_bin', 9, 6, undefined, { order: 0.7 });

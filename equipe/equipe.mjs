@@ -1787,6 +1787,9 @@ export function criarDemanda(projeto, dados, agora = new Date()) {
     criadaEm: agora.getTime(),
     estado: 'fila',
     fluxo: dados.fluxo,
+    // Quem criou a demanda, quando foi um agente de outra sala (o dono do escritório, um diretor): o escritório
+    // usa para pôr quem trabalha nela na sala de quem pediu.
+    ...(dados.origem?.projeto && dados.origem?.agente ? { origem: { projeto: dados.origem.projeto, agente: dados.origem.agente } } : {}),
     etapas: dados.etapas.map((e, i) => ({ n: i + 1, agente: e.agente, instrucao: umaLinha(e.instrucao, 600) || undefined, estado: 'fila', ...(e.iaPedida ? { iaPedida: e.iaPedida } : {}) })),
   };
   for (const e of demanda.etapas) mkdirSync(join(dir, pastaDaEtapa(e.n, e.agente)), { recursive: true });
@@ -2032,6 +2035,7 @@ export function publicarDemandas(projeto, dir = pastaRegistro(), agora = Date.no
         terminadaEm: demanda.terminadaEm,
         arquivadaEm: demanda.arquivadaEm,
         aguardando: demanda.aguardando,
+        origem: demanda.origem,
         pasta: d,
         etapas: demanda.etapas.map((e) => {
           const pasta = join(d, pastaDaEtapa(e.n, e.agente));
@@ -2140,7 +2144,7 @@ export function sincronizarRegistro(projeto, dir = pastaRegistro(), agora = Date
 const EU = fileURLToPath(import.meta.url);
 
 /** O que a sessão do agente pode fazer sem perguntar: só o que é da mecânica da equipe. */
-export const LIBERADO = ['Bash(equipe fim)', 'Bash(equipe fim:*)', 'Bash(equipe passar:*)', 'Bash(equipe avisar:*)', 'Bash(equipe listar)', 'Bash(equipe listar:*)', 'Bash(equipe status)', 'Edit(.equipe/**)', 'Write(.equipe/**)', 'Read(.equipe/**)'];
+export const LIBERADO = ['Bash(equipe fim)', 'Bash(equipe fim:*)', 'Bash(equipe passar:*)', 'Bash(equipe subir:*)', 'Bash(equipe avisar:*)', 'Bash(equipe listar)', 'Bash(equipe listar:*)', 'Bash(equipe status)', 'Edit(.equipe/**)', 'Read(.equipe/**)'];
 
 /** Bloqueado para todo agente, sem diálogo: a pasta do login de longa duração (`equipe login`). */
 export const NEGADO_SEMPRE = ['Read(~/.habblaud/login/**)', 'Edit(~/.habblaud/login/**)'];
@@ -3421,9 +3425,20 @@ function iaPedidaNoComando(op) {
   return { iaPedida: pedida };
 }
 
+/** De dentro da sessão de um agente de outra sala: quem está criando a demanda ({projeto, agente}). */
+export function origemDoComando(projeto, env = process.env) {
+  if (!env.EQUIPE_DEMANDA || !env.EQUIPE_PROJETO || env.EQUIPE_PROJETO === projeto) return undefined;
+  try {
+    const agente = lerDemanda(env.EQUIPE_DEMANDA).etapas[Number(env.EQUIPE_ETAPA) - 1]?.agente;
+    return agente ? { projeto: env.EQUIPE_PROJETO, agente } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function iniciarDemanda(projeto, dados, op, diz) {
   if (!op['sem-terminal'] && !op.simular && !loginDoClaude()) falha(SEM_LOGIN);
-  const { dir, demanda } = criarDemanda(projeto, dados);
+  const { dir, demanda } = criarDemanda(projeto, { ...dados, origem: dados.origem ?? origemDoComando(projeto) });
   diz(`Demanda criada: ${demanda.id}`);
   diz(`  agentes: ${demanda.etapas.map((e) => e.agente).join(' → ')}`);
   if (op['sem-terminal']) diz(`  (sem terminal) pasta: ${dir}`);

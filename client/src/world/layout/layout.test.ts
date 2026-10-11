@@ -283,6 +283,43 @@ describe('layouts prontos (a aparência escolhida para a sala)', () => {
     }
   });
 
+  it('com limite de agentes menor que as mesas do layout, a sala monta só as mesas do limite, e continua válida', () => {
+    for (const layout of [...layouts, undefined]) {
+      const todas = LAYOUT_DESKS[layout ?? 'auto'];
+      for (let limite = 1; limite <= todas + 2; limite++) {
+        for (const slot of [0, 1]) {
+          const room = layoutProjectRoom({ id: `/l/${layout}`, slot, seed: 4242, style: layout ? { layout } : undefined, desks: limite }, theme);
+          const onde = `${layout ?? 'automático'}, limite ${limite}, vaga ${slot}`;
+          const lugares = room.spots.filter((sp) => sp.kind === (layout === 'conferencia' ? 'stool' : 'desk'));
+          expect(lugares, onde).toHaveLength(Math.min(limite, todas));
+          // nada sobreposto e tudo alcançável, como na sala cheia
+          const b = assembleBuilding(columnsFor([slot]), [room]);
+          const used = new Set<string>();
+          for (const f of room.furniture) {
+            const def = FURNITURE[f.kind];
+            if (!def.blocks) continue;
+            for (let y = f.ty; y < f.ty + def.footprint.h; y++)
+              for (let x = f.tx; x < f.tx + def.footprint.w; x++) {
+                expect(used.has(`${x},${y}`), `${f.id} sobreposto (${onde})`).toBe(false);
+                used.add(`${x},${y}`);
+              }
+          }
+          const reach = b.grid.reachableFrom(room.door!.x, room.door!.y);
+          for (const sp of room.spots) expect(reach[sp.ty * b.grid.w + sp.tx], `${sp.id} inalcançável (${onde})`).toBe(1);
+        }
+      }
+    }
+    // As duas ilhas da sala de equipe dividem as mesas meio a meio, do lado do corredor: com 8, quatro de cada lado.
+    const oito = layoutProjectRoom({ id: '/l/8', slot: 0, seed: 1, style: { layout: 'equipe', mirror: false }, desks: 8 }, theme);
+    const xs = oito.spots.filter((sp) => sp.kind === 'desk').map((sp) => sp.tx - oito.rect.x);
+    expect(xs.filter((x) => x < 8)).toHaveLength(4);
+    expect(xs.filter((x) => x >= 8)).toHaveLength(4);
+    expect(Math.min(...xs)).toBe(3);
+    expect(Math.max(...xs)).toBe(11);
+    // Sem limite informado (sala que não é de equipe), todas as mesas do layout.
+    expect(layoutProjectRoom({ id: '/l/s', slot: 0, seed: 1, style: { layout: 'equipe' } }, theme).spots.filter((sp) => sp.kind === 'desk')).toHaveLength(12);
+  });
+
   it('cada layout fixa a reunião e os cantos; o lado da ilha é o escolhido, ou o sorteado', () => {
     expect(styledVariant(42, { layout: 'equipe' })).toMatchObject({ meeting: 'table', left: 'rest', right: 'standdesk', solo: false });
     expect(styledVariant(42, { layout: 'criativo' })).toMatchObject({ meeting: 'lounge', solo: false });

@@ -8,7 +8,7 @@ import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { StaffHistory } from '../model/staffhistory';
 import { tempDir } from '../test/fixtures';
-import { agentesEmReuniao, FilaDePedidos, lerHistorico, resumoDoHistorico } from './pedidos';
+import { agentesEmReuniao, FilaDePedidos, lerHistorico, lugaresDasDemandas, resumoDoHistorico } from './pedidos';
 import { ehDiretoria, estiloDaSala, limiteDaSala, parseRegistro, type Equipes } from './registro';
 import { roomCapacity, type RoomStyle } from '../../shared/roomstyle';
 import { Rotinas, type Rotina } from './rotinas';
@@ -1601,52 +1601,147 @@ describe('sala do dono: o agente que leva o nome de quem usa, muda o escritório
   });
 });
 
-describe('reunião: demanda em andamento com agentes de mais de uma sala', () => {
+describe('onde fica quem está numa demanda entre salas: na sala de quem passou o trabalho ou na de reunião', () => {
   const equipes: Equipes = new Map([
     ['/p/mkt', { nome: 'Marketing', nomeProprio: true, diretoria: '/p/dir', ligadas: ['/p/dir', '/p/vendas'], agentes: [{ slug: 'copywriter', funcao: 'Copywriter' }, { slug: 'designer', funcao: 'Designer' }] }],
     ['/p/dir', { nome: 'Diretoria', nomeProprio: true, agentes: [{ slug: 'cmo', funcao: 'CMO' }, { slug: 'cto', funcao: 'CTO' }] }],
     ['/p/vendas', { nome: 'Vendas', nomeProprio: true, ligadas: ['/p/mkt'], agentes: [{ slug: 'vendedor', funcao: 'Vendedor' }] }],
+    ['/p/dono', { nome: 'Sala do dono', nomeProprio: true, escritorio: true, agentes: [{ slug: 'dono', funcao: 'Dono' }] }],
   ]);
   const demanda = (id: string, estado: string, agentes: string[], extra: Record<string, unknown> = {}) => ({ id, estado, etapas: agentes.map((agente, i) => ({ n: i + 1, agente, estado: 'concluida' })), ...extra });
-  const projeto = (demandas: ReturnType<typeof demanda>[]) => [{ projeto: '/p/mkt', nome: 'Marketing', demandas }];
+  const projeto = (demandas: ReturnType<typeof demanda>[], sala = '/p/mkt') => [{ projeto: sala, nome: 'x', demandas }];
+  const lugares = (ps: Parameters<typeof lugaresDasDemandas>[0]) => {
+    const l = lugaresDasDemandas(ps, equipes);
+    return { reuniao: [...l.reuniao].sort(), visitas: Object.fromEntries([...l.visitas].map(([k, v]) => [k, `${v.room}\n${v.staff}`])), anfitrioes: [...l.anfitrioes].sort() };
+  };
+  const NINGUEM = { reuniao: [], visitas: {}, anfitrioes: [] };
 
-  it('só entra quem está numa demanda em andamento que junta duas salas ou mais; a chave é a sala do agente', () => {
-    // CMO (Diretoria) e copywriter (Marketing) na mesma demanda: os dois em reunião.
-    expect([...agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter'])]), equipes)].sort()).toEqual(['/p/dir\ncmo', '/p/mkt\ncopywriter']);
-    // Três salas: todos os envolvidos, cada um pela sala dele.
-    expect([...agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter', 'vendedor', 'copywriter'])]), equipes)].sort()).toEqual(['/p/dir\ncmo', '/p/mkt\ncopywriter', '/p/vendas\nvendedor']);
-    // Gente de uma sala só não é reunião (nem o diretor sozinho numa demanda da equipe).
-    expect(agentesEmReuniao(projeto([demanda('d1', 'rodando', ['copywriter', 'designer'])]), equipes).size).toBe(0);
-    expect(agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo'])]), equipes).size).toBe(0);
-    expect(agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo', 'cto'])]), equipes).size).toBe(0);
-    // Concluída, parada, na fila ou arquivada: a reunião acabou (ou nem começou).
-    for (const estado of ['concluida', 'parada', 'fila']) expect(agentesEmReuniao(projeto([demanda('d1', estado, ['cmo', 'copywriter'])]), equipes).size, estado).toBe(0);
-    expect(agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter'], { arquivadaEm: 5 })]), equipes).size).toBe(0);
-    // Agente que não é de nenhuma das salas (apagado, nome antigo) é ignorado; vale o nome de hoje (`quem`).
-    expect(agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo', 'fantasma'])]), equipes).size).toBe(0);
-    const renomeado = { id: 'd2', estado: 'rodando', etapas: [{ n: 1, agente: 'redator', quem: 'copywriter' }, { n: 2, agente: 'cmo' }] };
-    expect(agentesEmReuniao([{ projeto: '/p/mkt', nome: 'Marketing', demandas: [renomeado] }], equipes).size).toBe(2);
-    // Projeto que não é de uma equipe conhecida: nada.
-    expect(agentesEmReuniao([{ projeto: '/p/outro', nome: 'Outro', demandas: [demanda('d1', 'rodando', ['cmo', 'copywriter'])] }], equipes).size).toBe(0);
+  it('dois agentes: o colega vai para a sala de quem passou o trabalho (o diretor); três ou mais: sala de reunião', () => {
+    // O CMO (Diretoria) e o copywriter (Marketing): o copywriter fica na sala do CMO; não há reunião.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter'])]))).toEqual({ reuniao: [], visitas: { '/p/mkt\ncopywriter': '/p/dir\ncmo' }, anfitrioes: ['/p/dir\ncmo'] });
+    // A ordem das etapas não muda quem recebe: é sempre o diretor.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['copywriter', 'cmo'])])).visitas).toEqual({ '/p/mkt\ncopywriter': '/p/dir\ncmo' });
+    // Duas salas ligadas, sem diretor: recebe quem começou a demanda.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['copywriter', 'vendedor'])])).visitas).toEqual({ '/p/vendas\nvendedor': '/p/mkt\ncopywriter' });
+    // Três ou mais envolvidos: todos na sala de reunião, cada um pela sala dele.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter', 'designer'])]))).toEqual({ reuniao: ['/p/dir\ncmo', '/p/mkt\ncopywriter', '/p/mkt\ndesigner'], visitas: {}, anfitrioes: [] });
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter', 'vendedor', 'copywriter'])])).reuniao).toEqual(['/p/dir\ncmo', '/p/mkt\ncopywriter', '/p/vendas\nvendedor']);
+    expect([...agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter', 'designer'])]), equipes)]).toHaveLength(3);
   });
 
-  it('o escritório marca quem está em reunião (o parado, o que está trabalhando e os subagentes dele)', () => {
-    let em: ReadonlySet<string> = new Set();
-    const office = new Office({ names: new NameStore(null), jobs: new JobStore(null), equipe: () => equipes, meetings: () => em, version: '9', startedAt: Date.now(), accounts: () => [], sources: () => [], accountName: () => undefined });
+  it('gente de uma sala só, demanda parada, concluída, na fila ou arquivada: ninguém muda de lugar', () => {
+    expect(lugares(projeto([demanda('d1', 'rodando', ['copywriter', 'designer'])]))).toEqual(NINGUEM);
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo'])]))).toEqual(NINGUEM);
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo', 'cto'])]))).toEqual(NINGUEM);
+    for (const estado of ['concluida', 'parada', 'fila']) expect(lugares(projeto([demanda('d1', estado, ['cmo', 'copywriter', 'designer'])])), estado).toEqual(NINGUEM);
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter'], { arquivadaEm: 5 })]))).toEqual(NINGUEM);
+    // Agente que não é de nenhuma das salas (apagado, nome antigo) é ignorado; vale o nome de hoje (`quem`).
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo', 'fantasma'])]))).toEqual(NINGUEM);
+    const renomeado = { id: 'd2', estado: 'rodando', etapas: [{ n: 1, agente: 'redator', quem: 'copywriter' }, { n: 2, agente: 'cmo' }] };
+    expect(lugares([{ projeto: '/p/mkt', nome: 'Marketing', demandas: [renomeado] }]).visitas).toEqual({ '/p/mkt\ncopywriter': '/p/dir\ncmo' });
+    // Projeto que não é de uma equipe conhecida: nada.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter'])], '/p/outro'))).toEqual(NINGUEM);
+  });
+
+  it('demanda que o dono (ou outro agente de fora) mandou a um agente só: ele vai para a sala de quem mandou', () => {
+    const doDono = { origem: { projeto: '/p/dono', agente: 'dono' } };
+    // O dono mandou ao copywriter: o copywriter trabalha na sala do dono.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['copywriter'], doDono)]))).toEqual({ reuniao: [], visitas: { '/p/mkt\ncopywriter': '/p/dono\ndono' }, anfitrioes: ['/p/dono\ndono'] });
+    // Ao diretor também: quem recebe é o dono, não o diretor.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['cmo'], doDono)], '/p/dir')).visitas).toEqual({ '/p/dir\ncmo': '/p/dono\ndono' });
+    // O agente chamou um colega: já são três com o dono, e todos vão para a sala de reunião.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['copywriter', 'designer'], doDono)]))).toEqual({ reuniao: ['/p/dono\ndono', '/p/mkt\ncopywriter', '/p/mkt\ndesigner'], visitas: {}, anfitrioes: [] });
+    // O dono mandou duas demandas ao mesmo tempo, a dois agentes: reunião com os dois.
+    expect(lugares([...projeto([demanda('d1', 'rodando', ['copywriter'], doDono)]), ...projeto([demanda('d2', 'rodando', ['cmo'], doDono)], '/p/dir')])).toEqual({
+      reuniao: ['/p/dir\ncmo', '/p/dono\ndono', '/p/mkt\ncopywriter'],
+      visitas: {},
+      anfitrioes: [],
+    });
+    // Origem de agente que não existe: vale só quem está nas etapas.
+    expect(lugares(projeto([demanda('d1', 'rodando', ['copywriter'], { origem: { projeto: '/p/dono', agente: 'fantasma' } })]))).toEqual(NINGUEM);
+    // Quem recebe e ao mesmo tempo está numa reunião leva o visitante junto.
+    expect(
+      lugares([...projeto([demanda('d1', 'rodando', ['cmo', 'copywriter', 'designer'])]), ...projeto([demanda('d2', 'rodando', ['vendedor', 'copywriter'])], '/p/vendas')]).reuniao,
+    ).toEqual(['/p/dir\ncmo', '/p/mkt\ncopywriter', '/p/mkt\ndesigner', '/p/vendas\nvendedor']);
+  });
+
+  it('em serviço: todos os agentes de uma demanda em andamento, mesmo de uma sala só e mesmo quem não é o da etapa do momento', () => {
+    const servico = (ps: Parameters<typeof lugaresDasDemandas>[0]) => [...lugaresDasDemandas(ps, equipes).emServico].sort();
+    // Dois diretores revezando na mesma demanda (o caso real: cto, cmo, cto, cmo): os dois, sem reunião nem visita.
+    const revezando = { id: 'd1', estado: 'rodando', etapas: [{ n: 1, agente: 'cto', estado: 'concluida' }, { n: 2, agente: 'cmo', estado: 'concluida' }, { n: 3, agente: 'cto', estado: 'rodando' }, { n: 4, agente: 'cmo', estado: 'fila' }] };
+    expect(servico([{ projeto: '/p/mkt', nome: 'Marketing', demandas: [revezando] }])).toEqual(['/p/dir\ncmo', '/p/dir\ncto']);
+    expect(lugares([{ projeto: '/p/mkt', nome: 'Marketing', demandas: [revezando] }])).toEqual(NINGUEM);
+    // Um agente só, na sala dele: em serviço também.
+    expect(servico(projeto([demanda('d1', 'rodando', ['designer'])]))).toEqual(['/p/mkt\ndesigner']);
+    // Com gente de outras salas, e com quem criou a demanda de fora: todos.
+    expect(servico(projeto([demanda('d1', 'rodando', ['copywriter'], { origem: { projeto: '/p/dono', agente: 'dono' } })]))).toEqual(['/p/dono\ndono', '/p/mkt\ncopywriter']);
+    // Demanda que não está em andamento não segura ninguém.
+    for (const estado of ['concluida', 'parada', 'fila']) expect(servico(projeto([demanda('d1', estado, ['designer'])])), estado).toEqual([]);
+    expect(servico(projeto([demanda('d1', 'rodando', ['designer'], { arquivadaEm: 5 })]))).toEqual([]);
+    // O escritório põe a marca no agente fixo (não no subagente).
+    let l = lugaresDasDemandas([{ projeto: '/p/mkt', nome: 'Marketing', demandas: [revezando] }], equipes);
+    const office = new Office({ names: new NameStore(null), jobs: new JobStore(null), equipe: () => equipes, meetings: () => l.reuniao, visits: () => l, version: '9', startedAt: Date.now(), accounts: () => [], sources: () => [], accountName: () => undefined });
     office.syncEquipe();
-    const marcados = () => office.commit().snapshot.agents.filter((a) => a.meeting).map((a) => `${a.roomId}:${a.staff}`).sort();
-    expect(marcados()).toEqual([]);
-    em = agentesEmReuniao(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter'])]), equipes);
+    const duty = (slug: string) => office.commit().snapshot.agents.find((a) => a.staff === slug)?.duty;
+    expect(duty('cmo')).toBe(true);
+    expect(duty('cto')).toBe(true);
+    expect(duty('copywriter')).toBeUndefined();
+    l = lugaresDasDemandas([], equipes);
     office.markDirty();
-    expect(marcados()).toEqual(['/p/dir:cmo', '/p/mkt:copywriter']);
-    // Quem não está na demanda fica como está.
-    expect(office.commit().snapshot.agents.find((a) => a.staff === 'designer')?.meeting).toBeUndefined();
-    em = new Set();
+    expect(duty('cmo')).toBeUndefined();
+  });
+
+  it('o comando anota quem criou a demanda quando foi um agente de outra sala, e publica para o escritório', () => {
+    const tmp = tempDir();
+    try {
+      const sala = join(tmp.dir, 'Vendas');
+      const dono = join(tmp.dir, 'escritorio');
+      for (const d of [sala, dono]) {
+        mkdirSync(d, { recursive: true });
+        cli.prepararProjeto(d);
+      }
+      cli.criarAgente(sala, 'vendedor', { funcao: 'Vendedor' });
+      cli.criarAgente(dono, 'dono', { funcao: 'Dono' });
+      const doDono = cli.criarDemanda(dono, { pedido: 'Peça o relatório ao vendedor.', etapas: [{ agente: 'dono' }] });
+      const env = { EQUIPE_DEMANDA: doDono.dir, EQUIPE_PROJETO: dono, EQUIPE_ETAPA: '1' };
+      expect(cli.origemDoComando(sala, env)).toEqual({ projeto: dono, agente: 'dono' });
+      // Na própria sala, ou fora da sessão de um agente, não há origem.
+      expect(cli.origemDoComando(dono, env)).toBeUndefined();
+      expect(cli.origemDoComando(sala, {})).toBeUndefined();
+      const nova = cli.criarDemanda(sala, { pedido: 'Faça o relatório.', etapas: [{ agente: 'vendedor' }], origem: cli.origemDoComando(sala, env) });
+      expect(nova.demanda.origem).toEqual({ projeto: dono, agente: 'dono' });
+      expect(cli.criarDemanda(sala, { pedido: 'Outra.', etapas: [{ agente: 'vendedor' }] }).demanda.origem).toBeUndefined();
+      const publicado = JSON.parse(readFileSync(cli.publicarDemandas(sala, join(tmp.dir, 'reg')), 'utf8'));
+      expect(publicado.demandas.find((d: { id: string }) => d.id === nova.demanda.id).origem).toEqual({ projeto: dono, agente: 'dono' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('o escritório marca cada um: em reunião, na sala de um colega (guestOf) ou recebendo (hosting); o subagente acompanha', () => {
+    let l = lugaresDasDemandas([], equipes);
+    const office = new Office({ names: new NameStore(null), jobs: new JobStore(null), equipe: () => equipes, meetings: () => l.reuniao, visits: () => l, version: '9', startedAt: Date.now(), accounts: () => [], sources: () => [], accountName: () => undefined });
+    office.syncEquipe();
+    const de = (slug: string) => office.commit().snapshot.agents.find((a) => a.staff === slug);
+    const marcas = (slug: string) => ({ meeting: de(slug)?.meeting, guestOf: de(slug)?.guestOf, hosting: de(slug)?.hosting });
+    const NADA = { meeting: undefined, guestOf: undefined, hosting: undefined };
+    for (const slug of ['cmo', 'copywriter', 'designer']) expect(marcas(slug), slug).toEqual(NADA);
+    // Dois: o copywriter visita o CMO.
+    l = lugaresDasDemandas(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter'])]), equipes);
     office.markDirty();
-    expect(marcados()).toEqual([]);
+    expect(marcas('copywriter')).toEqual({ ...NADA, guestOf: { room: '/p/dir', staff: 'cmo' } });
+    expect(marcas('cmo')).toEqual({ ...NADA, hosting: true });
+    expect(marcas('designer')).toEqual(NADA);
+    // Três: reunião.
+    l = lugaresDasDemandas(projeto([demanda('d1', 'rodando', ['cmo', 'copywriter', 'designer'])]), equipes);
+    office.markDirty();
+    for (const slug of ['cmo', 'copywriter', 'designer']) expect(marcas(slug), slug).toEqual({ ...NADA, meeting: true });
+    expect(marcas('cto')).toEqual(NADA);
+    l = lugaresDasDemandas([], equipes);
+    office.markDirty();
+    for (const slug of ['cmo', 'copywriter', 'designer']) expect(marcas(slug), slug).toEqual(NADA);
   });
 });
-
 
 describe('limite de agentes por sala e a Diretoria em quatro gabinetes', () => {
   /** Marketing (dirigido pela Diretoria) e a Diretoria, cada um com um agente. */

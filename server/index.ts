@@ -23,7 +23,7 @@ import { StaffHistory } from './model/staffhistory';
 import { EquipeRegistro, estiloDaSala, limiteDaSala } from './equipe/registro';
 import { roomCapacity } from '../shared/roomstyle';
 import { readdirSync, statSync } from 'node:fs';
-import { agentesEmReuniao, createEquipeRoutes, FilaDePedidos, lerHistorico } from './equipe/pedidos';
+import { createEquipeRoutes, FilaDePedidos, lerHistorico, lugaresDasDemandas } from './equipe/pedidos';
 import { Rotinas } from './equipe/rotinas';
 import { Office } from './model/office';
 import { RoomAliases } from './model/room-aliases';
@@ -96,6 +96,7 @@ equipe.load();
 // equipe publica). Relido a cada 3 s, e só quando algum arquivo mudou; mudou a lista, a tela é avisada.
 const historicoDir = join(config.equipeDir, 'demandas');
 let reunioes: ReadonlySet<string> = new Set();
+let visitas: { visitas: ReadonlyMap<string, { room: string; staff: string }>; anfitrioes: ReadonlySet<string>; emServico: ReadonlySet<string> } = { visitas: new Map(), anfitrioes: new Set(), emServico: new Set() };
 let reunioesSig = '';
 let reunioesKey = '';
 const lerReunioes = (): void => {
@@ -114,11 +115,13 @@ const lerReunioes = (): void => {
   }
   if (sig === reunioesSig) return;
   reunioesSig = sig;
-  const novo = sig ? agentesEmReuniao(lerHistorico(historicoDir), equipe.equipes()) : new Set<string>();
-  const key = [...novo].sort().join('|');
+  // Quem vai para a sala de reunião, quem vai para a sala de quem passou o trabalho e quem recebe.
+  const l = sig ? lugaresDasDemandas(lerHistorico(historicoDir), equipe.equipes()) : { reuniao: new Set<string>(), visitas: new Map<string, { room: string; staff: string }>(), anfitrioes: new Set<string>(), emServico: new Set<string>() };
+  const key = [[...l.reuniao].sort().join('|'), [...l.visitas].map(([k, v]) => `${k}>${v.room}\n${v.staff}`).sort().join('|'), [...l.anfitrioes].sort().join('|'), [...l.emServico].sort().join('|')].join('#');
   if (key === reunioesKey) return;
   reunioesKey = key;
-  reunioes = novo;
+  reunioes = l.reuniao;
+  visitas = { visitas: l.visitas, anfitrioes: l.anfitrioes, emServico: l.emServico };
   late.office?.markDirty();
 };
 lerReunioes();
@@ -128,6 +131,7 @@ const office = new Office({
   jobs,
   equipe: () => equipe.equipes(),
   meetings: () => reunioes,
+  visits: () => visitas,
   ultimos,
   roomAlias: (path) => roomAliases.get(path),
   roomStyle: (path) => roomStyles.get(path),
