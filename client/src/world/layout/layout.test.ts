@@ -44,7 +44,7 @@ describe('montagem por blocos', () => {
     expect(b.blocks[0].columns).toEqual({ lo: 2, hi: 4 });
     expect(b.rect).toEqual({ x: 32, y: 0, w: 48, h: 29 });
     expect(corridor.rect).toEqual({ x: 32, y: 12, w: 48, h: 5 });
-    expect(b.areas.find((a) => a.id === core.RECEPTION_ID)!.rect).toEqual({ x: 32, y: 0, w: 16, h: 12 });
+    expect(b.areas.find((a) => a.id === core.RECEPTION_ID)!.rect).toEqual({ x: 32, y: 17, w: 16, h: 12 });
     expect(rooms[0].rect).toEqual({ x: 64, y: 0, w: COL_W, h: ROOM_H });
     expect(rooms[0].side).toBe('north');
     expect(b.rooms).toHaveLength(1);
@@ -499,8 +499,11 @@ describe('itens de parede', () => {
   });
 
   it('passagens nas faces das paredes têm batente', () => {
+    // o WC do principal fica ao norte (porta na mureta, sem batente); a recepção, ao sul, tem a porta na face com batente
     const restroom = core.coreAreas(PRINCIPAL).find((a) => a.kind === 'restroom')!;
-    expect(restroom.wallItems.some((w) => w.kind === 'door_frame')).toBe(true);
+    expect(restroom.wallItems.some((w) => w.kind === 'door_frame')).toBe(false);
+    const reception = core.coreAreas(PRINCIPAL).find((a) => a.kind === 'reception')!;
+    expect(reception.wallItems.some((w) => w.kind === 'door_frame')).toBe(true);
     // salas ao sul (porta na face norte): vagas 2 (4S), 3 (1S) e 7 (0S)
     for (const room of roomsFor([2, 3, 7])) expect(room.wallItems.some((w) => w.kind === 'door_frame'), room.id).toBe(true);
   });
@@ -511,19 +514,21 @@ describe('núcleo por bloco (coreAreas)', () => {
   const byId = (id: string) => areas().find((a) => a.id === id)!;
   const inside = (r: { x: number; y: number; w: number; h: number }, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 
-  it('monta recepção, WC, copa e lounge nas colunas 2 e 3 do principal, com os ids de hoje', () => {
+  it('monta recepção (sul), WC (norte), copa e lounge nas colunas 2 e 3 do principal, com os ids de hoje (D9)', () => {
     expect(areas().map((a) => a.id)).toEqual(['core:recepcao', 'core:banheiros', 'core:copa', 'core:lounge']);
-    expect(byId('core:recepcao').rect).toEqual({ x: 32, y: 0, w: 16, h: 12 });
-    expect(byId('core:banheiros').rect).toEqual({ x: 32, y: 17, w: 16, h: 12 });
+    expect(byId('core:recepcao').rect).toEqual({ x: 32, y: 17, w: 16, h: 12 });
+    expect(byId('core:banheiros').rect).toEqual({ x: 32, y: 0, w: 16, h: 12 });
     expect(byId('core:copa').rect).toEqual({ x: 48, y: 0, w: 16, h: 12 });
     expect(byId('core:lounge').rect).toEqual({ x: 48, y: 17, w: 16, h: 12 });
-    // os elevadores (cx 3 e 6,5 locais) acompanham a coluna
-    expect(byId('core:recepcao').spots.filter((s) => s.kind === 'elevator').map((s) => s.tx)).toEqual([34, 38]);
+    // os elevadores (cx 3 e 5,5 locais) acompanham a coluna
+    expect(byId('core:recepcao').spots.filter((s) => s.kind === 'elevator').map((s) => s.tx)).toEqual([34, 37]);
   });
 
-  it('as portas do WC e do lounge acompanham o retângulo da área e continuam caminháveis', () => {
-    expect(byId('core:banheiros').door).toEqual({ x: 39, y: 17, w: 2, h: 2 });
-    expect(byId('core:banheiros').walkable).toContainEqual({ x: 39, y: 17, w: 2, h: 2 });
+  it('as portas do WC, da recepção e do lounge acompanham o retângulo da área e continuam caminháveis', () => {
+    expect(byId('core:banheiros').door).toEqual({ x: 39, y: 11, w: 2, h: 1 });
+    expect(byId('core:banheiros').walkable).toContainEqual({ x: 39, y: 11, w: 2, h: 1 });
+    expect(byId('core:recepcao').door).toEqual({ x: 39, y: 17, w: 2, h: 2 });
+    expect(byId('core:recepcao').walkable).toContainEqual({ x: 39, y: 17, w: 2, h: 2 });
     expect(byId('core:lounge').door).toEqual({ x: 55, y: 17, w: 3, h: 2 });
     expect(byId('core:lounge').walkable).toContainEqual({ x: 55, y: 17, w: 3, h: 2 });
   });
@@ -540,8 +545,21 @@ describe('núcleo por bloco (coreAreas)', () => {
     expect(lounge.spots.filter((s) => s.kind === 'beanbag')).toHaveLength(2);
   });
 
-  it('as outras áreas do núcleo não têm porta externa', () => {
-    for (const id of ['core:recepcao', 'core:banheiros', 'core:copa']) expect(byId(id).exit, id).toBeUndefined();
+  it('WC e copa não têm porta externa; a recepção tem a entrada do prédio na parede sul (D9)', () => {
+    for (const id of ['core:banheiros', 'core:copa']) expect(byId(id).exit, id).toBeUndefined();
+    const reception = byId('core:recepcao');
+    expect(reception.exit).toEqual({ x: 39, y: 28, w: 3, h: 1 });
+    expect(reception.walkable).toContainEqual({ x: 39, y: 28, w: 3, h: 1 });
+    expect(reception.walls.find((w) => w.kind === 'south')!.doorways).toEqual([{ x: 39 * TILE, w: 3 * TILE }]);
+  });
+
+  it('layoutRestroom ao norte (side): porta na mureta sul, face exterior sem vão', () => {
+    const wc = core.layoutRestroom({ x: 32, y: 0, w: 16, h: 12 }, 'core:banheiros', 'north');
+    expect(wc.door).toEqual({ x: 39, y: 11, w: 2, h: 1 });
+    expect(wc.walls.find((w) => w.kind === 'south')!.doorways).toEqual([{ x: 39 * TILE, w: 2 * TILE }]);
+    for (const w of wc.walls) if (w.kind === 'face') expect(w.doorways).toBeUndefined();
+    expect(wc.wallItems.some((w) => w.kind === 'door_frame')).toBe(false);
+    expect(wc.spots.filter((s) => s.kind === 'stall')).toHaveLength(3);
   });
 
   it('layoutRestroom aceita outro id (WC dos anexos) e mantém o de hoje por padrão', () => {
@@ -576,7 +594,11 @@ describe('núcleo por bloco (coreAreas)', () => {
   it('as funções de área aceitam qualquer retângulo de coluna (x 0 e 16): nada depende da posição antiga', () => {
     const reception = core.layoutReception({ x: 0, y: 0, w: 16, h: 12 });
     expect(reception.rect).toEqual({ x: 0, y: 0, w: 16, h: 12 });
-    expect(reception.walkable).toEqual([{ x: 1, y: 2, w: 14, h: 10 }]);
+    expect(reception.walkable).toEqual([
+      { x: 1, y: 2, w: 14, h: 9 },
+      { x: 7, y: 0, w: 2, h: 2 },
+      { x: 7, y: 11, w: 3, h: 1 },
+    ]);
     expect(core.layoutRestroom({ x: 0, y: 17, w: 16, h: 12 }).door).toEqual({ x: 7, y: 17, w: 2, h: 2 });
     expect(core.layoutCafe({ x: 16, y: 0, w: 16, h: 12 }).rect).toEqual({ x: 16, y: 0, w: 16, h: 12 });
     expect(core.layoutLounge({ x: 16, y: 17, w: 16, h: 12 }).door).toEqual({ x: 23, y: 17, w: 3, h: 2 });
@@ -712,25 +734,31 @@ describe('passarela como área (layoutBridge)', () => {
   });
 });
 
-describe('entrada decorativa na face norte da recepção', () => {
-  /** A recepção na coluna 2 do principal (x 32..48). */
-  const reception = () => core.layoutReception({ x: 32, y: 0, w: 16, h: 12 });
-  /** Largura em tiles de um item de parede: a porta fechada cobre 3 tiles (o footprint de `door_frame` é o da `single`). */
-  const tilesOf = (w: { kind: FurnitureKind; variant?: string }) => (w.kind === 'door_frame' && w.variant === 'closed' ? 3 : FURNITURE[w.kind].footprint.w);
+describe('recepção ao sul do corredor com a entrada do prédio na parede sul (D9)', () => {
+  /** A recepção na coluna 2 sul do principal (x 32..48, y 17..29). */
+  const reception = () => core.layoutReception({ x: 32, y: 17, w: 16, h: 12 });
+  const tilesOf = (w: { kind: FurnitureKind }) => FURNITURE[w.kind].footprint.w;
 
-  it('há uma porta fechada de 3 tiles em lx 7,5..10,5, só desenho: sem vão na face, sem porta e sem mudar o walk', () => {
+  it('porta do corredor na face (lx 7..9, com batente) e entrada de 3 tiles na parede sul, as duas caminháveis', () => {
     const r = reception();
     const doors = r.wallItems.filter((w) => w.kind === 'door_frame');
     expect(doors).toHaveLength(1);
-    expect(doors[0].variant).toBe('closed');
-    expect(doors[0].on).toBe('face');
-    expect(doors[0].cx).toBe((32 + 9) * TILE);
-    for (const w of r.walls) if (w.kind === 'face') expect(w.doorways).toBeUndefined();
-    expect(r.door).toBeUndefined();
-    expect(r.walkable).toEqual([{ x: 33, y: 2, w: 14, h: 10 }]);
+    expect(doors[0].variant).toBeUndefined();
+    expect(doors[0].cx).toBe((32 + 8) * TILE);
+    expect(r.walls.find((w) => w.kind === 'face')!.doorways).toEqual([{ x: 39 * TILE, w: 2 * TILE }]);
+    expect(r.walls.find((w) => w.kind === 'south')!.doorways).toEqual([{ x: 39 * TILE, w: 3 * TILE }]);
+    expect(r.door).toEqual({ x: 39, y: 17, w: 2, h: 2 });
+    expect(r.exit).toEqual({ x: 39, y: 28, w: 3, h: 1 });
+    expect(r.walkable).toEqual([
+      { x: 33, y: 19, w: 14, h: 9 },
+      { x: 39, y: 17, w: 2, h: 2 },
+      { x: 39, y: 28, w: 3, h: 1 },
+    ]);
+    // nada aberto para o corredor além da porta: sem divisórias de vidro
+    expect(r.furniture.some((f) => f.kind === 'glass_partition')).toBe(false);
   });
 
-  it('elevadores, porta, placa, relógio e quadro cabem na face sem se sobrepor', () => {
+  it('elevadores, porta, relógio, placa e quadro cabem na face sem se sobrepor; a porta não encosta nos elevadores', () => {
     const spans = reception()
       .wallItems.filter((w) => w.on === 'face')
       .map((w) => ({ kind: w.kind, x0: w.cx - (tilesOf(w) * TILE) / 2, x1: w.cx + (tilesOf(w) * TILE) / 2 }))
@@ -739,18 +767,25 @@ describe('entrada decorativa na face norte da recepção', () => {
     for (let i = 1; i < spans.length; i++) expect(spans[i].x0, `${spans[i].kind} sobre ${spans[i - 1].kind}`).toBeGreaterThanOrEqual(spans[i - 1].x1);
     // dentro da face (lx 0,5..15,5; as caps ocupam 0..0,5 e 15,5..16)
     for (const s of spans) expect(s.x0 >= 32.5 * TILE && s.x1 <= 47.5 * TILE, s.kind).toBe(true);
-    // elevadores (2..4 e 5,5..7,5) e placa (10,5..13,5) onde o contrato manda; a porta logo a leste do segundo elevador
     const at = (kind: FurnitureKind) => spans.filter((s) => s.kind === kind).map((s) => [s.x0 / TILE - 32, s.x1 / TILE - 32]);
     expect(at('elevator')).toEqual([
       [2, 4],
-      [5.5, 7.5],
+      [4.5, 6.5],
     ]);
-    expect(at('door_frame')).toEqual([[7.5, 10.5]]);
+    expect(at('door_frame')).toEqual([[7, 9]]);
     expect(at('sign')).toEqual([[10.5, 13.5]]);
   });
 
-  it('nenhum item da face norte fica atrás de um móvel alto', () => {
+  it('nenhum item da face fica atrás de um móvel alto', () => {
     expect(hiddenWallItems(reception())).toEqual([]);
+  });
+
+  it('da entrada até os elevadores e o corredor há caminho pela grade do prédio', () => {
+    const b = assembleBuilding(existingBlocks([]), []);
+    const reach = b.grid.reachableFrom(40, 28);
+    expect(reach[b.grid.key(34, 19)]).toBe(1); // tile de aproximação do primeiro elevador
+    expect(reach[b.grid.key(40, 14)]).toBe(1); // corredor
+    expect(b.grid.inside(40, 29)).toBe(false); // a calçada fica fora da grade
   });
 });
 
@@ -803,20 +838,30 @@ describe('área externa por blocos', () => {
     expect(ext.lanes).toHaveLength(2);
   });
 
-  it('entrada ao norte da recepção: caminho de pedra em x 39,5..42,5 × y −4..0, totem e banco ao lado', () => {
+  it('entrada ao sul da recepção (D9): caminho de pedra em x 39..42 × y 29..31 até a calçada, totem e banco na calçada', () => {
     const ext = layoutExterior(existingBlocks([0]));
-    expect(ENTRANCE_X * TILE).toBe(632);
+    expect(ENTRANCE_X).toBe(39);
     const path = ext.floors.filter((f) => f.kind === 'sidewalk' && f.x === ENTRANCE_X * TILE);
     expect(path).toHaveLength(1);
-    expect(path[0]).toMatchObject({ x: 39.5 * TILE, y: -ENTRANCE_DEPTH * TILE, w: ENTRANCE_W * TILE, h: ENTRANCE_DEPTH * TILE });
-    expect(path[0]).toMatchObject({ y: -4 * TILE, w: 3 * TILE, h: 4 * TILE });
+    expect(path[0]).toMatchObject({ x: 39 * TILE, y: BUILDING_H * TILE, w: ENTRANCE_W * TILE, h: ENTRANCE_DEPTH * TILE });
+    expect(path[0]).toMatchObject({ w: 3 * TILE, h: 2 * TILE });
     const totem = ext.props.filter((p) => p.kind === 'totem');
     expect(totem).toHaveLength(1);
-    expect(totem[0]).toMatchObject({ x: 37 * TILE + 8, y: -1 * TILE });
+    expect(totem[0]).toMatchObject({ x: 36 * TILE + 8, y: (BUILDING_H + 2) * TILE + 4 });
     const bench = ext.props.filter((p) => p.kind === 'bench');
     expect(bench).toHaveLength(1);
-    expect(bench[0]).toMatchObject({ x: 45 * TILE, y: -1 * TILE + 6 });
-    for (const p of [...totem, ...bench]) expect(p.y >= -4 * TILE && p.y < 0, `${p.kind} fora da faixa y −4..0`).toBe(true);
+    expect(bench[0]).toMatchObject({ x: 46 * TILE, y: (BUILDING_H + 2) * TILE + 4 });
+    // nada da entrada sobrou ao norte do prédio
+    expect(ext.floors.some((f) => f.kind === 'sidewalk' && f.y < 0)).toBe(false);
+    expect(ext.props.some((p) => (p.kind === 'totem' || p.kind === 'bench') && p.y < 0)).toBe(false);
+  });
+
+  it('a cerca viva do principal abre diante do caminho de pedra (peças 38 e 40 saem; 36 e 42 ficam)', () => {
+    const xs = hedgesOf([0]).map((p) => p.x / TILE - 1);
+    expect(xs).toContain(36);
+    expect(xs).toContain(42);
+    expect(xs).not.toContain(38);
+    expect(xs).not.toContain(40);
   });
 
   it('a entrada oeste sai: nenhuma calçada, totem ou banco a oeste do prédio', () => {
@@ -829,13 +874,12 @@ describe('área externa por blocos', () => {
     expect(ext.props.filter((p) => p.kind === 'paving')).toEqual([]);
   });
 
-  it('árvores e arbustos deixam livre a zona da entrada: x [34, 48)·TILE × y [−8, 0)·TILE', () => {
+  it('o bosque ao norte cobre toda a largura (não há mais zona livre de entrada ao norte)', () => {
     for (const slots of [[], [0], [0, 1, 2, 3, 4, 5]]) {
       const ext = layoutExterior(existingBlocks(slots));
       const north = ext.props.filter((p) => PLANTS.has(p.kind) && p.y < 0);
       expect(north.length, `vagas [${slots.join(',')}]: bosque ao norte sumiu`).toBeGreaterThan(0);
-      const inside = north.filter((p) => p.x >= 34 * TILE && p.x < 48 * TILE && p.y >= -8 * TILE);
-      expect(inside, `vagas [${slots.join(',')}]`).toEqual([]);
+      expect(north.some((p) => p.x >= 34 * TILE && p.x < 48 * TILE && p.y >= -8 * TILE), `vagas [${slots.join(',')}]`).toBe(true);
     }
   });
 
@@ -843,7 +887,8 @@ describe('área externa por blocos', () => {
     expect(gates([])).toEqual(new Set());
     expect(gates([0])).toEqual(new Set([2]));
     expect(gates([0, 1, 2, 3, 4, 5])).toEqual(new Set([7, 3, 2, 6]));
-    expect(gates([0, 1, 2, 3, 16])).toEqual(new Set([3, 2, 6, 17]));
+    // a vaga 16 abre A2 (fileira 0, mesma cerca sul): entram as vagas 17 (coluna 0 sul) e 19 (coluna 1 sul) de A2
+    expect(gates([0, 1, 2, 3, 16])).toEqual(new Set([3, 2, 6, 17, 19]));
     // extensão: de world.x a world.x + world.w − 2, de 2 em 2 tiles (colunas 1–4 → x 16..80)
     const xs = hedgesOf([0, 1]).map((p) => (p.x - TILE) / TILE);
     expect(Math.min(...xs)).toBe(16);
@@ -958,7 +1003,7 @@ describe('área externa por blocos', () => {
     const street = ext.floors.filter((f) => f.kind === 'street');
     expect(street).toHaveLength(1);
     expect(street[0]).toMatchObject({ y: (BUILDING_H + 4) * TILE, h: 5 * TILE });
-    expect(ext.floors.filter((f) => f.kind === 'sidewalk').map((f) => f.y / TILE).sort((a, b) => a - b)).toEqual([-4, 31, 38]);
+    expect(ext.floors.filter((f) => f.kind === 'sidewalk').map((f) => f.y / TILE).sort((a, b) => a - b)).toEqual([29, 31, 38]);
     expect(ext.streetY).toBe((BUILDING_H + 4) * TILE);
     // os postes ficam na mesma calçada e nas mesmas posições que sem o anexo, menos o de x 56 (sob a saída da passarela,
     // tiles 55..57 × 29..32) e o de x 96 (com [0] o principal tem três colunas e os bounds vão a x 100; com [8], a x 92)
@@ -988,13 +1033,13 @@ describe('área externa por blocos', () => {
         if (h && ty >= annex.y && ty < annex.y + annex.h) expect(p.x + h > ax0 && p.x - h < ax1, `${p.kind} em ${p.x},${p.y} cobre a parede do anexo (${n} salas)`).toBe(false);
       }
     }
-    // sem anexo nem passarela, a cena da fase 1 não muda: contagem e digest dos props pinados em 2ce1063
+    // sem anexo nem passarela, a cena do principal não muda: contagem e digest dos props pinados com a entrada ao sul (D9)
     // (1, 4 e 8 salas; qualquer filtro novo que tire ou mova um prop do principal quebra aqui)
     const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
     for (const [n, count, dg] of [
-      [1, 190, 644779],
-      [4, 212, -411479],
-      [8, 274, -45475],
+      [1, 195, 265584],
+      [4, 216, -274993],
+      [8, 279, -116528],
     ] as const) {
       const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
       expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);
@@ -1014,7 +1059,7 @@ describe('área externa por blocos', () => {
     // diante do miolo do anexo (coluna local 2, x 40..56) nada abre
     for (const p of north) if ((p.x - TILE) / TILE < 56) expect(p.whenRoom, `cerca em x ${(p.x - TILE) / TILE}`).toBeUndefined();
     // a cerca sul do principal cobre o miolo de pé (x 32..62) menos as duas peças sob a saída da passarela (x 54 e 56 → tiles 55 e 57)
-    expect(hedgesOf([8]).map((p) => (p.x - TILE) / TILE)).toEqual([32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 58, 60, 62]);
+    expect(hedgesOf([8]).map((p) => (p.x - TILE) / TILE)).toEqual([32, 34, 36, 42, 44, 46, 48, 50, 52, 58, 60, 62]);
     expect(gates([8])).toEqual(new Set());
   });
 

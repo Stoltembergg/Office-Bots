@@ -3,20 +3,16 @@
 import type { WallStyle } from '../../art/api';
 import { mulberry32 } from '../../../../shared/hash';
 import { BUILDING_H, COL_W, EXT_EAST, EXT_NORTH, EXT_SOUTH, EXT_WEST, ROOM_H, TILE } from '../constants';
-import { blockColumnRect, blockRect, bridgesFor, inRect, isCoreColumn, PRINCIPAL, slotAddress, slotAt, worldBounds, type BlockLayout, type BridgeLayout, type Side } from './geometry';
+import { blockColumnRect, blockRect, BRIDGE_W, bridgesFor, DOOR_LX, inRect, isCoreColumn, PRINCIPAL, slotAddress, slotAt, worldBounds, type BlockLayout, type BridgeLayout, type Side } from './geometry';
 import type { ExteriorProp, FloorPatch, TileRect, WallItemPlacement, WallSegment } from './types';
 
 export const EXTERIOR_WALL: WallStyle = { base: '#cfc8bd', trim: '#8a8174', pattern: 'brick', exterior: true };
 
-/** Entrada decorativa ao norte da recepção (tiles): borda oeste do caminho de pedra e da porta decorativa. */
-export const ENTRANCE_X = 39.5;
-export const ENTRANCE_W = 3;
-/** Caminho de pedra em y −4..0. */
-export const ENTRANCE_DEPTH = 4;
-/** Zona (tiles) que árvores e arbustos deixam livre em volta da entrada: x 34..48, y ≥ −8. */
-const ENTRANCE_CLEAR_X0 = 34;
-const ENTRANCE_CLEAR_X1 = 48;
-const ENTRANCE_CLEAR_Y = -8;
+/** Entrada do prédio (D9): porta de 3 tiles na parede sul da recepção (coluna 2 do principal, lx 7..10 → x 39..42). */
+export const ENTRANCE_X = blockRect(PRINCIPAL).x + 2 * COL_W + DOOR_LX;
+export const ENTRANCE_W = BRIDGE_W;
+/** Caminho de pedra da porta (y 29) até a calçada (y 31): 2 tiles. */
+export const ENTRANCE_DEPTH = 2;
 
 export interface ExteriorLayout {
   /** Limites da área desenhada (tiles). */
@@ -66,24 +62,18 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
     if (h && blocks.some((b) => ty >= b.rect.y && ty < b.rect.y + b.rect.h && p.x + h > b.rect.x * TILE && p.x - h < (b.rect.x + b.rect.w) * TILE)) return;
     props.push(p);
   };
-  /** Árvore ou arbusto ao norte: descartado se cair na zona da entrada (o rng já foi consumido). */
-  const plantNorth = (p: ExteriorProp) => {
-    if (p.x >= px(ENTRANCE_CLEAR_X0) && p.x <= px(ENTRANCE_CLEAR_X1) && p.y >= px(ENTRANCE_CLEAR_Y)) return;
-    place(p);
-  };
-
   floors.push({ kind: 'grass', x: px(bounds.x), y: px(bounds.y), w: px(bounds.w), h: px(bounds.h), seed: 11 });
   // calçada e rua ao sul, em toda a largura da área
   floors.push({ kind: 'sidewalk', x: px(bounds.x), y: px(south + 2), w: px(bounds.w), h: px(2), seed: 12 });
   floors.push({ kind: 'street', x: px(bounds.x), y: px(south + 4), w: px(bounds.w), h: px(5), seed: 13 });
   floors.push({ kind: 'sidewalk', x: px(bounds.x), y: px(south + 9), w: px(bounds.w), h: px(2), seed: 14 });
-  // caminho de pedra da entrada, ao norte da recepção (diante da porta decorativa em x 39,5..42,5)
-  floors.push({ kind: 'sidewalk', x: px(ENTRANCE_X), y: px(-ENTRANCE_DEPTH), w: px(ENTRANCE_W), h: px(ENTRANCE_DEPTH), seed: 15 });
+  // caminho de pedra da entrada: da porta sul da recepção (y 29) até a calçada (y 31), atravessando a cerca viva
+  floors.push({ kind: 'sidewalk', x: px(ENTRANCE_X), y: px(south), w: px(ENTRANCE_W), h: px(ENTRANCE_DEPTH), seed: 15 });
 
   // árvores ao norte (fileira com variação) e a oeste/leste
   for (let x = bounds.x + 1; x < bounds.x + bounds.w - 1; x += 4 + Math.floor(rng() * 3)) {
-    plantNorth({ kind: rng() < 0.25 ? 'pine' : 'tree', x: px(x) + Math.floor(rng() * 8), y: px(-3) - Math.floor(rng() * 20), seed: Math.floor(rng() * 1e9) });
-    if (rng() < 0.6) plantNorth({ kind: 'bush', x: px(x + 2), y: px(-1) - 2, seed: Math.floor(rng() * 1e9) });
+    place({ kind: rng() < 0.25 ? 'pine' : 'tree', x: px(x) + Math.floor(rng() * 8), y: px(-3) - Math.floor(rng() * 20), seed: Math.floor(rng() * 1e9) });
+    if (rng() < 0.6) place({ kind: 'bush', x: px(x + 2), y: px(-1) - 2, seed: Math.floor(rng() * 1e9) });
   }
   // bosque ao norte: fileiras irregulares cada vez mais esparsas
   for (const [row, gap] of [
@@ -92,7 +82,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
     [-14, 8],
   ] as const) {
     for (let x = bounds.x + 2; x < bounds.x + bounds.w - 1; x += gap + Math.floor(rng() * 4)) {
-      plantNorth({ kind: rng() < 0.3 ? 'pine' : 'tree', x: px(x) + Math.floor(rng() * 8), y: px(row) - Math.floor(rng() * 12), seed: Math.floor(rng() * 1e9) });
+      place({ kind: rng() < 0.3 ? 'pine' : 'tree', x: px(x) + Math.floor(rng() * 8), y: px(row) - Math.floor(rng() * 12), seed: Math.floor(rng() * 1e9) });
     }
   }
   for (const side of [-1, 1]) {
@@ -106,12 +96,15 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   }
   // cerca viva + flores diante de cada bloco, do lado da rua: ao sul do principal (fileira 0) e ao norte dos anexos da
   // fileira 1, ao longo do retângulo de pé; diante de cada vaga de projeto, o trecho do caminho do jardim só tem cerca
-  // quando há sala ali (nunca diante do miolo). As peças sob a passarela saem (place).
+  // quando há sala ali (nunca diante do miolo). As peças sob a passarela saem (place); diante da entrada do prédio
+  // (caminho de pedra, x 39..42) a cerca do principal abre.
   for (const b of blocks) {
     const env = b.envelope;
     const side: Side = b.id.by === 0 ? 'south' : 'north';
     const y = side === 'south' ? px(env.y + BUILDING_H + 1) + 10 : px(env.y - 1) + 10;
+    const entrance = b.id.bx === 0 && b.id.by === 0;
     for (let x = b.rect.x; x < b.rect.x + b.rect.w; x += 2) {
+      if (entrance && x + 1 < ENTRANCE_X + ENTRANCE_W && x + 3 > ENTRANCE_X) continue;
       const col = Math.floor((x - env.x) / COL_W);
       const lx = x - env.x - col * COL_W;
       const gate = !isCoreColumn(b.id, col) && (lx === 6 || lx === 8) ? slotAt(b.id, col, side) : undefined;
@@ -128,9 +121,9 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
       if (rng() < 0.3) place({ kind: 'bush', x: px(x + 3), y: px(south + row + 1), seed: Math.floor(rng() * 1e9) });
     }
   }
-  // banco e totem com a marca ao lado do caminho de pedra, na entrada norte
-  place({ kind: 'bench', x: px(ENTRANCE_X + ENTRANCE_W + 2.5), y: px(-1) + 6, seed: 1 });
-  place({ kind: 'totem', x: px(ENTRANCE_X - 2.5) + 8, y: px(-1), seed: 2 });
+  // banco e totem com a marca na calçada, dos dois lados do caminho de pedra (longe dos postes em x 34 e 44)
+  place({ kind: 'bench', x: px(ENTRANCE_X + ENTRANCE_W + 4), y: px(south + 2) + 4, seed: 1 });
+  place({ kind: 'totem', x: px(ENTRANCE_X - 3) + 8, y: px(south + 2) + 4, seed: 2 });
 
   const streetY = px(south + 4);
   const streetH = px(5);

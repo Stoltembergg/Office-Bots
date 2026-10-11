@@ -1467,9 +1467,14 @@ export class Sim {
    * (spec 7.3), senão em qualquer lugar. `near` manda na distância (padrão: o tile de `ch`); `at` é o tile cuja região
    * manda (padrão: o de `ch`; a pia depois da cabine usa a cabine); `rng` sorteia entre os 3 mais próximos.
    */
-  serviceSpot(kind: 'coffee' | 'water' | 'stall' | 'sink', ch: Character, opts: { near?: { tx: number; ty: number }; at?: { tx: number; ty: number }; rng?: () => number } = {}): SpotDef | null {
+  serviceSpot(kind: 'coffee' | 'water' | 'stall' | 'sink', ch: Character, opts: { near?: { tx: number; ty: number }; at?: { tx: number; ty: number }; areaId?: string; rng?: () => number } = {}): SpotDef | null {
     const near = opts.near ?? { tx: ch.tx, ty: ch.ty };
     const at = opts.at ?? { tx: ch.tx, ty: ch.ty };
+    // primeiro a própria área (a pia do banheiro depois da cabine, não a da copa ao lado), depois a região, depois qualquer
+    if (opts.areaId) {
+      const own = this.spots.findFree(kind, { near, by: ch.id, rng: opts.rng, filter: (s) => s.areaId === opts.areaId });
+      if (own) return own;
+    }
     const here = this.regionOf(at.tx, at.ty);
     if (here) {
       const same = this.spots.findFree(kind, { near, by: ch.id, rng: opts.rng, filter: (s) => this.regionOf(s.tx, s.ty) === here });
@@ -1556,7 +1561,7 @@ export class Sim {
         this.pushLeave(ch, steps);
         steps.push({ t: 'go', tx: s.tx, ty: s.ty }, { t: 'stall', spot: s.id, ms: between(rng, 5000, 12000), phase: 0 });
         release(s);
-        const sink = this.serviceSpot('sink', ch, { near: { tx: s.tx, ty: s.ty }, at: { tx: s.tx, ty: s.ty } });
+        const sink = this.serviceSpot('sink', ch, { near: { tx: s.tx, ty: s.ty }, at: { tx: s.tx, ty: s.ty }, areaId: s.areaId });
         if (sink && this.reserveTemp(ch, sink)) {
           goUse(sink);
           steps.push({ t: 'act', pose: 'use', ms: 2200 });

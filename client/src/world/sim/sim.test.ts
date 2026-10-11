@@ -837,9 +837,12 @@ describe('salas sem buracos', () => {
     for (const s of sim.spots.ofKind('stall')) if (s.areaId.startsWith('anexo:0,1:')) sim.spots.reserve(s.id, 'ana');
     const stall = sim.serviceSpot('stall', iza)!;
     expect(stall.areaId).toBe('core:banheiros');
-    // a pia acompanha a cabine escolhida, não a mesa de iza (spec 7.3: mesmo bloco do serviço)
-    const sink = sim.serviceSpot('sink', iza, { near: { tx: stall.tx, ty: stall.ty }, at: { tx: stall.tx, ty: stall.ty } })!;
+    // a pia acompanha a cabine escolhida, não a mesa de iza (spec 7.3: mesmo bloco do serviço) e é a do próprio
+    // banheiro, mesmo com a pia da copa (coluna ao lado, agora ao norte também) mais perto das cabines
+    const sink = sim.serviceSpot('sink', iza, { near: { tx: stall.tx, ty: stall.ty }, at: { tx: stall.tx, ty: stall.ty }, areaId: stall.areaId })!;
     expect(sink.areaId).toBe('core:banheiros');
+    const nearest = sim.serviceSpot('sink', iza, { near: { tx: stall.tx, ty: stall.ty }, at: { tx: stall.tx, ty: stall.ty } })!;
+    expect(nearest.areaId).toBe('core:copa');
   });
 
   it('café no saguão não leva a sentar na copa; café na copa pode (guarda cafeSeatAfter em planOuting)', () => {
