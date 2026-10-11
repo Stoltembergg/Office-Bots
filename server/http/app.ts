@@ -58,6 +58,8 @@ export interface ApiDeps {
     status(): UpdateStatus;
     check(opts: { manual?: boolean }): Promise<UpdateStatus>;
   };
+  /** Uso por assinatura e personas do Hermes (GET /api/hermes/uso, sources/hermes-uso.ts). Só com HERMES_ROOT. */
+  hermesUso?: () => unknown;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -294,6 +296,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         }
         terminals.attach(req, res, id);
       }
+      return true;
+    }
+    if (path === '/api/hermes/uso') {
+      if (!isRead) methodNotAllowed(res, 'GET');
+      else if (!deps.hermesUso) sendJson(res, 404, { error: 'fonte do Hermes desligada (defina HERMES_ROOT)' });
+      else sendJson(res, 200, deps.hermesUso());
       return true;
     }
     if (path.startsWith('/api/sessions/')) {
