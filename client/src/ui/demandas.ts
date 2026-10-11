@@ -106,6 +106,18 @@ export function sessaoDaEtapa(e: Pick<EtapaInfo, 'sessao' | 'iniciadaEm'>, proje
     .sort((a, b) => (a.firstAt ?? 0) - (b.firstAt ?? 0))[0];
 }
 
+/**
+ * Quem pediu a demanda, em palavras: "você" (pela tela ou pelo terminal), o agente que a criou de outra sala (com o
+ * nome dele, quando o escritório sabe), "uma rotina" ou "um agente". Demanda antiga, sem esse registro: ''.
+ */
+export function quemPediu(d: Pick<DemandaInfo, 'pedidaPor' | 'origem'>, nomeDoAgente?: string): string {
+  if (d.origem) return nomeDoAgente ?? d.origem.agente;
+  if (d.pedidaPor === 'rotina') return 'uma rotina';
+  if (d.pedidaPor === 'pessoa') return 'você';
+  if (d.pedidaPor === 'agente') return 'um agente';
+  return '';
+}
+
 export class DemandasPopover implements UiComponent {
   readonly el: HTMLElement;
   /** Botão da barra superior (index.ts o coloca no grupo dos painéis). */
@@ -301,6 +313,14 @@ export class DemandasPopover implements UiComponent {
     return todos.find((a) => !a.parked) ?? todos[0];
   }
 
+  /** Quem pediu a demanda, com o nome do agente quando foi um de outra sala (o dono do escritório, um diretor). */
+  private pediu(d: DemandaInfo): string {
+    const o = d.origem;
+    const a = o ? (this.ctx.store.snapshot?.agents ?? []).find((x) => x.kind === 'main' && x.staff === o.agente && x.roomId === o.projeto) : undefined;
+    // (com a função entre parênteses: no cabeçalho os campos já são separados por "·")
+    return quemPediu(d, a ? (a.job ? `${a.name} (${a.job})` : a.name) : undefined);
+  }
+
   private quem(p: ProjetoHistorico, e: Pick<EtapaInfo, 'agente' | 'funcao' | 'quem'>): string {
     const a = this.agenteDe(p, e.quem ?? e.agente);
     const funcao = e.funcao ?? a?.job ?? e.agente;
@@ -475,7 +495,7 @@ export class DemandasPopover implements UiComponent {
         'span',
         { class: 'ui-dem__meta' },
         h('span', { class: `ui-dem__chip ui-dem__chip--${d.aguardando && d.estado !== 'rodando' ? 'fila' : d.estado}`, text: d.arquivadaEm ? 'Arquivada' : d.aguardando && d.estado !== 'rodando' ? 'Na fila' : estadoTexto(d.estado) }),
-        h('span', { text: [p.nome, dataTexto(d.criadaEm), progressoTexto(d, (e) => this.quem(p, e)), tokensTexto(d.etapas.reduce((soma, e) => soma + (e.tokens ?? 0), 0))].filter(Boolean).join(' · ') }),
+        h('span', { text: [p.nome, this.pediu(d) ? `pedida por ${this.pediu(d)}` : '', dataTexto(d.criadaEm), progressoTexto(d, (e) => this.quem(p, e)), tokensTexto(d.etapas.reduce((soma, e) => soma + (e.tokens ?? 0), 0))].filter(Boolean).join(' · ') }),
       ),
     );
     head.addEventListener('click', () => void this.abrir(p, d));
@@ -509,6 +529,7 @@ export class DemandasPopover implements UiComponent {
     else acoes.append(acao(d.aguardando ? 'Tirar da fila e arquivar' : 'Arquivar', d.aguardando ? 'Ela não vai mais começar sozinha; fica guardada em Arquivadas' : 'Tira da lista; continua guardada em Arquivadas', () => void this.agir(p, d, 'arquivar', 'Demanda arquivada.')));
     if (d.estado !== 'rodando') acoes.append(acao('Excluir', 'Manda a pasta da demanda para a lixeira da equipe', () => void this.agir(p, d, 'excluir', 'Demanda excluída.')));
     item.append(
+      ...(this.pediu(d) ? [h('p', { class: 'ui-dem__rot', text: 'Quem pediu' }), h('p', { class: 'ui-dem__quem-pediu', text: this.pediu(d).replace(/^./, (c) => c.toUpperCase()) })] : []),
       h('p', { class: 'ui-dem__rot', text: 'Pedido completo' }),
       h('pre', { class: 'ui-dem__texto', text: this.detalhe?.pedido || d.pedido || '(sem texto)' }),
       h('p', { class: 'ui-dem__rot', text: 'Etapas (clique numa para ver o que foi entregue)' }),
@@ -534,7 +555,7 @@ export class DemandasPopover implements UiComponent {
     const visiveis = todas.filter((x) => abaDe(x.d) === aba);
     // Só redesenha quando algo mudou: redesenhar a cada 5 s tiraria o foco e a rolagem de quem está lendo.
     const nomes = (this.ctx.store.snapshot?.agents ?? []).filter((a) => a.staff).map((a) => `${a.staff}=${a.name}`).join(',');
-    const sig = JSON.stringify([this.aba, this.aberta, this.perguntando, [...this.etapasAbertas], visiveis.map((x) => [x.p.projeto, x.d.id, x.d.estado, x.d.arquivadaEm, x.d.aguardando, x.d.etapas.map((e) => [e.n, e.agente, e.estado, e.temResultado, e.pergunta, e.continuacao, e.parada?.tipo, e.parada?.texto, Math.round((e.tokens ?? 0) / 200_000), e.ia?.modelo, e.ia?.nivel, e.ia?.motivo])]), this.detalhe, nomes, !!this.ctx.store.equipeKey]);
+    const sig = JSON.stringify([this.aba, this.aberta, this.perguntando, [...this.etapasAbertas], visiveis.map((x) => [x.p.projeto, x.d.id, x.d.estado, x.d.arquivadaEm, x.d.aguardando, x.d.pedidaPor, x.d.origem?.agente, x.d.etapas.map((e) => [e.n, e.agente, e.estado, e.temResultado, e.pergunta, e.continuacao, e.parada?.tipo, e.parada?.texto, Math.round((e.tokens ?? 0) / 200_000), e.ia?.modelo, e.ia?.nivel, e.ia?.motivo])]), this.detalhe, nomes, !!this.ctx.store.equipeKey]);
     if (!forcar && sig === this.sig) return;
     this.sig = sig;
     if (!visiveis.length) {

@@ -1711,8 +1711,25 @@ describe('onde fica quem está numa demanda entre salas: na sala de quem passou 
       const nova = cli.criarDemanda(sala, { pedido: 'Faça o relatório.', etapas: [{ agente: 'vendedor' }], origem: cli.origemDoComando(sala, env) });
       expect(nova.demanda.origem).toEqual({ projeto: dono, agente: 'dono' });
       expect(cli.criarDemanda(sala, { pedido: 'Outra.', etapas: [{ agente: 'vendedor' }] }).demanda.origem).toBeUndefined();
+      // Quem pediu fica na demanda e vai para o escritório: a pessoa, um agente ou uma rotina.
+      const daPessoa = cli.criarDemanda(sala, { pedido: 'Pela tela.', etapas: [{ agente: 'vendedor' }], pedidaPor: 'pessoa' });
+      expect(daPessoa.demanda.pedidaPor).toBe('pessoa');
+      expect(cli.criarDemanda(sala, { pedido: 'Estranho.', etapas: [{ agente: 'vendedor' }], pedidaPor: 'marciano' }).demanda.pedidaPor).toBeUndefined();
+      // Pela tela (pedido comum) é da pessoa; o pedido que uma rotina dispara vem marcado, e só por dentro do servidor.
+      for (const p of [sala, dono]) cli.sincronizarRegistro(p, join(tmp.dir, 'reg'));
+      const equipesDaqui = parseRegistro(readFileSync(join(tmp.dir, 'reg', 'registro.json'), 'utf8'));
+      const fila = new FilaDePedidos({ equipes: () => equipesDaqui, keyFile: null });
+      expect(fila.criar({ room: sala, slug: 'vendedor', pedido: 'Da página.', rotina: true }).rotina).toBeUndefined();
+      const daRotina = fila.criar({ room: sala, slug: 'vendedor', pedido: 'Toda segunda.' }, { rotina: true });
+      expect(daRotina.rotina).toBe(true);
+      const r1 = cli.atenderPedido(fila.criar({ room: sala, slug: 'vendedor', pedido: 'Da página.' }), { registro: join(tmp.dir, 'reg'), simular: true });
+      const r2 = cli.atenderPedido(daRotina, { registro: join(tmp.dir, 'reg'), simular: true });
+      const lidas = cli.listarDemandas(sala).map((x: { demanda: { id: string; pedidaPor?: string } }) => x.demanda);
+      expect(lidas.find((d: { id: string }) => d.id === r1.demanda)?.pedidaPor).toBe('pessoa');
+      expect(lidas.find((d: { id: string }) => d.id === r2.demanda)?.pedidaPor).toBe('rotina');
       const publicado = JSON.parse(readFileSync(cli.publicarDemandas(sala, join(tmp.dir, 'reg')), 'utf8'));
       expect(publicado.demandas.find((d: { id: string }) => d.id === nova.demanda.id).origem).toEqual({ projeto: dono, agente: 'dono' });
+      expect(publicado.demandas.find((d: { id: string }) => d.id === daPessoa.demanda.id).pedidaPor).toBe('pessoa');
     } finally {
       tmp.cleanup();
     }

@@ -143,6 +143,10 @@ export interface DemandaInfo {
   arquivadaEm?: number;
   /** Na fila: esperando a demanda que está trabalhando terminar (uma demanda por vez). */
   aguardando?: number;
+  /** Quem pediu: a pessoa, um agente (ver `origem`) ou uma rotina. Ausente nas demandas antigas. */
+  pedidaPor?: 'pessoa' | 'agente' | 'rotina';
+  /** O agente de outra sala que criou a demanda (o dono do escritório, um diretor): a sala e o nome de arquivo dele. */
+  origem?: { projeto: string; agente: string };
   etapas: EtapaInfo[];
 }
 

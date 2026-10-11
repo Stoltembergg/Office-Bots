@@ -54,6 +54,8 @@ export interface Pedido {
   slug: string;
   pedido: string;
   titulo?: string;
+  /** O pedido veio de uma rotina (não de alguém pela tela): a demanda guarda isso e o painel mostra. */
+  rotina?: boolean;
   criadoEm: number;
   estado: EstadoDoPedido;
   /** Id da demanda criada no projeto (quando o terminal abriu). */
@@ -235,7 +237,7 @@ export class FilaDePedidos {
     }
   }
 
-  criar(body: unknown): Pedido {
+  criar(body: unknown, de: { rotina?: boolean } = {}): Pedido {
     this.limpar();
     const b = (body ?? {}) as { room?: unknown; slug?: unknown; pedido?: unknown; titulo?: unknown };
     if (typeof b.room !== 'string' || typeof b.slug !== 'string') throw new PedidoInvalido('esperado {room, slug, pedido}');
@@ -248,6 +250,8 @@ export class FilaDePedidos {
       throw new PedidoInvalido('há pedidos demais esperando o serviço da equipe; confira se ele está rodando');
     }
     const novo: Pedido = { id: this.newId(), room, slug: agente.slug, pedido, criadoEm: this.now(), estado: 'pendente' };
+    // (só quem chama por dentro, a rotina, marca: o que vem da página é sempre da pessoa)
+    if (de.rotina) novo.rotina = true;
     const titulo = limparPedido(b.titulo, TITULO_MAX)?.replace(/\s+/g, ' ');
     if (titulo) novo.titulo = titulo;
     this.pedidos.set(novo.id, novo);

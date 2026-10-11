@@ -1570,7 +1570,7 @@ export function criarAgenteDescrito(projeto, dados, agora = Date.now()) {
   // O guia de escrever a função (a "skill" do Habblaud) vai junto, na pasta da demanda: o agente lê e segue.
   const guia = guiaDaFuncao(dados.guia);
   const nomeDoGuia = 'guia-da-funcao.md';
-  const { dir, demanda } = criarDemanda(projeto, { pedido: pedidoDeEscreverFuncao({ funcao, descricao, sala, projeto, colegas, guia: guia ? nomeDoGuia : undefined }), titulo: `Escrever a função: ${funcao}`, etapas: [{ agente: slug }] }, new Date(agora));
+  const { dir, demanda } = criarDemanda(projeto, { pedido: pedidoDeEscreverFuncao({ funcao, descricao, sala, projeto, colegas, guia: guia ? nomeDoGuia : undefined }), titulo: `Escrever a função: ${funcao}`, etapas: [{ agente: slug }], pedidaPor: 'pessoa' }, new Date(agora));
   if (guia) {
     gravar(join(dir, nomeDoGuia), guia);
     // O pedido cita o guia pelo caminho inteiro, para o agente achar de primeira.
@@ -1790,6 +1790,8 @@ export function criarDemanda(projeto, dados, agora = new Date()) {
     // Quem criou a demanda, quando foi um agente de outra sala (o dono do escritório, um diretor): o escritório
     // usa para pôr quem trabalha nela na sala de quem pediu.
     ...(dados.origem?.projeto && dados.origem?.agente ? { origem: { projeto: dados.origem.projeto, agente: dados.origem.agente } } : {}),
+    // Quem pediu: a pessoa (pela tela ou pelo terminal), um agente (ver `origem`) ou uma rotina. O painel mostra.
+    ...(['pessoa', 'agente', 'rotina'].includes(dados.pedidaPor) ? { pedidaPor: dados.pedidaPor } : {}),
     etapas: dados.etapas.map((e, i) => ({ n: i + 1, agente: e.agente, instrucao: umaLinha(e.instrucao, 600) || undefined, estado: 'fila', ...(e.iaPedida ? { iaPedida: e.iaPedida } : {}) })),
   };
   for (const e of demanda.etapas) mkdirSync(join(dir, pastaDaEtapa(e.n, e.agente)), { recursive: true });
@@ -2036,6 +2038,7 @@ export function publicarDemandas(projeto, dir = pastaRegistro(), agora = Date.no
         arquivadaEm: demanda.arquivadaEm,
         aguardando: demanda.aguardando,
         origem: demanda.origem,
+        pedidaPor: demanda.pedidaPor,
         pasta: d,
         etapas: demanda.etapas.map((e) => {
           const pasta = join(d, pastaDaEtapa(e.n, e.agente));
@@ -3031,7 +3034,7 @@ export function atenderPedido(pedido, opts = {}) {
     if (!opts.simular && !(opts.login ?? loginDoClaude)()) return { ok: false, erro: SEM_LOGIN };
     // Demanda mandada a um diretor (sala da Diretoria) roda na equipe que ele dirige.
     const alvo = projetoDaDemanda(projeto);
-    const { dir, demanda } = criarDemanda(alvo, { pedido: pedido.pedido, titulo: pedido.titulo, etapas: [{ agente: pedido.slug }] });
+    const { dir, demanda } = criarDemanda(alvo, { pedido: pedido.pedido, titulo: pedido.titulo, etapas: [{ agente: pedido.slug }], pedidaPor: pedido.rotina === true ? 'rotina' : 'pessoa' });
     const r = iniciarOuEnfileirar(alvo, dir, opts);
     sincronizarRegistro(alvo, opts.registro ?? pastaRegistro());
     return { ok: true, demanda: demanda.id, ...(r.iniciada ? {} : { aviso: avisoDeFila(r.esperando) }) };
@@ -3438,7 +3441,8 @@ export function origemDoComando(projeto, env = process.env) {
 
 function iniciarDemanda(projeto, dados, op, diz) {
   if (!op['sem-terminal'] && !op.simular && !loginDoClaude()) falha(SEM_LOGIN);
-  const { dir, demanda } = criarDemanda(projeto, { ...dados, origem: dados.origem ?? origemDoComando(projeto) });
+  // (de dentro da sessão de um agente, quem pede é ele; no terminal, é a pessoa)
+  const { dir, demanda } = criarDemanda(projeto, { ...dados, origem: dados.origem ?? origemDoComando(projeto), pedidaPor: process.env.EQUIPE_DEMANDA ? 'agente' : 'pessoa' });
   diz(`Demanda criada: ${demanda.id}`);
   diz(`  agentes: ${demanda.etapas.map((e) => e.agente).join(' → ')}`);
   if (op['sem-terminal']) diz(`  (sem terminal) pasta: ${dir}`);

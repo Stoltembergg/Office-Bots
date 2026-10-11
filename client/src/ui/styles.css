@@ -886,6 +886,12 @@
   opacity: 0.75;
 }
 
+/* Painel de Demandas: quem pediu a demanda. */
+.ui-dem__quem-pediu {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
 /* Painel de Demandas: a IA e o nível de cada etapa. */
 .ui-dem__ia {
   padding: 1px 7px;

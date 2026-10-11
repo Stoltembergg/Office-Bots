@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { RecentSession } from '../../../shared/types';
-import { abaDe, dataTexto, duracaoTexto, estadoTexto, motivoDaDemanda, podeRetomar, progressoTexto, sessaoDaEtapa } from './demandas';
+import { abaDe, dataTexto, duracaoTexto, estadoTexto, motivoDaDemanda, podeRetomar, progressoTexto, quemPediu, sessaoDaEtapa } from './demandas';
 import { quandoTexto } from './rotinas';
 
 describe('painel de demandas', () => {
+  it('quem pediu a demanda: você, o agente que a criou de outra sala, uma rotina; demanda antiga não diz', () => {
+    expect(quemPediu({ pedidaPor: 'pessoa' })).toBe('você');
+    expect(quemPediu({ pedidaPor: 'rotina' })).toBe('uma rotina');
+    // Criada pelo dono do escritório (ou por um diretor) para um agente de outra sala: o nome dele, quando se sabe.
+    expect(quemPediu({ pedidaPor: 'agente', origem: { projeto: '/p/dono', agente: 'dono' } }, 'Otávio · Dono')).toBe('Otávio · Dono');
+    expect(quemPediu({ pedidaPor: 'agente', origem: { projeto: '/p/dono', agente: 'dono' } })).toBe('dono');
+    expect(quemPediu({ pedidaPor: 'agente' })).toBe('um agente');
+    expect(quemPediu({})).toBe('');
+  });
+
   it('cada demanda cai numa aba: arquivada vale por cima do estado', () => {
     expect(abaDe({ estado: 'rodando' })).toBe('andamento');
     expect(abaDe({ estado: 'fila' })).toBe('andamento');

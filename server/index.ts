@@ -249,7 +249,7 @@ const fila = new FilaDePedidos({
 const rotinas = new Rotinas({
   file: join(config.dataDir, 'rotinas.json'),
   existe: (room, slug) => !!equipe.equipes().get(room)?.agentes.some((a) => a.slug === slug),
-  disparar: (r, pedido) => void fila.criar({ room: r.room, slug: r.slug, pedido: pedido ?? r.pedido }),
+  disparar: (r, pedido) => void fila.criar({ room: r.room, slug: r.slug, pedido: pedido ?? r.pedido }, { rotina: true }),
 });
 rotinas.load();
 if (config.terminal) rotinas.start();
