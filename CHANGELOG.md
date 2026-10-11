@@ -10,6 +10,21 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Alterado
+
+- **O prédio cresce para os dois lados.** A recepção, a copa, os banheiros e o lounge ficam no centro do prédio, e
+  as salas de projeto se abrem dos dois lados deles: a primeira a leste, a segunda a oeste, e assim por diante,
+  alternando leste e oeste — primeiro ao norte do corredor, depois ao sul —, até quatro salas de cada lado. Da nona
+  sala em diante, o prédio segue crescendo em colunas novas a leste, como antes. Sem nenhuma sala, sobra só o
+  núcleo. A compactação não muda: quando uma vaga fica livre, a sala da maior vaga se muda para ela, e o prédio
+  encolhe pelos dois lados.
+- **Entrada ao norte.** A porta do prédio fica na fachada norte da recepção, com caminho de pedra, totem e banco; a
+  entrada pela ponta oeste do corredor (calçada, banco, totem e capacho) saiu. O corredor tem vidro nas duas pontas
+  e os pátios das vagas vazias fecham do lado que for ponta, a leste ou a oeste.
+- A câmera, a luz das janelas, os pátios e os balões da visão geral acompanham o prédio quando ele cresce para o
+  oeste. No console do navegador, `habblaud.world.debug.state()` mostra `blocks` (as colunas de pé de cada bloco)
+  no lugar de `cols`.
+
 ## [0.8.0] - 2026-10-09
 
 Para atualizar: `git pull` e `npm run docker:up`. Renomear salas e editar o personagem funcionam só pelo próprio

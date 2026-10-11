@@ -197,8 +197,12 @@ export interface RoomInfo {
   /**
    * Ordem de chegada da sala, atribuída pelo servidor e estável enquanto a sala existir (um slot liberado só é
    * reutilizado após um período de espera). O cliente usa só como ordem: no prédio, cada sala ocupa a primeira vaga
-   * livre e, quando uma vaga fica livre entre salas, a mais distante se muda para ela (client/src/world/sim/sim.ts,
-   * compact). Vaga no cliente: coluna = floor(vaga / 2); par = lado norte do corredor, ímpar = lado sul.
+   * livre e, quando uma vaga fica livre entre salas, a da maior vaga se muda para ela (client/src/world/sim/sim.ts,
+   * compact). Vaga no cliente (client/src/world/layout/geometry.ts, slotAddress): a vaga s vai para o bloco
+   * floor(s / 8) e a vaga local s mod 8 segue a ordem do bloco; no principal, (coluna, lado) = 4N, 1N, 4S, 1S, 5N,
+   * 0N, 5S, 0S, com o núcleo nas colunas 2–3 (as salas alternam leste e oeste dele, primeiro ao norte do corredor,
+   * depois ao sul). Enquanto os anexos não existem (IMPLEMENTED_BLOCKS = 1), as vagas s >= 8 ficam em colunas
+   * extras a leste do principal: coluna 6 + floor((s - 8) / 2), par = norte, ímpar = sul.
    */
   slot: number;
   /** Semente para cores/decoração determinísticas. */

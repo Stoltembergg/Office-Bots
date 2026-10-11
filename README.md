@@ -52,9 +52,11 @@ para dar a letra de cada conta). Nada sai do computador: o Habblaud não lê cre
 
 ## Como é
 
-**Visão geral.** O prédio tem recepção com elevadores, copa, banheiros e lounge; cada projeto com uma sessão aberta
-ganha a sua sala ao longo do corredor. No topo, os contadores e o uso de cada conta; à esquerda, as salas e os
-agentes; embaixo, o feed de atividade.
+**Visão geral.** No centro do prédio ficam a recepção com elevadores, a copa, os banheiros e o lounge, e a entrada
+é pela porta ao norte da recepção. Cada projeto com uma sessão aberta ganha a sua sala ao longo do corredor, de um
+lado ou do outro do núcleo — a primeira a leste, a segunda a oeste, e assim por diante, até quatro salas de cada
+lado; da nona em diante, as salas seguem em colunas novas a leste. No topo, os contadores e o uso de cada conta; à
+esquerda, as salas e os agentes; embaixo, o feed de atividade.
 
 ![Visão geral do Habblaud: prédio com recepção, copa, banheiros, lounge e salas de projeto; barra lateral com salas e agentes; uso das contas no topo; feed de atividade embaixo](docs/screenshots/overview.png)
 
@@ -97,9 +99,10 @@ agentes; embaixo, o feed de atividade.
 </table>
 
 **A luz apaga.** Quando você fecha a última sessão de um projeto, o último personagem vai até o interruptor,
-apaga a luz, sai pelo elevador — e a sala é desmontada, virando jardim até um novo projeto chegar. Se o jardim
-ficou entre duas salas, a sala mais distante se muda para lá: é montada no lugar vago, o pessoal vai andando até
-ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com buracos e encolhe sozinho.
+apaga a luz, sai pelo elevador — e a sala é desmontada, virando jardim até um novo projeto chegar. Se sobrou uma
+vaga livre antes da última ocupada, a sala da maior vaga se muda para lá: é montada no lugar vago, o pessoal vai
+andando até ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com buracos e encolhe sozinho,
+dos dois lados do núcleo (as vagas alternam leste e oeste).
 
 | 1. A sala é montada, ainda apagada | 2. Alguém acende a luz e todos trabalham | 3. O último sai e apaga a luz | 4. A sala vira jardim |
 | --- | --- | --- | --- |
