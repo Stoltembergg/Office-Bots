@@ -78,8 +78,9 @@ export function layoutReception(rect: TileRect): AreaLayout {
   return a;
 }
 
-export function layoutRestroom(rect: TileRect): AreaLayout {
-  const b = new AreaBuilder(RESTROOM_ID, 'restroom', rect);
+/** Banheiros: o do principal (`core:banheiros`) e, com outro `id`, o WC dos anexos (mesma planta). */
+export function layoutRestroom(rect: TileRect, id = RESTROOM_ID): AreaLayout {
+  const b = new AreaBuilder(id, 'restroom', rect);
   const wall = CORE_WALLS.restroom;
   b.floor('tile_white', 0, 0, 16, 12, 201);
   // tapetinho só na frente das pias (nada de tapete grande no meio do banheiro)
@@ -202,12 +203,15 @@ export function layoutLounge(rect: TileRect): AreaLayout {
   // parede com TV a oeste; vidro a leste; passagem larga no meio
   b.face(0.5, 6.5, wall);
   b.face(10, 5.5, CORE_WALLS.glass);
-  b.south(0.5, 15, 11, { ...wall, exterior: true });
+  // parede sul com a porta da passarela (lx 7..10): sem anexo, o tile da porta é caminhável mas dá no jardim (fora da grade)
+  b.south(0.5, 15, 11, { ...wall, exterior: true }, [{ lx: 7, w: 3 }]);
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
   b.walk(1, 2, 14, 9);
   b.walk(7, 0, 3, 2);
+  b.walk(7, 11, 3, 1);
   b.area.door = { x: b.x0 + 7, y: b.y0, w: 3, h: 2 };
+  b.area.exit = { x: b.x0 + 7, y: b.y0 + 11, w: 3, h: 1 };
 
   b.wall('tv', 4.5, undefined, { order: 0.4 });
   b.wall('painting', 1.75, undefined, { order: 0.5 });
@@ -243,8 +247,9 @@ export function layoutLounge(rect: TileRect): AreaLayout {
   b.furn('plant_tall', 14, 10, 'monstera', { order: 0.22 });
 
   // puffs
-  (['red', 'blue', 'yellow'] as const).forEach((c, i) => {
-    b.seat('beanbag', 'beanbag', 6 + i * 2, 9, 'down', c, { order: 0.6 + i * 0.02 });
+  // dois puffs, um de cada lado do caminho da porta sul (lx 7..9 ficam livres)
+  (['red', 'yellow'] as const).forEach((c, i) => {
+    b.seat('beanbag', 'beanbag', 6 + i * 4, 9, 'down', c, { order: 0.6 + i * 0.02 });
   });
   b.spot('talk', 11, 9, 'right', { group: 'talk:lounge', dx: -1 });
   b.spot('talk', 12, 9, 'left', { group: 'talk:lounge', dx: 1 });

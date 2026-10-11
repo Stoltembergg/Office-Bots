@@ -2,7 +2,8 @@
 // que o render transforma em pixels e a simulação usa para caminhos e pontos de interesse.
 import type { Dir, FloorKind, FurnitureKind, WallStyle } from '../../art/api';
 
-export type AreaKind = 'reception' | 'restroom' | 'cafe' | 'lounge' | 'room' | 'corridor';
+/** `hub` = saguão de um anexo (chegada da passarela); `bridge` = passarela entre blocos (camada elevada no render). */
+export type AreaKind = 'reception' | 'restroom' | 'cafe' | 'lounge' | 'room' | 'corridor' | 'hub' | 'bridge';
 
 /** Retângulo em tiles (coordenadas absolutas do mundo). */
 export interface TileRect {
@@ -144,6 +145,8 @@ export interface AreaLayout {
   blocked?: TileRect[];
   /** Tiles da porta (absolutos). */
   door?: TileRect;
+  /** Porta externa (absolutos): o vão por onde a passarela encosta (porta sul do lounge, porta norte do saguão). */
+  exit?: TileRect;
   /** Para salas de projeto: o lado do corredor em que está. */
   side?: 'north' | 'south';
   /** Tom (cor hex) aplicado de leve sobre o piso, para cada sala ter identidade própria. */

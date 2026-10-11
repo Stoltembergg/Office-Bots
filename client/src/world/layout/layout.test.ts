@@ -189,6 +189,13 @@ describe('montagem por blocos', () => {
     for (const c of [4, 5]) expect(b.spots.filter((s) => s.group === `core:corredor:talk:${c}`)).toHaveLength(2);
   });
 
+  it('Review Focus 4: sem anexo, a porta sul do lounge é caminhável mas o jardim abaixo fica fora da grade', () => {
+    const { b } = buildFor([0]);
+    expect(b.grid.walkable(56, 28)).toBe(true);
+    expect(b.grid.walkable(56, 29)).toBe(false);
+    expect(b.grid.inside(56, 29)).toBe(false);
+  });
+
   it('os spots vêm na ordem núcleo, corredor, salas; os grupos de conversa do corredor levam o id da área', () => {
     const { b, rooms } = buildFor([0]);
     const order = b.spots.map((s) => s.areaId);
@@ -421,11 +428,37 @@ describe('núcleo por bloco (coreAreas)', () => {
     expect(byId('core:lounge').walkable).toContainEqual({ x: 55, y: 17, w: 3, h: 2 });
   });
 
+  it('porta sul do lounge (para a passarela): vão de 3 tiles na parede sul, tile da linha 28 caminhável e `exit` separado de `door`', () => {
+    const lounge = byId('core:lounge');
+    expect(lounge.exit).toEqual({ x: 55, y: 28, w: 3, h: 1 });
+    expect(lounge.walkable).toContainEqual({ x: 55, y: 28, w: 3, h: 1 });
+    expect(lounge.door).toEqual({ x: 55, y: 17, w: 3, h: 2 }); // a porta do corredor não muda
+    const south = lounge.walls.find((w) => w.kind === 'south')!;
+    expect(south.doorways).toEqual([{ x: 55 * TILE, w: 3 * TILE }]);
+    // os puffs saem do caminho da porta (lx 7..9 livres na linha 9): ficam em lx 6 e 10
+    expect(lounge.furniture.filter((f) => f.kind === 'beanbag').map((f) => f.tx)).toEqual([54, 58]);
+    expect(lounge.spots.filter((s) => s.kind === 'beanbag')).toHaveLength(2);
+  });
+
+  it('as outras áreas do núcleo não têm porta externa', () => {
+    for (const id of ['core:recepcao', 'core:banheiros', 'core:copa']) expect(byId(id).exit, id).toBeUndefined();
+  });
+
+  it('layoutRestroom aceita outro id (WC dos anexos) e mantém o de hoje por padrão', () => {
+    const wc = core.layoutRestroom({ x: 40, y: 58, w: 16, h: 12 }, 'anexo:0,1:wc');
+    expect(wc.id).toBe('anexo:0,1:wc');
+    expect(wc.kind).toBe('restroom');
+    expect(wc.door).toEqual({ x: 47, y: 58, w: 2, h: 2 });
+    expect(wc.spots.filter((s) => s.kind === 'sink')).toHaveLength(3);
+    expect(wc.furniture.every((f) => f.id.startsWith('anexo:0,1:wc#'))).toBe(true);
+    expect(core.layoutRestroom({ x: 32, y: 17, w: 16, h: 12 }).id).toBe('core:banheiros');
+  });
+
   it('nada fica fora do retângulo da área (nenhum número absoluto sobrou)', () => {
     for (const a of areas()) {
       const r = a.rect;
       const px = { x: r.x * TILE, y: r.y * TILE, w: r.w * TILE, h: r.h * TILE };
-      for (const t of [...a.walkable, ...(a.blocked ?? []), ...(a.door ? [a.door] : [])]) {
+      for (const t of [...a.walkable, ...(a.blocked ?? []), ...(a.door ? [a.door] : []), ...(a.exit ? [a.exit] : [])]) {
         expect(inside(r, t.x, t.y) && inside(r, t.x + t.w - 1, t.y + t.h - 1), `${a.id} tiles ${t.x},${t.y} ${t.w}×${t.h}`).toBe(true);
       }
       for (const f of a.furniture) expect(inside(r, f.tx, f.ty), f.id).toBe(true);
