@@ -313,7 +313,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   // ------------------------------------------------------------------ depuração
 
   const markMoved = () => (userMoved = true);
-  let debug = createDebug(sim, renderer, camera, markMoved);
+  let debug = createDebug(sim, renderer, camera, markMoved, store);
 
   // ------------------------------------------------------------------ timelapse
 
@@ -332,7 +332,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       renderer.clock = () => p.clock();
     }
     overlay = new Overlay(renderer.ctx, sim, renderer, camera);
-    debug = createDebug(sim, renderer, camera, markMoved);
+    debug = createDebug(sim, renderer, camera, markMoved, store);
     cues = new SoundCues(sim, camera);
     lastRectKey = '';
     setHover(null);

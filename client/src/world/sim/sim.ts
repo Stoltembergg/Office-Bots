@@ -140,7 +140,12 @@ export class Sim {
   // =================================================================== snapshot
 
   applySnapshot(input: OfficeSnapshot, now: number): void {
-    let snap = this.injected.rooms.length || this.injected.agents.length ? { ...input, rooms: [...input.rooms, ...this.injected.rooms], agents: [...input.agents, ...this.injected.agents] } : input;
+    // o injetado pelo depurador entra uma vez só: o store já o reflete no snapshot que chega daqui
+    const { rooms: injR, agents: injA } = this.injected;
+    let snap =
+      injR.length || injA.length
+        ? { ...input, rooms: [...input.rooms, ...injR.filter((r) => !input.rooms.some((x) => x.id === r.id))], agents: [...input.agents, ...injA.filter((a) => !input.agents.some((x) => x.id === a.id))] }
+        : input;
     if (this.agentPatches.size) {
       const patches = this.agentPatches;
       snap = { ...snap, agents: snap.agents.map((a) => (patches.has(a.id) ? { ...a, ...patches.get(a.id) } : a)) };

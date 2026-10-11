@@ -867,6 +867,17 @@ describe('salas sem buracos', () => {
     expect(cafeSeatAfter(coffees.find((s) => s.areaId === 'core:copa')!)).toBe(true);
     expect(cafeSeatAfter(coffees.find((s) => s.areaId === 'anexo:0,1:saguao')!)).toBe(false);
   });
+
+  it('applySnapshot não duplica sala nem agente injetados que já vieram no snapshot (o store os reflete)', () => {
+    const sim = newSim();
+    const r = room('/a', 0);
+    const a = agent('ana', '/a', 'working');
+    sim.injected.rooms.push(r);
+    sim.injected.agents.push(a);
+    sim.applySnapshot(snap([r], [a], 1), T0);
+    expect([...sim.rooms.keys()]).toEqual(['/a']);
+    expect([...sim.chars.keys()]).toEqual(['ana']);
+  });
 });
 
 describe('espera de shell', () => {

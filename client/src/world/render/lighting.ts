@@ -14,6 +14,7 @@ import type { RoomState } from '../sim/room-state';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
 import { ambientAt, ambientDistance, approachAmbient, effectiveHour, isNeutral, mixRgb, rgbCss, sunbeamAt, WHITE, type Ambient, type DaylightMode, type Rgb } from './daylight';
+import { lightMode } from './light-mode';
 import { glowSprite } from './props';
 import { furnitureSprites, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
 
@@ -253,8 +254,7 @@ export class Lighting {
 
   /** Copa, lounge, banheiros e o saguão dos anexos: luz por presença. Recepção e corredores ficam sempre acesos. */
   private presenceLit(vis: AreaVis): boolean {
-    const kind = vis.layout.kind;
-    return kind === 'cafe' || kind === 'lounge' || kind === 'restroom' || kind === 'hub';
+    return lightMode(vis.layout.kind) === 'presence';
   }
 
   private someoneIn(r: { x: number; y: number; w: number; h: number }): boolean {
@@ -352,7 +352,7 @@ export class Lighting {
     }
     const lit = new Map<AreaVis, number>();
     for (const vis of scene.areas.values()) {
-      if (vis.layout.kind === 'bridge') {
+      if (lightMode(vis.layout.kind) === 'bridge') {
         // passarela: acesa como o corredor, só nos trechos (o retângulo da área cobre o Z inteiro); sem halo de janela
         m.fillStyle = corridorLit;
         for (const f of vis.layout.floors) m.fillRect(f.x, f.y, f.w, f.h);

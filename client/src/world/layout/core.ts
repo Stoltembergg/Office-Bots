@@ -3,7 +3,7 @@
 import type { WallStyle } from '../../art/api';
 import { TILE } from '../constants';
 import { AreaBuilder, SEATED_SORT_BIAS } from './builder';
-import { blockColumnRect, blockKey, type BlockId } from './geometry';
+import { blockColumnRect, blockKey, BRIDGE_W, DOOR_LX, LOUNGE_EXIT_H, type BlockId } from './geometry';
 import type { AreaLayout, TileRect } from './types';
 
 export const RECEPTION_ID = 'core:recepcao';
@@ -204,14 +204,14 @@ export function layoutLounge(rect: TileRect): AreaLayout {
   b.face(0.5, 6.5, wall);
   b.face(10, 5.5, CORE_WALLS.glass);
   // parede sul com a porta da passarela (lx 7..10): sem anexo, o tile da porta é caminhável mas dá no jardim (fora da grade)
-  b.south(0.5, 15, 11, { ...wall, exterior: true }, [{ lx: 7, w: 3 }]);
+  b.south(0.5, 15, 11, { ...wall, exterior: true }, [{ lx: DOOR_LX, w: BRIDGE_W }]);
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
   b.walk(1, 2, 14, 9);
   b.walk(7, 0, 3, 2);
-  b.walk(7, 11, 3, 1);
+  b.walk(DOOR_LX, 11, BRIDGE_W, LOUNGE_EXIT_H);
   b.area.door = { x: b.x0 + 7, y: b.y0, w: 3, h: 2 };
-  b.area.exit = { x: b.x0 + 7, y: b.y0 + 11, w: 3, h: 1 };
+  b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0 + 11, w: BRIDGE_W, h: LOUNGE_EXIT_H };
 
   b.wall('tv', 4.5, undefined, { order: 0.4 });
   b.wall('painting', 1.75, undefined, { order: 0.5 });

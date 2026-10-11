@@ -3,7 +3,7 @@
 // banco de espera e um ponto de conversa. A planta do WC é a mesma do banheiro do principal, com outro id.
 import { AreaBuilder } from './builder';
 import { CORE_WALLS, layoutRestroom } from './core';
-import { blockColumnRect, blockKey, coreColumns, type BlockId } from './geometry';
+import { blockColumnRect, blockKey, BRIDGE_W, coreColumns, DOOR_LX, HUB_DOOR_H, type BlockId } from './geometry';
 import type { AreaLayout } from './types';
 
 export function hubId(block: BlockId): string {
@@ -24,13 +24,13 @@ export function layoutHub(block: BlockId, exit: boolean): AreaLayout {
   const wall = CORE_WALLS.reception;
   b.floor('marble', 0, 0, 16, 12, 601);
   b.rug(5, 5.2, 6, 2.6, '#3d5a80', 602);
-  b.face(0.5, 15, wall, exit ? [{ lx: 7, w: 3 }] : []);
+  b.face(0.5, 15, wall, exit ? [{ lx: DOOR_LX, w: BRIDGE_W }] : []);
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
   if (exit) {
-    b.wall('door_frame', 8.5, 'wide3', { order: 0.05 });
-    b.walk(7, 0, 3, 2);
-    b.area.exit = { x: b.x0 + 7, y: b.y0, w: 3, h: 2 };
+    b.wall('door_frame', DOOR_LX + BRIDGE_W / 2, 'wide3', { order: 0.05 });
+    b.walk(DOOR_LX, 0, BRIDGE_W, HUB_DOOR_H);
+    b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0, w: BRIDGE_W, h: HUB_DOOR_H };
   } else {
     b.wall('window', 8.5, undefined, { order: 0.3 });
   }

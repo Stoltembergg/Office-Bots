@@ -82,6 +82,9 @@ export function mockOptionsFrom(search: string): { speed: number; sessions: numb
   };
 }
 
+/** `a` seguido dos itens de `b` cujo id ainda não está em `a`. */
+const mergeById = <T extends { id: string }>(a: readonly T[], b: readonly T[]): T[] => [...a, ...b.filter((x) => !a.some((y) => y.id === x.id))];
+
 export class OfficeStore {
   snapshot: OfficeSnapshot | null = null;
   /** Feed global, do mais antigo para o mais recente. */
@@ -106,6 +109,10 @@ export class OfficeStore {
   /** Timelapse ligado: `snapshot` é o reconstruído; o último ao vivo fica em `live` (com a hora em que chegou). */
   private replay = false;
   private live: { snap: OfficeSnapshot; at: number } | null = null;
+  /** Salas e agentes injetados pelo depurador (`habblaud.world.debug`), mesclados ao snapshot publicado (barra e cartão de vazio). */
+  private injected: { rooms: RoomInfo[]; agents: AgentInfo[] } = { rooms: [], agents: [] };
+  /** Último snapshot publicado antes da mescla com o injetado. */
+  private base: OfficeSnapshot | null = null;
 
   constructor(opts: StoreOptions = {}) {
     this.mock = !!opts.mock;
@@ -225,6 +232,7 @@ export class OfficeStore {
       this.setSnapshot({ ...live.snap, serverTime: live.snap.serverTime + (Date.now() - live.at) });
     } else {
       this.snapshot = null;
+      this.base = null;
       this.agentIndex = new Map();
       this.roomIndex = new Map();
     }
@@ -383,7 +391,16 @@ export class OfficeStore {
     this.checkBuild(snap.meta.build);
   }
 
-  private setSnapshot(snap: OfficeSnapshot): void {
+  /** Troca o conjunto injetado pelo depurador e republica o snapshot mesclado (se já houver um). */
+  setInjected(extra: { rooms: RoomInfo[]; agents: AgentInfo[] }): void {
+    this.injected = { rooms: [...extra.rooms], agents: [...extra.agents] };
+    if (this.base) this.setSnapshot(this.base);
+  }
+
+  private setSnapshot(base: OfficeSnapshot): void {
+    this.base = base;
+    const { rooms, agents } = this.injected;
+    const snap = rooms.length || agents.length ? { ...base, rooms: mergeById(base.rooms, rooms), agents: mergeById(base.agents, agents) } : base;
     this.snapshot = snap;
     this.agentIndex = new Map(snap.agents.map((a) => [a.id, a]));
     this.roomIndex = new Map(snap.rooms.map((r) => [r.id, r]));

@@ -347,6 +347,9 @@ export function retainRegions(slots: Iterable<number>, refs: readonly RegionRef[
 export const BRIDGE_W = 3;
 /** x local (na coluna) da porta externa de 3 tiles: lx 7..10. */
 export const DOOR_LX = 7;
+/** Altura (tiles) da passagem na parede sul do lounge (1 tile de parede) e na face norte do saguão (2 tiles de parede). */
+export const LOUNGE_EXIT_H = 1;
+export const HUB_DOOR_H = 2;
 
 export interface BridgeLayout {
   /** `passarela:<bx>,<by>` do bloco filho. */
@@ -389,8 +392,8 @@ export function bridgeOpenings(child: BlockId): TileRect[] {
   const first = rects[0];
   const last = rects[rects.length - 1];
   return [
-    { x: first.x, y: first.y - 1, w: first.w, h: 1 },
-    { x: last.x, y: last.y + last.h, w: last.w, h: 2 },
+    { x: first.x, y: first.y - LOUNGE_EXIT_H, w: first.w, h: LOUNGE_EXIT_H },
+    { x: last.x, y: last.y + last.h, w: last.w, h: HUB_DOOR_H },
   ];
 }
 

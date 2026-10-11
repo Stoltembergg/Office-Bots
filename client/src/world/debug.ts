@@ -94,10 +94,18 @@ export interface WorldDebug {
 
 const NAMES = ['Lia', 'Otávio', 'Bruna', 'Caio', 'Iara', 'Rui', 'Nina', 'Davi', 'Tais', 'Ivo'];
 
-export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCameraMoved: () => void): WorldDebug {
+/** O que o depurador precisa do store: refletir salas e agentes injetados na barra e no cartão de vazio. */
+export interface DebugStore {
+  setInjected(extra: { rooms: RoomInfo[]; agents: AgentInfo[] }): void;
+}
+
+export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCameraMoved: () => void, store?: DebugStore): WorldDebug {
   let seq = 0;
   const now = () => Date.now();
-  const reapply = () => sim.reapply(now());
+  const reapply = () => {
+    sim.reapply(now());
+    store?.setInjected(sim.injected);
+  };
 
   const freeSlot = (): number => {
     const used = new Set<number>([...sim.rooms.values()].map((r) => r.slot));

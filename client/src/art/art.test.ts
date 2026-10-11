@@ -624,10 +624,14 @@ describe('pisos e paredes', () => {
     const cores = new Set<number>();
     for (let i = 0; i < a.data.length; i += 4) cores.add((a.data[i] << 16) | (a.data[i + 1] << 8) | a.data[i + 2]);
     expect(cores.size).toBeGreaterThan(2);
-    // a emenda escura fecha a borda direita e a de baixo de cada tile
+    // a emenda escura fecha a borda direita e a de baixo de cada tile (mais escura que a chapa, e igual nas duas bordas)
     const px = (x: number, y: number) => (a.data[(y * CHUNK_PX + x) * 4] << 16) | (a.data[(y * CHUNK_PX + x) * 4 + 1] << 8) | a.data[(y * CHUNK_PX + x) * 4 + 2];
-    expect(px(TILE - 1, 3)).toBe(0x5f6670);
-    expect(px(3, TILE - 1)).toBe(0x5f6670);
+    const lumAt = (x: number, y: number) => {
+      const c = px(x, y);
+      return 0.299 * (c >> 16) + 0.587 * ((c >> 8) & 255) + 0.114 * (c & 255);
+    };
+    expect(lumAt(TILE - 1, 3)).toBeLessThan(lumAt(7, 7) - 20);
+    expect(px(TILE - 1, 3)).toBe(px(3, TILE - 1));
   });
 
   it('a madeira continua entre blocos vizinhos (sem emenda na borda)', () => {
