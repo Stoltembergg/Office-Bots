@@ -970,15 +970,23 @@ describe('área externa por blocos', () => {
   });
 
   it('Review Focus 5: nenhum prop externo cai sob a passarela nem dentro do retângulo de pé do anexo', () => {
-    const blocks = existingBlocks([8]);
-    const bridges = bridgesFor(blocks);
-    const ext = layoutExterior(blocks, bridges);
-    const annex = blocks[1].rect;
-    for (const p of ext.props) {
-      const tx = Math.floor(p.x / TILE);
-      const ty = Math.floor(p.y / TILE);
-      expect(tx >= annex.x && tx < annex.x + annex.w && ty >= annex.y && ty < annex.y + annex.h, `${p.kind} em ${tx},${ty} dentro do anexo`).toBe(false);
-      for (const r of bridges[0].rects) expect(tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h, `${p.kind} em ${tx},${ty} sob a passarela`).toBe(false);
+    const half: Partial<Record<string, number>> = { tree: 18, pine: 14 };
+    for (const n of [9, 13, 24]) {
+      const blocks = existingBlocks(Array.from({ length: n }, (_, i) => i));
+      const bridges = bridgesFor(blocks);
+      const ext = layoutExterior(blocks, bridges);
+      const annex = blocks[1].rect;
+      const ax0 = annex.x * TILE;
+      const ax1 = (annex.x + annex.w) * TILE;
+      for (const p of ext.props) {
+        const tx = Math.floor(p.x / TILE);
+        const ty = Math.floor(p.y / TILE);
+        expect(tx >= annex.x && tx < annex.x + annex.w && ty >= annex.y && ty < annex.y + annex.h, `${p.kind} em ${tx},${ty} dentro do anexo`).toBe(false);
+        for (const r of bridges[0].rects) expect(tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h, `${p.kind} em ${tx},${ty} sob a passarela`).toBe(false);
+        // a copa (meia-largura do sprite) não entra na faixa do anexo quando a base está na altura dele
+        const h = half[p.kind] ?? 0;
+        if (h && ty >= annex.y && ty < annex.y + annex.h) expect(p.x + h > ax0 && p.x - h < ax1, `${p.kind} em ${p.x},${p.y} cobre a parede do anexo (${n} salas)`).toBe(false);
+      }
     }
     // sem anexo nem passarela, a cena da fase 1 não muda (mesmos props, na mesma ordem)
     expect(layoutExterior(existingBlocks([0, 1]), []).props).toEqual(layoutExterior(existingBlocks([0, 1])).props);
