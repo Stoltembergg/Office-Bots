@@ -7,9 +7,9 @@
 // montagem de salas); por frame, um drawImage em 'multiply' e alguns sprites de brilho em cache.
 import { TILE, type ArtModule, type ScreenMode } from '../../art/api';
 import { mulberry32 } from '../../../../shared/hash';
-import { BUILDING_H, CORRIDOR_H, CORRIDOR_Y } from '../constants';
+import { CORRIDOR_H } from '../constants';
 import type { ExteriorLayout, SlotShell } from '../layout/exterior';
-import { blockKey } from '../layout/geometry';
+import { blockAt, standingKey } from '../layout/geometry';
 import type { RoomState } from '../sim/room-state';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
@@ -251,10 +251,10 @@ export class Lighting {
     }
   }
 
-  /** Copa, lounge e banheiros: luz por presença. Recepção e corredor ficam sempre acesos. */
+  /** Copa, lounge, banheiros e o saguão dos anexos: luz por presença. Recepção e corredores ficam sempre acesos. */
   private presenceLit(vis: AreaVis): boolean {
     const kind = vis.layout.kind;
-    return kind === 'cafe' || kind === 'lounge' || kind === 'restroom';
+    return kind === 'cafe' || kind === 'lounge' || kind === 'restroom' || kind === 'hub';
   }
 
   private someoneIn(r: { x: number; y: number; w: number; h: number }): boolean {
@@ -321,7 +321,7 @@ export class Lighting {
   /** Tudo o que muda o mapa, em passos discretos (evita refazê-lo a cada frame). */
   private lightKey(scene: LightScene, now: number): string {
     const a = this.ambient;
-    const blocks = this.sim.building.blocks.map((b) => `${blockKey(b.id)}:${b.columns.lo}-${b.columns.hi}`).join(';');
+    const blocks = standingKey(this.sim.building.blocks);
     let k = `${Math.round(a.night * 200)}|${a.outside.join(',')}|${a.inside.join(',')}|${a.dim.join(',')}|${blocks}`;
     for (const vis of scene.areas.values()) {
       const { lit, cover } = this.areaLight(vis, now);
@@ -347,11 +347,17 @@ export class Lighting {
       if (scene.roomInSlot(sh.slot)) continue;
       const r = sh.rect;
       m.fillStyle = corridorLit;
-      if (r.y === 0) m.fillRect(r.x * TILE, (r.y + r.h - 2) * TILE, r.w * TILE, 2 * TILE);
+      if (sh.side === 'north') m.fillRect(r.x * TILE, (r.y + r.h - 2) * TILE, r.w * TILE, 2 * TILE);
       else m.fillRect(r.x * TILE, r.y * TILE, r.w * TILE, TILE);
     }
     const lit = new Map<AreaVis, number>();
     for (const vis of scene.areas.values()) {
+      if (vis.layout.kind === 'bridge') {
+        // passarela: acesa como o corredor, só nos trechos (o retângulo da área cobre o Z inteiro); sem halo de janela
+        m.fillStyle = corridorLit;
+        for (const f of vis.layout.floors) m.fillRect(f.x, f.y, f.w, f.h);
+        continue;
+      }
       const l = this.areaLight(vis, now);
       if (l.cover <= 0.01) continue;
       // quanto de luz a área "irradia" (janelas): salas pela luz, áreas comuns vazias na penumbra
@@ -427,23 +433,28 @@ export class Lighting {
     halo: (img: HTMLCanvasElement, cx: number, cy: number, w: number, h: number, a: number) => void,
     warm: HTMLCanvasElement,
   ): void {
-    const rect = this.sim.building.rect;
-    const bh = (rect.y + rect.h) * TILE;
+    const blocks = this.sim.building.blocks;
     for (const [vis, l] of lit) {
       if (l < 0.3) continue;
       const r = vis.layout.rect;
-      if (r.y === 0) {
-        // janelas da parede norte -> gramado ao norte do prédio
-        for (const w of vis.wallItems) if (w.kind === 'window') halo(warm, w.cx, -12, 58, 30, 0.55 * k * l);
-      } else if (vis.layout.kind !== 'corridor' && r.y + r.h >= BUILDING_H) {
-        // salas ao sul: brilho suave sobre a cerca viva e a calçada
-        for (const fx of [0.25, 0.75]) halo(warm, (r.x + r.w * fx) * TILE, bh + 16, 96, 30, 0.35 * k * l);
+      const env = blockAt(blocks, r.x, r.y)?.envelope;
+      if (!env) continue;
+      if (r.y === env.y) {
+        // janelas da parede norte -> gramado ao norte do bloco
+        for (const w of vis.wallItems) if (w.kind === 'window') halo(warm, w.cx, env.y * TILE - 12, 58, 30, 0.55 * k * l);
+      } else if (vis.layout.kind !== 'corridor' && r.y + r.h >= env.y + env.h) {
+        // áreas ao sul do bloco: brilho suave sobre o jardim (no principal, a cerca viva e a calçada)
+        for (const fx of [0.25, 0.75]) halo(warm, (r.x + r.w * fx) * TILE, (env.y + env.h) * TILE + 16, 96, 30, 0.35 * k * l);
       }
     }
-    // fachadas de vidro nas duas pontas do corredor (pontas do retângulo de pé, não do envelope)
-    const cy = (CORRIDOR_Y + CORRIDOR_H / 2) * TILE;
-    halo(warm, rect.x * TILE - 20, cy, 56, 92, 0.6 * k);
-    halo(warm, (rect.x + rect.w) * TILE + 20, cy, 56, 92, 0.45 * k);
+    // fachadas de vidro nas duas pontas de cada corredor (pontas do retângulo de pé do bloco, não do envelope)
+    for (const vis of scene.areas.values()) {
+      if (vis.layout.kind !== 'corridor') continue;
+      const r = vis.layout.rect;
+      const cy = (r.y + r.h / 2) * TILE;
+      halo(warm, r.x * TILE - 20, cy, 56, 92, 0.6 * k);
+      halo(warm, (r.x + r.w) * TILE + 20, cy, 56, 92, 0.45 * k);
+    }
     // janelas do corredor que dão para os pátios dos slots vazios
     for (const w of scene.shellWindows) {
       const slot = Number(w.areaId.slice(6));
@@ -538,8 +549,11 @@ export class Lighting {
       }
       ctx.restore();
     };
+    const blocks = this.sim.building.blocks;
     for (const vis of scene.areas.values()) {
-      if (vis.layout.rect.y !== 0) continue;
+      const r = vis.layout.rect;
+      const env = blockAt(blocks, r.x, r.y)?.envelope;
+      if (!env || r.y !== env.y) continue;
       if (vis.room && vis.room.phase !== 'ready') continue;
       const ws = vis.wallItems.filter((w) => w.kind === 'window');
       if (!ws.length) continue;
@@ -547,9 +561,9 @@ export class Lighting {
       draw(ws, { x: p.x, y: p.y + 2 * TILE, w: p.w, h: p.h - 3 * TILE });
     }
     for (const sh of scene.shells) {
-      if (sh.rect.y !== 0 || scene.roomInSlot(sh.slot)) continue;
+      if (sh.side !== 'north' || scene.roomInSlot(sh.slot)) continue;
       const ws = scene.shellWindows.filter((w) => w.areaId === `shell:${sh.slot}`);
-      draw(ws, { x: sh.rect.x * TILE, y: CORRIDOR_Y * TILE, w: sh.rect.w * TILE, h: CORRIDOR_H * TILE });
+      draw(ws, { x: sh.rect.x * TILE, y: (sh.rect.y + sh.rect.h) * TILE, w: sh.rect.w * TILE, h: CORRIDOR_H * TILE });
     }
   }
 

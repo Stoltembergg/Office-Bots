@@ -6,7 +6,7 @@ import type { WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
 import { layoutExterior, slotShell, type ExteriorLayout, type SlotShell } from '../layout/exterior';
-import { blockKey, isCoreColumn, slotAt } from '../layout/geometry';
+import { inRect, isCoreColumn, slotAt, standingKey } from '../layout/geometry';
 import type { ExteriorProp } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
 import type { Character } from '../sim/character';
@@ -80,6 +80,13 @@ export class Renderer {
   exterior: ExteriorLayout;
   shells: SlotShell[] = [];
   shellWindows: WallVis[] = [];
+  /** Áreas das passarelas (kind `bridge`): desenhadas na camada elevada, não nas passadas do chão. */
+  private bridgeVis: AreaVis[] = [];
+  /** Personagens sobre uma passarela neste frame (desenhados na camada elevada). */
+  private elevated: Character[] = [];
+  private elevatedEnts: Ent[] = [];
+  /** Entradas do pool de entidades usadas neste frame. */
+  private used = 0;
   private base: HTMLCanvasElement | null = null;
   private baseX = 0;
   private baseY = 0;
@@ -121,7 +128,7 @@ export class Renderer {
     private readonly camera: Camera,
   ) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
-    this.exterior = layoutExterior(sim.building.blocks);
+    this.exterior = layoutExterior(sim.building.blocks, sim.building.bridges);
     this.lighting = new Lighting(art, sim);
   }
 
@@ -138,7 +145,7 @@ export class Renderer {
     const assetsChanged = this.builtAssetsVersion !== this.assetsVersion;
     // base (exterior, pátios, vinheta): só quando um bloco entra/sai ou uma coluna sobe/desce — não a cada relayout(),
     // que o housekeeping chama a cada 1 s enquanto shrinkPending segura uma coluna (layoutVersion sobe, o prédio não muda)
-    const baseKey = sim.building.blocks.map((b) => `${blockKey(b.id)}:${b.columns.lo}-${b.columns.hi}`).join(';');
+    const baseKey = standingKey(sim.building.blocks);
     if (this.baseKey !== baseKey || assetsChanged) {
       this.baseKey = baseKey;
       this.buildBase();
@@ -157,6 +164,7 @@ export class Renderer {
       }
       for (const id of [...this.areas.keys()]) if (!want.has(id)) this.areas.delete(id);
       this.elevatorVis = this.areas.get('core:recepcao')?.wallItems.filter((w) => w.kind === 'elevator') ?? [];
+      this.bridgeVis = [...this.areas.values()].filter((v) => v.layout.kind === 'bridge');
     }
     // salas: (re)constrói quando surgem, mudam de layout ou de versão (nome/tema)
     this.occupiedSlots.clear();
@@ -174,7 +182,7 @@ export class Renderer {
 
   /** Camada base: área externa, pátios das vagas vazias e fechamentos do corredor, por coluna de pé de cada bloco. */
   private buildBase(): void {
-    this.exterior = layoutExterior(this.sim.building.blocks);
+    this.exterior = layoutExterior(this.sim.building.blocks, this.sim.building.bridges);
     const b = this.exterior.bounds;
     this.baseX = b.x * TILE;
     this.baseY = b.y * TILE;
@@ -369,14 +377,16 @@ export class Renderer {
       this.drawWindow(w, hour, t, 1);
     }
 
-    // ---- áreas: piso, paredes e itens de parede
+    // ---- áreas: piso, paredes e itens de parede (as passarelas ficam para a camada elevada)
     for (const vis of this.areas.values()) {
+      if (vis.layout.kind === 'bridge') continue;
       const p = vis.px;
       if (!visible(p.x, p.y - WALL_MARGIN, p.w, p.h + WALL_MARGIN)) continue;
       const anim = vis.room ? buildAnim(vis.room.phase, vis.room.progress(now)) : NO_ANIM;
       this.drawFloor(vis, anim);
     }
     for (const vis of this.areas.values()) {
+      if (vis.layout.kind === 'bridge') continue;
       const p = vis.px;
       if (!visible(p.x, p.y - WALL_MARGIN, p.w, p.h + WALL_MARGIN)) continue;
       const anim = vis.room ? buildAnim(vis.room.phase, vis.room.progress(now)) : NO_ANIM;
@@ -389,21 +399,10 @@ export class Renderer {
     // ---- entidades ordenadas por profundidade
     const ents = this.ents;
     ents.length = 0;
-    let used = 0;
-    const push = (k: K, y: number, ref: Ent['ref'], area: AreaVis | null, scale: number) => {
-      let e = this.pool[used];
-      if (!e) this.pool[used] = e = { k, y, ref, area, scale };
-      else {
-        e.k = k;
-        e.y = y;
-        e.ref = ref;
-        e.area = area;
-        e.scale = scale;
-      }
-      used++;
-      ents.push(e);
-    };
+    this.used = 0;
+    const push = (k: K, y: number, ref: Ent['ref'], area: AreaVis | null, scale: number) => this.pushEnt(ents, k, y, ref, area, scale);
     for (const vis of this.areas.values()) {
+      if (vis.layout.kind === 'bridge') continue;
       const p = vis.px;
       if (!visible(p.x - TILE, p.y - 3 * TILE, p.w + 2 * TILE, p.h + 4 * TILE)) continue;
       const anim = vis.room ? buildAnim(vis.room.phase, vis.room.progress(now)) : NO_ANIM;
@@ -416,6 +415,7 @@ export class Renderer {
         if (fs?.front) push(K.FurnFront, f.ay + 0.5, f, vis, s);
       }
     }
+    this.elevated.length = 0;
     for (const ch of this.sim.chars.values()) {
       const head = this.headOf(ch);
       head.visible = false;
@@ -426,7 +426,9 @@ export class Renderer {
         head.feetY = ch.y;
         continue;
       }
-      push(K.Char, ch.depth(), ch, null, 1);
+      // quem está sobre uma passarela é desenhado na camada elevada, por cima de tudo o que está no chão
+      if (this.onBridge(ch.tx, ch.ty)) this.elevated.push(ch);
+      else push(K.Char, ch.depth(), ch, null, 1);
     }
     for (const prop of this.exterior.props) {
       if (!visible(prop.x - 24, prop.y - 56, 48, 60)) continue;
@@ -461,25 +463,9 @@ export class Renderer {
     ents.sort((a, b) => a.y - b.y || a.k - b.k);
 
     this.iconCount = 0;
-    for (const e of ents) {
-      switch (e.k) {
-        case K.FurnBase:
-          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, false, now);
-          break;
-        case K.FurnFront:
-          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, true, now);
-          break;
-        case K.Char:
-          this.drawCharacter(e.ref as Character, now, sel);
-          break;
-        case K.Prop:
-          this.drawProp(e.ref as ExteriorProp, e.scale);
-          break;
-        case K.Car:
-          this.drawCar(e.ref as Car);
-          break;
-      }
-    }
+    this.drawEnts(ents, now, sel);
+    // ---- camada elevada: passarelas (piso e guarda-corpos) e quem está sobre elas
+    this.drawElevated(now, sel, visible);
     this.drawPingPong(now);
     // ---- espera de shell: teias de aranha, confete/pipoca/chuva (por cima das entidades)
     this.drawCobwebs(now);
@@ -521,6 +507,73 @@ export class Renderer {
   /** Remove entradas de personagens que já saíram. */
   pruneHeads(): void {
     for (const id of this.heads.keys()) if (!this.sim.chars.has(id)) this.heads.delete(id);
+  }
+
+  /** Entrada do pool de entidades deste frame, acrescentada a `list`. */
+  private pushEnt(list: Ent[], k: K, y: number, ref: Ent['ref'], area: AreaVis | null, scale: number): void {
+    let e = this.pool[this.used];
+    if (!e) this.pool[this.used] = e = { k, y, ref, area, scale };
+    else {
+      e.k = k;
+      e.y = y;
+      e.ref = ref;
+      e.area = area;
+      e.scale = scale;
+    }
+    this.used++;
+    list.push(e);
+  }
+
+  private drawEnts(ents: readonly Ent[], now: number, sel: { agent: string | null; room: string | null; hover: string | null }): void {
+    for (const e of ents) {
+      switch (e.k) {
+        case K.FurnBase:
+          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, false, now);
+          break;
+        case K.FurnFront:
+          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, true, now);
+          break;
+        case K.Char:
+          this.drawCharacter(e.ref as Character, now, sel);
+          break;
+        case K.Prop:
+          this.drawProp(e.ref as ExteriorProp, e.scale);
+          break;
+        case K.Car:
+          this.drawCar(e.ref as Car);
+          break;
+      }
+    }
+  }
+
+  /**
+   * Camada elevada (spec 3.7): o piso das passarelas, os guarda-corpos e os personagens sobre elas, depois de tudo o
+   * que está no chão (rua, carros, cerca). Ordem própria: guarda-corpo norte e laterais atrás de quem passa pelo tile,
+   * o sul na frente.
+   */
+  private drawElevated(now: number, sel: { agent: string | null; room: string | null; hover: string | null }, visible: (x: number, y: number, w: number, h: number) => boolean): void {
+    if (!this.bridgeVis.length) return;
+    const ents = this.elevatedEnts;
+    ents.length = 0;
+    for (const vis of this.bridgeVis) {
+      const p = vis.px;
+      if (!visible(p.x - TILE, p.y - 3 * TILE, p.w + 2 * TILE, p.h + 4 * TILE)) continue;
+      this.drawFloor(vis, NO_ANIM);
+      for (const f of vis.furniture) {
+        if (!visible(f.ax - 3 * TILE, f.ay - 4 * TILE, 6 * TILE, 4 * TILE + 4)) continue;
+        const y = f.variant === 's' ? f.ay + 2 : f.ay - TILE - 2;
+        this.pushEnt(ents, K.FurnBase, y, f, vis, 1);
+      }
+    }
+    for (const ch of this.elevated) this.pushEnt(ents, K.Char, ch.depth(), ch, null, 1);
+    ents.sort((a, b) => a.y - b.y || a.k - b.k);
+    this.drawEnts(ents, now, sel);
+  }
+
+  /** O tile está sobre uma passarela (tile caminhável de uma área `bridge`)? */
+  private onBridge(tx: number, ty: number): boolean {
+    for (const vis of this.bridgeVis) for (const r of vis.layout.walkable) if (inRect(r, tx, ty)) return true;
+    return false;
   }
 
   roomInSlot(slot: number): RoomState | undefined {
