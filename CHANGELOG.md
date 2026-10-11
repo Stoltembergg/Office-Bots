@@ -19,18 +19,29 @@ do meio (0.**3**.0).
   forma no banheiro mais perto de quem puxa. O anexo e a passarela só são desmontados quando a última sala do anexo
   sai e ninguém mais está lá nem na passarela. No console do navegador, `habblaud.world.debug.state()` mostra
   `bridges` (as passarelas de pé, com os trechos).
+- **Anexos laterais e ao norte.** Da décima sétima sala em diante, os anexos seguem a ordem do quarteirão: a leste do
+  principal, depois ao sul dele, a oeste, ao norte da rua norte e assim por diante, em anéis. Os anexos laterais se
+  ligam ao pai pela ponta do corredor, com uma passarela reta na altura do corredor (a ponta perde o vidro e fica
+  aberta), por cima de uma rua norte–sul sem carros; o anexo ao norte se liga à copa, que ganhou uma porta na parede
+  norte, por uma passarela em Z por cima da rua norte. O saguão de cada anexo fica do lado da passarela e tem a porta
+  larga para ela; os banheiros ficam do outro lado do corredor.
 
 ### Alterado
 
 - **O prédio cresce para os dois lados.** A recepção, a copa, os banheiros e o lounge ficam no centro do prédio, e
   as salas de projeto se abrem dos dois lados deles: a primeira a leste, a segunda a oeste, e assim por diante,
   alternando leste e oeste — primeiro ao norte do corredor, depois ao sul —, até quatro salas de cada lado. Da
-  décima sétima sala em diante, o prédio segue crescendo em colunas novas a leste, como antes. Sem nenhuma sala,
-  sobra só o núcleo. A compactação não muda: quando uma vaga fica livre, a sala da maior vaga se muda para ela, e o
-  prédio encolhe pelos dois lados.
-- **Entrada ao norte.** A porta do prédio fica na fachada norte da recepção, com caminho de pedra, totem e banco; a
-  entrada pela ponta oeste do corredor (calçada, banco, totem e capacho) saiu. O corredor tem vidro nas duas pontas
-  e os pátios das vagas vazias fecham do lado que for ponta, a leste ou a oeste.
+  décima sétima em diante, abrem-se anexos novos (ver Adicionado). Sem nenhuma sala, sobra só o núcleo. A
+  compactação não muda: quando uma vaga fica livre, a sala da maior vaga se muda para ela, e o prédio encolhe pelos
+  dois lados.
+- **Entrada pela rua.** A recepção passou para o lado sul do corredor e a porta do prédio fica na fachada dela, dando
+  no caminho de pedra até a calçada, com totem e banco; os banheiros do principal ficaram ao norte. A entrada pela
+  ponta oeste do corredor (calçada, banco, totem e capacho) saiu. O corredor tem vidro nas pontas fechadas e os pátios
+  das vagas vazias fecham do lado que for ponta, a leste ou a oeste.
+- **Ruas e jardim.** Cada coluna de anexos traz uma rua norte–sul e o anexo ao norte traz a rua norte, com calçadas,
+  postes e faixa tracejada; carros só na rua principal. Árvores e arbustos não mudam de lugar quando um bloco nasce,
+  e a cerca viva de cada bloco fica só do lado que dá para uma rua. A câmera pode andar até a borda da área externa e
+  afastar mais (zoom mínimo 0,15).
 - **Porta nos fundos do lounge.** O lounge ganhou uma porta na parede sul, de onde sai a passarela do anexo; enquanto
   o anexo não existe, ela dá para o jardim e ninguém passa por ela.
 - A câmera, a luz das janelas, os pátios e os balões da visão geral acompanham o prédio quando ele cresce para o
