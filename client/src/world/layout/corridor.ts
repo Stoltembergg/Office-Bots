@@ -1,7 +1,7 @@
 // Corredor de um bloco: atravessa as colunas de pé de oeste a leste, com bebedouros, bancos e plantas.
 import { COL_W, CORRIDOR_H, CORRIDOR_Y } from '../constants';
 import { AreaBuilder } from './builder';
-import { coreColumns, isPrincipal, type BlockId, type BlockLayout } from './geometry';
+import { arrivalOf, blockKey, coreColumns, isPrincipal, type BlockId, type BlockLayout, type BridgeLayout } from './geometry';
 import type { AreaLayout } from './types';
 
 export const CORRIDOR_ID = 'core:corredor';
@@ -16,20 +16,46 @@ export function corridorId(block: BlockId): string {
   return isPrincipal(block) ? CORRIDOR_ID : `anexo:${block.bx},${block.by}:corredor`;
 }
 
-/** Corredor sobre as colunas de pé `lo..hi` do bloco, com vidro nas duas pontas (as passarelas chegam pelo saguão e pelo lounge, não pelo corredor). */
-export function layoutCorridor(block: BlockLayout): AreaLayout {
+/** Pontas do corredor abertas por passarela horizontal (D3): o bloco é pai ou filho dela, na mesma fileira. */
+export function corridorEnds(block: BlockLayout, bridges: readonly BridgeLayout[]): { west: boolean; east: boolean } {
+  const key = blockKey(block.id);
+  let west = false;
+  let east = false;
+  for (const br of bridges) {
+    const arrival = arrivalOf(br.child);
+    if (arrival === 'hub') continue;
+    if (blockKey(br.child) === key) {
+      if (arrival === 'west') west = true;
+      else east = true;
+    } else if (blockKey(br.parent) === key) {
+      if (br.child.bx > block.id.bx) east = true;
+      else west = true;
+    }
+  }
+  return { west, east };
+}
+
+/**
+ * Corredor sobre as colunas de pé `lo..hi` do bloco. Cada ponta tem fachada de vidro, salvo quando uma passarela
+ * horizontal chega por ela (D3): aí as três linhas do meio (as da passarela) ficam abertas e caminháveis até a borda,
+ * e só os cantos das linhas 0 e 4 ficam de vidro.
+ */
+export function layoutCorridor(block: BlockLayout, bridges: readonly BridgeLayout[] = []): AreaLayout {
   const { lo, hi } = block.columns;
   const env = block.envelope;
   const id = corridorId(block.id);
   const w = (hi - lo + 1) * COL_W;
+  const open = corridorEnds(block, bridges);
   const b = new AreaBuilder(id, 'corridor', { x: env.x + lo * COL_W, y: env.y + CORRIDOR_Y, w, h: CORRIDOR_H });
   b.floor('concrete', 0, 0, w, CORRIDOR_H, 501);
-  // fachadas de vidro nas duas pontas do corredor
   for (let ly = 0; ly < CORRIDOR_H; ly++) {
-    b.furn('glass_partition', 0, ly, ly === 0 || ly === CORRIDOR_H - 1 ? 'end' : 'v', { order: 0.1 });
-    b.furn('glass_partition', w - 1, ly, ly === 0 || ly === CORRIDOR_H - 1 ? 'end' : 'v', { order: 0.1 });
+    const corner = ly === 0 || ly === CORRIDOR_H - 1;
+    if (corner || !open.west) b.furn('glass_partition', 0, ly, corner ? 'end' : 'v', { order: 0.1 });
+    if (corner || !open.east) b.furn('glass_partition', w - 1, ly, corner ? 'end' : 'v', { order: 0.1 });
   }
   b.walk(1, 0, w - 2, CORRIDOR_H);
+  if (open.west) b.walk(0, 1, 1, CORRIDOR_H - 2);
+  if (open.east) b.walk(w - 1, 1, 1, CORRIDOR_H - 2);
 
   const core = coreColumns(block.id);
   for (let c = lo; c <= hi; c++) {

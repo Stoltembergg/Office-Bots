@@ -741,6 +741,44 @@ describe('saguão dos dois lados e porta da copa (fase 3, D1 e D4)', () => {
   });
 });
 
+describe('pontas do corredor (fase 3, D3)', () => {
+  const seventeen = Array.from({ length: 17 }, (_, i) => i);
+  it('17 salas: a ponta leste do principal e a oeste de A2 ficam abertas nas três linhas da passarela e a passarela liga os dois corredores', () => {
+    const b = assembleBuilding(existingBlocks(seventeen), roomsFor(seventeen));
+    const main = b.areas.find((a) => a.id === CORRIDOR_ID)!;
+    const a2 = b.areas.find((a) => a.id === 'anexo:1,0:corredor')!;
+    const glassAt = (c: AreaLayout, tx: number) => c.furniture.filter((f) => f.kind === 'glass_partition' && f.tx === tx).map((f) => f.ty).sort((p, q) => p - q);
+    expect(glassAt(main, 95)).toEqual([12, 16]); // só os cantos
+    expect(glassAt(main, 0)).toEqual([12, 13, 14, 15, 16]);
+    expect(glassAt(a2, 108)).toEqual([12, 16]);
+    expect(glassAt(a2, 155)).toEqual([12, 13, 14, 15, 16]);
+    for (const x of [94, 95, 96, 107, 108, 109]) for (const y of [13, 14, 15]) expect(b.grid.walkable(x, y), `${x},${y}`).toBe(true);
+    expect(b.grid.walkable(95, 12)).toBe(false);
+    expect(b.grid.walkable(95, 16)).toBe(false);
+    const reach = b.grid.reachableFrom(40, 14);
+    expect(reach[b.grid.key(b.rooms[16].door!.x, b.rooms[16].door!.y)]).toBe(1);
+  });
+
+  it('sem passarela horizontal (9 salas) nada muda: vidro nas duas pontas dos dois corredores', () => {
+    const b = assembleBuilding(existingBlocks([0, 1, 2, 3, 4, 5, 6, 7, 8]), roomsFor([0, 1, 2, 3, 4, 5, 6, 7, 8]));
+    for (const c of b.areas.filter((a) => a.kind === 'corridor')) {
+      const r = c.rect;
+      expect(c.furniture.filter((f) => f.kind === 'glass_partition' && (f.tx === r.x || f.tx === r.x + r.w - 1)), c.id).toHaveLength(2 * CORRIDOR_H);
+      expect(b.grid.walkable(r.x, r.y + 2), c.id).toBe(false);
+    }
+  });
+
+  it('A4 (−1,0) a oeste: a ponta oeste do principal abre e a passarela em x negativo é caminhável', () => {
+    const b = assembleBuilding(existingBlocks([32]), roomsFor([32]));
+    const main = b.areas.find((a) => a.id === CORRIDOR_ID)!;
+    expect(main.rect.x).toBe(0);
+    expect(main.furniture.filter((f) => f.kind === 'glass_partition' && f.tx === 0).map((f) => f.ty).sort((p, q) => p - q)).toEqual([12, 16]);
+    const reach = b.grid.reachableFrom(40, 14);
+    for (const x of [0, -1, -6, -12, -13]) expect(reach[b.grid.key(x, 14)], `x ${x}`).toBe(1);
+    expect(reach[b.grid.key(b.rooms[0].door!.x, b.rooms[0].door!.y)]).toBe(1);
+  });
+});
+
 describe('passarela como área (layoutBridge)', () => {
   const bridge = bridgesFor(existingBlocks([8]))[0];
   const area = layoutBridge(bridge);

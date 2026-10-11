@@ -52,7 +52,7 @@ export function assembleBuilding(blocks: readonly BlockLayout[], rooms: readonly
   for (const block of blocks) {
     if (isPrincipal(block.id)) core.push(...coreAreas(block.id));
     else core.push(...hubAreas(block.id, hubDoor(block.id, bridges)));
-    corridors.push(layoutCorridor(block));
+    corridors.push(layoutCorridor(block, bridges));
   }
   const walkways = bridges.map(layoutBridge);
   const areas = [...core, ...corridors, ...walkways];
