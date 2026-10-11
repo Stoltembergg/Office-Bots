@@ -487,6 +487,33 @@ describe('móveis', () => {
     expect(normalizeFurniture('desk', 'wood', 0, 13).vseed).toBe(1);
     expect(normalizeFurniture('stool', undefined, 0, 13).vseed).toBe(0);
   });
+
+  it("door_frame: 'single' é o padrão (2 tiles); 'wide3' e 'closed' cobrem 3 tiles e só 'closed' fecha o vão", () => {
+    // A padrão é a moldura de hoje; 'wide' não existe (scene.ts apaga essa string das variantes) e cai na padrão.
+    expect(FURNITURE.door_frame.variants).toEqual(['single', 'wide3', 'closed']);
+    expect(normalizeFurniture('door_frame', undefined).variant).toBe('single');
+    expect(normalizeFurniture('door_frame', 'wide').variant).toBe('single');
+    const single = renderFurniture('door_frame', 'single').base;
+    const wide = renderFurniture('door_frame', 'wide3').base;
+    const closed = renderFurniture('door_frame', 'closed').base;
+    // Sem variante o mundo (room.ts, core.ts) recebe o mesmo desenho de 'single'.
+    expect(digest(renderFurniture('door_frame').base.buf.data)).toBe(digest(single.buf.data));
+    // Largura: o vão inteiro mais os batentes, sem passar da folha (3 px de margem de cada lado).
+    expect(single.buf.w).toBeGreaterThanOrEqual(2 * TILE);
+    expect(single.buf.w).toBeLessThanOrEqual(2 * TILE + 6);
+    for (const [name, s] of [['wide3', wide], ['closed', closed]] as const) {
+      expect(s.buf.w, name).toBeGreaterThanOrEqual(3 * TILE);
+      expect(s.buf.w, name).toBeLessThanOrEqual(3 * TILE + 6);
+      // Âncora no centro do trecho; sprite dentro da face (2 tiles acima do rodapé).
+      expect(Math.abs(s.ax - s.buf.w / 2), name).toBeLessThanOrEqual(1);
+      expect(s.ay - s.buf.h, name).toBeLessThanOrEqual(2 * TILE);
+    }
+    // Centro do vão: aberto nas molduras (a parede ou a passagem aparece por baixo), coberto na porta fechada.
+    const mid = (s: BufSprite) => s.buf.alpha(Math.floor(s.ax), s.ay - TILE);
+    expect(mid(single)).toBe(0);
+    expect(mid(wide)).toBe(0);
+    expect(mid(closed)).toBe(255);
+  });
 });
 
 describe('legibilidade das mesas, sofá e olhos', () => {

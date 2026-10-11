@@ -162,7 +162,7 @@ export type FurnitureKind =
   | 'tv' // 2 tiles. TV de parede; rects.tv = tela.
   | 'light_switch' // 1 tile (o sprite é pequeno). variants: 'on' | 'off'
   | 'elevator' // 2 tiles. Porta de elevador; state 0..4 = porta fechada .. totalmente aberta. Inclui luz/seta acima.
-  | 'door_frame' // 2 tiles. Batente desenhado sobre a passagem na face da parede norte.
+  | 'door_frame' // Batente sobre a passagem na face da parede norte. variants: 'single' (2 tiles, padrão) | 'wide3' (3 tiles) | 'closed' (porta fechada de 3 tiles, decorativa: cobre uma face sem vão)
   | 'sign' // 3 tiles. Placa com o nome da sala; rects.sign = área do texto (o render escreve o nome).
   | 'mirror' // 1 tile. Espelho (acima das pias do banheiro). (Aditivo) rects.glass = área refletora (o mundo pode desenhar o reflexo de quem está na frente).
   | 'shelf_wall' // 2 tiles. Prateleira de parede com objetos.
@@ -239,7 +239,7 @@ export const FURNITURE: Readonly<Record<FurnitureKind, FurnitureDef>> = {
   tv: { mount: 'wall', footprint: { w: 2, h: 0 }, blocks: false },
   light_switch: { mount: 'wall', footprint: { w: 1, h: 0 }, blocks: false, variants: ['on', 'off'] },
   elevator: { mount: 'wall', footprint: { w: 2, h: 0 }, blocks: false, states: 5 },
-  door_frame: { mount: 'wall', footprint: { w: 2, h: 0 }, blocks: false },
+  door_frame: { mount: 'wall', footprint: { w: 2, h: 0 }, blocks: false, variants: ['single', 'wide3', 'closed'] },
   sign: { mount: 'wall', footprint: { w: 3, h: 0 }, blocks: false },
   mirror: { mount: 'wall', footprint: { w: 1, h: 0 }, blocks: false },
   shelf_wall: { mount: 'wall', footprint: { w: 2, h: 0 }, blocks: false },
