@@ -215,6 +215,20 @@ describe('salas e agentes injetados pelo depurador', () => {
     expect(store.snapshot?.agents).toEqual([]);
   });
 
+  it('no timelapse, o ao vivo guardado não carrega o injetado: removê-lo durante o replay vale ao voltar', () => {
+    const store = new OfficeStore();
+    apply(store, snap(1));
+    store.setInjected({ rooms: [r], agents: [a] });
+    store.pushReplay(snap(9));
+    expect(store.liveSnapshot?.rooms.map((x) => x.id)).toEqual(['/a']);
+    store.setInjected({ rooms: [], agents: [] });
+    expect(store.liveSnapshot?.rooms).toEqual([]);
+    store.stopReplay();
+    expect(store.snapshot?.rooms).toEqual([]);
+    expect(store.snapshot?.agents).toEqual([]);
+    expect(store.snapshot?.rev).toBe(1);
+  });
+
   it('sem snapshot do servidor ainda, setInjected não publica nada', () => {
     const store = new OfficeStore();
     let n = 0;

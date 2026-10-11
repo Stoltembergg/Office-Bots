@@ -988,8 +988,17 @@ describe('área externa por blocos', () => {
         if (h && ty >= annex.y && ty < annex.y + annex.h) expect(p.x + h > ax0 && p.x - h < ax1, `${p.kind} em ${p.x},${p.y} cobre a parede do anexo (${n} salas)`).toBe(false);
       }
     }
-    // sem anexo nem passarela, a cena da fase 1 não muda (mesmos props, na mesma ordem)
-    expect(layoutExterior(existingBlocks([0, 1]), []).props).toEqual(layoutExterior(existingBlocks([0, 1])).props);
+    // sem anexo nem passarela, a cena da fase 1 não muda: contagem e digest dos props pinados em 2ce1063
+    // (1, 4 e 8 salas; qualquer filtro novo que tire ou mova um prop do principal quebra aqui)
+    const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
+    for (const [n, count, dg] of [
+      [1, 190, 644779],
+      [4, 212, -411479],
+      [8, 274, -45475],
+    ] as const) {
+      const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
+      expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);
+    }
   });
 
   it('cerca viva ao norte do anexo 1 (y 40): cobre o retângulo de pé menos as peças sob a passarela, abre só diante da coluna da sala', () => {

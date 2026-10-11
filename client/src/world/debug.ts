@@ -102,9 +102,11 @@ export interface DebugStore {
 export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCameraMoved: () => void, store?: DebugStore): WorldDebug {
   let seq = 0;
   const now = () => Date.now();
+  // primeiro o store (publica o snapshot mesclado, que o mundo aplica), depois o reapply do Sim para quem não tem store
+  // ou ainda não recebeu snapshot: na ordem inversa, um agente editado/removido voltaria ao estado antigo por uma passada
   const reapply = () => {
-    sim.reapply(now());
     store?.setInjected(sim.injected);
+    sim.reapply(now());
   };
 
   const freeSlot = (): number => {

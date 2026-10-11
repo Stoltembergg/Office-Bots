@@ -209,14 +209,14 @@ export class OfficeStore {
 
   /** Último snapshot ao vivo (durante o timelapse, `snapshot` é o reconstruído). */
   get liveSnapshot(): OfficeSnapshot | null {
-    return this.replay ? (this.live?.snap ?? null) : this.snapshot;
+    return this.replay ? (this.live ? this.merged(this.live.snap) : null) : this.snapshot;
   }
 
-  /** Publica um snapshot da fonte alternativa; o primeiro liga o modo replay (o ao vivo fica guardado). */
+  /** Publica um snapshot da fonte alternativa; o primeiro liga o modo replay (o ao vivo fica guardado, sem o injetado). */
   pushReplay(snap: OfficeSnapshot): void {
     if (!this.replay) {
       this.replay = true;
-      this.live = this.snapshot ? { snap: this.snapshot, at: Date.now() } : null;
+      this.live = this.base ? { snap: this.base, at: Date.now() } : null;
     }
     this.setSnapshot(snap);
   }
@@ -397,10 +397,15 @@ export class OfficeStore {
     if (this.base) this.setSnapshot(this.base);
   }
 
+  /** `base` com o injetado do depurador por cima (o mesmo objeto quando não há nada injetado). */
+  private merged(base: OfficeSnapshot): OfficeSnapshot {
+    const { rooms, agents } = this.injected;
+    return rooms.length || agents.length ? { ...base, rooms: mergeById(base.rooms, rooms), agents: mergeById(base.agents, agents) } : base;
+  }
+
   private setSnapshot(base: OfficeSnapshot): void {
     this.base = base;
-    const { rooms, agents } = this.injected;
-    const snap = rooms.length || agents.length ? { ...base, rooms: mergeById(base.rooms, rooms), agents: mergeById(base.agents, agents) } : base;
+    const snap = this.merged(base);
     this.snapshot = snap;
     this.agentIndex = new Map(snap.agents.map((a) => [a.id, a]));
     this.roomIndex = new Map(snap.rooms.map((r) => [r.id, r]));
