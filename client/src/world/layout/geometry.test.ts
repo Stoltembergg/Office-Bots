@@ -29,6 +29,7 @@ import {
   columnAt,
   coreColumns,
   existingBlocks,
+  inRect,
   hubDoor,
   hubSide,
   isColumnRef,
@@ -121,6 +122,34 @@ describe('blockOrder / blockIndex (spec 1.4)', () => {
     const keys = new Set<string>();
     for (let n = 0; n <= 40; n++) keys.add(blockKey(blockOrder(n)));
     expect(keys.size).toBe(41);
+  });
+
+  it('anéis até o 20 (n ≤ 116): sem repetição, inverso exato, |bx| = anel, by em −1..1, pai na ordem e passarela montável', () => {
+    const keys = new Set<string>();
+    for (let n = 0; n <= 116; n++) {
+      const b = blockOrder(n);
+      keys.add(blockKey(b));
+      expect(blockIndex(b), `n ${n}`).toBe(n);
+      expect(Math.abs(b.by) <= 1, `n ${n}: by ${b.by}`).toBe(true);
+      if (n > 8) expect(Math.abs(b.bx), `n ${n}: anel`).toBe(2 + Math.floor((n - 9) / 6));
+      if (n > 0) {
+        const p = parentOf(b)!;
+        expect(blockIndex(p), `n ${n}: pai ${blockKey(p)} vem depois do filho`).toBeLessThan(n);
+        // o bloco sozinho de pé (com o pai e os ancestrais pela trava) tem a sua passarela, contígua e sem furo
+        const blocks = existingBlocks([8 * n]);
+        const br = bridgesFor(blocks).find((x) => blockKey(x.child) === blockKey(b))!;
+        expect(br, `n ${n}: sem passarela`).toBeDefined();
+        expect(br.rects.length).toBeGreaterThan(0);
+        for (let i = 1; i < br.rects.length; i++) {
+          const a = br.rects[i - 1];
+          const c = br.rects[i];
+          const touch = (a.x < c.x + c.w && c.x < a.x + a.w && (a.y + a.h === c.y || c.y + c.h === a.y)) || (a.y < c.y + c.h && c.y < a.y + a.h && (a.x + a.w === c.x || c.x + c.w === a.x));
+          expect(touch, `n ${n}: trechos ${i - 1} e ${i} não se tocam`).toBe(true);
+        }
+        for (const r of br.rects) for (const blk of blocks) expect(inRect(blk.rect, r.x, r.y) || inRect(blk.rect, r.x + r.w - 1, r.y + r.h - 1), `n ${n}: trecho dentro de ${blockKey(blk.id)}`).toBe(false);
+      }
+    }
+    expect(keys.size).toBe(117);
   });
 });
 

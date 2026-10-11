@@ -200,15 +200,25 @@ export class Renderer {
     ctx.translate(-this.baseX, -this.baseY);
     paintShell(this.art, ctx, this.exterior.floors, []);
     // faixa tracejada no eixo de cada rua (asfalto: linhas 4–8 de uma rua h, colunas 3–7 de uma v)
+    // nos cruzamentos o asfalto fica liso: o traço de uma rua não entra no asfalto das outras
     ctx.fillStyle = 'rgba(255,236,170,0.75)';
-    for (const s of this.exterior.streets) {
+    const streets = this.exterior.streets;
+    const asphaltH = streets.filter((s) => s.axis === 'h').map((s) => [(s.rect.y + 4) * TILE, (s.rect.y + 9) * TILE] as const);
+    const asphaltV = streets.filter((s) => s.axis === 'v').map((s) => [(s.rect.x + 3) * TILE, (s.rect.x + 8) * TILE] as const);
+    for (const s of streets) {
       const r = s.rect;
       if (s.axis === 'h') {
         const ly = r.y * TILE + 6 * TILE + TILE / 2 - 1;
-        for (let x = r.x * TILE + 4; x < (r.x + r.w) * TILE; x += 24) ctx.fillRect(x, ly, 12, 2);
+        for (let x = r.x * TILE + 4; x < (r.x + r.w) * TILE; x += 24) {
+          if (asphaltV.some(([x0, x1]) => x + 12 > x0 && x < x1)) continue;
+          ctx.fillRect(x, ly, 12, 2);
+        }
       } else {
         const lx = r.x * TILE + 5 * TILE + TILE / 2 - 1;
-        for (let y = r.y * TILE + 4; y < (r.y + r.h) * TILE; y += 24) ctx.fillRect(lx, y, 2, 12);
+        for (let y = r.y * TILE + 4; y < (r.y + r.h) * TILE; y += 24) {
+          if (asphaltH.some(([y0, y1]) => y + 12 > y0 && y < y1)) continue;
+          ctx.fillRect(lx, y, 2, 12);
+        }
       }
     }
     this.shells = [];

@@ -1117,11 +1117,11 @@ describe('área externa por blocos', () => {
     expect(street[0]).toMatchObject({ y: (BUILDING_H + 4) * TILE, h: 5 * TILE });
     expect(ext.floors.filter((f) => f.kind === 'sidewalk').map((f) => f.y / TILE).sort((a, b) => a - b)).toEqual([29, 31, 38]);
     expect(ext.streetY).toBe((BUILDING_H + 4) * TILE);
-    // os postes ficam na mesma calçada e nas mesmas posições que sem o anexo, menos o de x 56 (sob a saída da passarela,
-    // tiles 55..57 × 29..32) e o de x 96 (com [0] o principal tem três colunas e os bounds vão a x 100; com [8], a x 92)
+    // os postes ficam na mesma calçada e nas mesmas posições que sem o anexo (grade fixa x ≡ 4 mod 10, de 14 a 84: o de
+    // x 94 fica fora dos bounds, que com [8] vão a x 92); o de x 54 fica a oeste da saída da passarela (tiles 55..57)
     const lamps = (slots: number[]) => layoutExterior(existingBlocks(slots)).props.filter((p) => p.kind === 'lamp').map((p) => [p.x, p.y]);
     const withAnnex = lamps([8]);
-    expect(withAnnex.map(([x]) => x / TILE)).toEqual([16, 26, 36, 46, 66, 76, 86]);
+    expect(withAnnex.map(([x]) => x / TILE)).toEqual([14, 24, 34, 44, 54, 64, 74, 84]);
     expect(withAnnex.every(([, y]) => y === (BUILDING_H + 3) * TILE + 6)).toBe(true);
     expect(lamps([0]).filter(([x]) => withAnnex.some(([ax]) => ax === x))).toEqual(withAnnex);
   });
@@ -1149,9 +1149,9 @@ describe('área externa por blocos', () => {
     // props com 1, 4 e 8 salas; qualquer mudança que tire ou mova um prop do principal quebra aqui e exige re-pinar
     const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
     for (const [n, count, dg] of [
-      [1, 186, 866660],
-      [4, 210, -995795],
-      [8, 278, -693873],
+      [1, 186, 892799],
+      [4, 209, -103794],
+      [8, 279, -683169],
     ] as const) {
       const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
       expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);
