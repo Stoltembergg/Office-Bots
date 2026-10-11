@@ -573,7 +573,7 @@ describe('núcleo por bloco (coreAreas)', () => {
     expect(core.coreAreas({ bx: 0, by: 0 })).toBe(areas());
   });
 
-  it('as funções de área aceitam o retângulo antigo (x 0 e 16): nada se move antes da virada', () => {
+  it('as funções de área aceitam qualquer retângulo de coluna (x 0 e 16): nada depende da posição antiga', () => {
     const reception = core.layoutReception({ x: 0, y: 0, w: 16, h: 12 });
     expect(reception.rect).toEqual({ x: 0, y: 0, w: 16, h: 12 });
     expect(reception.walkable).toEqual([{ x: 1, y: 2, w: 14, h: 10 }]);

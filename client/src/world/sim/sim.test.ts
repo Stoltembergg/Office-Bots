@@ -463,7 +463,7 @@ describe('salas sem buracos', () => {
     expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
   });
 
-  it('terminal fechou: a sala mais distante se muda para a vaga, o pessoal vai andando e a vaga antiga vira pátio', () => {
+  it('terminal fechou: a sala da maior vaga se muda para a vaga livre, o pessoal vai andando e a vaga antiga vira pátio', () => {
     const sim = newSim();
     const clock = { now: T0 };
     const rooms = [room('/a', 0), room('/b', 1), room('/c', 2)];
@@ -655,7 +655,7 @@ describe('salas sem buracos', () => {
     sim.applySnapshot(snap(rooms.filter((r) => r.id !== '/e'), agents.map((a) => (a.roomId === '/e' ? { ...a, status: 'offline' as const } : a)), 2), clock.now);
     run(sim, clock, 200, () => !sim.rooms.has('/e'));
     expect(sim.rooms.has('/e')).toBe(false);
-    // a sala mais distante (/q) se muda para a vaga 4 (reconstruída, apagada); o endereço antigo vira fantasma
+    // a sala da maior vaga (/q) se muda para a vaga 4 (reconstruída, apagada); o endereço antigo vira fantasma
     run(sim, clock, 3, () => q.slot === 4);
     expect(q.slot).toBe(4);
     expect(q.layout.rect).toEqual({ x: 80, y: 0, w: 16, h: 12 }); // coluna 5 norte
@@ -877,6 +877,18 @@ describe('salas sem buracos', () => {
     sim.applySnapshot(snap([r], [a], 1), T0);
     expect([...sim.rooms.keys()]).toEqual(['/a']);
     expect([...sim.chars.keys()]).toEqual(['ana']);
+  });
+
+  it('relayout sem mudança de blocos nem de salas não refaz o prédio nem invalida caminhos', () => {
+    const sim = newSim();
+    const clock = { now: T0 };
+    sim.applySnapshot(snap([room('/a', 0)], [agent('ana', '/a', 'working')], 1), clock.now);
+    run(sim, clock, 0.5);
+    const before = sim.building;
+    const v = sim.layoutVersion;
+    sim.relayout();
+    expect(sim.building).toBe(before);
+    expect(sim.layoutVersion).toBe(v);
   });
 });
 

@@ -163,6 +163,7 @@ export function blockFor(slot: number, k = IMPLEMENTED_BLOCKS): BlockId {
 
 /** Endereço (bloco, coluna, lado) da vaga global; transitório 7.5: colunas extras (6, 7, 8...) a leste do principal. */
 export function slotAddress(slot: number, k = IMPLEMENTED_BLOCKS): SlotAddress {
+  slot = Math.max(0, slot);
   const n = Math.floor(slot / ROOMS_PER_BLOCK);
   if (n < k) {
     const block = blockOrder(n);
@@ -275,13 +276,16 @@ export function occupiedColumns(blocks: readonly BlockLayout[], tiles: Iterable<
   const seen = new Set<string>();
   const refs: ColumnRef[] = [];
   for (const t of tiles) {
-    for (const b of blocks) {
-      const col = columnAt(b, t.tx, t.ty);
-      if (col === null) continue;
-      const key = `${blockKey(b.id)}:${col}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      refs.push({ block: b.id, col });
+    // margem de 1 tile em x: quem está na borda segura as duas colunas (como a trava antiga)
+    for (const tx of [t.tx - 1, t.tx, t.tx + 1]) {
+      for (const b of blocks) {
+        const col = columnAt(b, tx, t.ty);
+        if (col === null) continue;
+        const key = `${blockKey(b.id)}:${col}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        refs.push({ block: b.id, col });
+      }
     }
   }
   return refs;

@@ -654,3 +654,15 @@ describe('superfície pública depois da remoção do legado (Tarefa 10)', () =>
     expect(names).toEqual(expect.arrayContaining(['COL_W', 'ROOM_H', 'CORRIDOR_H', 'NORTH_Y', 'CORRIDOR_Y', 'SOUTH_Y', 'BUILDING_H', 'TILE']));
   });
 });
+
+describe('pendências da fase 1', () => {
+  it('occupiedColumns: quem está na borda conta para as duas colunas (margem de 1 tile, como a trava antiga)', () => {
+    const blocks = geometry.existingBlocks([0, 1, 2, 3]); // colunas 1..4
+    // tile 47 é o último da coluna 2 (x 32..47); a margem alcança a coluna 3
+    expect(geometry.occupiedColumns(blocks, [{ tx: 47, ty: 14 }]).map((r) => r.col).sort()).toEqual([2, 3]);
+    expect(geometry.occupiedColumns(blocks, [{ tx: 40, ty: 14 }]).map((r) => r.col)).toEqual([2]);
+  });
+  it('slotAddress trata vaga negativa como 0', () => {
+    expect(geometry.slotAddress(-3)).toEqual(geometry.slotAddress(0));
+  });
+});

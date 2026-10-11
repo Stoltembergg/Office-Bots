@@ -129,8 +129,8 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
     }
   }
   // banco e totem com a marca ao lado do caminho de pedra, na entrada norte
-  place({ kind: 'bench', x: px(45), y: px(-1) + 6, seed: 1 });
-  place({ kind: 'totem', x: px(37) + 8, y: px(-1), seed: 2 });
+  place({ kind: 'bench', x: px(ENTRANCE_X + ENTRANCE_W + 2.5), y: px(-1) + 6, seed: 1 });
+  place({ kind: 'totem', x: px(ENTRANCE_X - 2.5) + 8, y: px(-1), seed: 2 });
 
   const streetY = px(south + 4);
   const streetH = px(5);

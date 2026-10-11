@@ -7,7 +7,7 @@ import type { WorldOptions } from '../api';
 import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_DEBOUNCE_MS, RUN_SPEED, TILE, WALK_SPEED } from '../constants';
 import { assembleBuilding, type BuildingLayout } from '../layout/building';
 import { CAFE_ID, RECEPTION_ID } from '../layout/core';
-import { existingBlocks, inRect, occupiedRegions, regionAt, regionKey, retainRegions } from '../layout/geometry';
+import { existingBlocks, inRect, occupiedRegions, regionAt, regionKey, retainRegions, standingKey } from '../layout/geometry';
 import { layoutProjectRoom } from '../layout/room';
 import type { SpotDef, SpotKind } from '../layout/types';
 import { PathFinder } from '../path/astar';
@@ -513,7 +513,11 @@ export class Sim {
       blocks = kept.blocks;
       this.shrinkPending = kept.retained;
     }
-    const building = assembleBuilding(blocks, present.map((r) => r.layout), this.layoutVersion + 1);
+    // nada mudou (mesmos blocos de pé, mesmas salas com os mesmos layouts): não refaz o prédio nem mexe nos caminhos
+    const layouts = present.map((r) => r.layout);
+    const same = !force && standingKey(blocks) === standingKey(this.building.blocks) && layouts.length === this.building.rooms.length && layouts.every((l, i) => l === this.building.rooms[i]);
+    if (same) return;
+    const building = assembleBuilding(blocks, layouts, this.layoutVersion + 1);
     this.building = building;
     this.layoutVersion++;
     this.finder.setGrid(building.grid);
@@ -631,7 +635,8 @@ export class Sim {
 
   /**
    * Sem buracos entre as salas: quando uma vaga fica livre antes da última sala (um terminal fechou e a
-   * sala foi desmontada), a sala mais distante se muda para ela depois de COMPACT_DELAY_MS. Uma sala por
+   * sala foi desmontada), a sala da maior vaga (a mais nova no prédio, não a mais longe da porta) se muda para
+   * ela depois de COMPACT_DELAY_MS. Uma sala por
    * vez, só sala pronta e com a sessão aberta; o prédio encolhe quando o endereço antigo é desmontado.
    */
   private compact(now: number): void {
