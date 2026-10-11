@@ -60,7 +60,7 @@ saguão com café, água e pia, e banheiros; as salas se abrem dos dois lados de
 sétima em diante, as salas seguem em colunas novas a leste. No topo, os contadores e o uso de cada conta; à
 esquerda, as salas e os agentes; embaixo, o feed de atividade.
 
-![Visão geral do Habblaud: prédio com recepção, copa, banheiros, lounge e salas de projeto; barra lateral com salas e agentes; uso das contas no topo; feed de atividade embaixo](docs/screenshots/overview.png)
+![Visão geral do Habblaud: prédio com recepção, copa, banheiros, lounge e salas dos dois lados, anexo do outro lado da rua ligado por uma passarela; barra lateral com salas e agentes; uso das contas no topo; feed de atividade embaixo](docs/screenshots/overview.png)
 
 <table>
   <tr>

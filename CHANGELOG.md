@@ -15,7 +15,7 @@ do meio (0.**3**.0).
 - **Anexo do outro lado da rua.** A nona sala abre um segundo prédio ao sul da rua, ligado ao lounge por uma
   passarela em Z com guarda-corpo, por cima da rua. No lugar do núcleo, o anexo tem um saguão (balcão com café,
   água e pia, e um banheirinho) e banheiros; as salas se abrem dos dois lados dele, na mesma ordem do principal
-  (vagas 9 a 16). Quem está no anexo toma café, bebe água e vai ao banheiro no próprio anexo, e a roda do espelho se
+  (da nona à décima sexta sala; nos números do depurador, vagas 8 a 15). Quem está no anexo toma café, bebe água e vai ao banheiro no próprio anexo, e a roda do espelho se
   forma no banheiro mais perto de quem puxa. O anexo e a passarela só são desmontados quando a última sala do anexo
   sai e ninguém mais está lá nem na passarela. No console do navegador, `habblaud.world.debug.state()` mostra
   `bridges` (as passarelas de pé, com os trechos).
@@ -31,6 +31,8 @@ do meio (0.**3**.0).
 - **Entrada ao norte.** A porta do prédio fica na fachada norte da recepção, com caminho de pedra, totem e banco; a
   entrada pela ponta oeste do corredor (calçada, banco, totem e capacho) saiu. O corredor tem vidro nas duas pontas
   e os pátios das vagas vazias fecham do lado que for ponta, a leste ou a oeste.
+- **Porta nos fundos do lounge.** O lounge ganhou uma porta na parede sul, de onde sai a passarela do anexo; enquanto
+  o anexo não existe, ela dá para o jardim e ninguém passa por ela.
 - A câmera, a luz das janelas, os pátios e os balões da visão geral acompanham o prédio quando ele cresce para o
   oeste. No console do navegador, `habblaud.world.debug.state()` mostra `blocks` (as colunas de pé de cada bloco)
   no lugar de `cols`.
