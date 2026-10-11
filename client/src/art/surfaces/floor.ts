@@ -168,6 +168,27 @@ function paintTile(b: PixelBuf, kind: FloorKind, tx: number, ty: number, o: Floo
       for (let i = 0; i < 14; i++) b.set(Math.floor(r(i) * TILE), Math.floor(r(i + 30) * TILE), r(i + 60) < 0.5 ? '#5f636c' : '#43464e');
       break;
     }
+    case 'bridge': {
+      // chapas de metal da passarela: uma chapa por tile, brilho no topo, riscos, emenda escura embaixo e à direita, rebites
+      const n = noise(tx * TILE, ty * TILE, 32, o.seed + 13);
+      const base = mix('#8e969f', '#a3aab2', n);
+      b.rect(0, 0, TILE, TILE, base);
+      b.hline(0, TILE - 2, 0, '#b8bfc6');
+      for (let i = 0; i < 6; i++) {
+        const x = Math.floor(r(i) * 10);
+        b.hline(x, x + 2 + Math.floor(r(i + 20) * 3), 2 + Math.floor(r(i + 40) * 12), shade(base, -0.06));
+      }
+      b.hline(0, TILE - 1, TILE - 1, '#5f6670');
+      b.vline(TILE - 1, 0, TILE - 1, '#5f6670');
+      for (const [rx, ry] of [
+        [2, 2],
+        [12, 12],
+      ] as const) {
+        b.set(rx, ry, '#c4cad0');
+        b.set(rx + 1, ry + 1, '#6b727c');
+      }
+      break;
+    }
     default:
       b.rect(0, 0, TILE, TILE, '#dcdedf');
   }

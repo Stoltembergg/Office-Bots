@@ -456,6 +456,15 @@ describe('móveis', () => {
     }
   });
 
+  it('guarda-corpo da passarela: uma variante por borda do tile, todas opacas e diferentes entre si', () => {
+    const sprites = (['n', 's', 'w', 'e'] as const).map((v) => renderFurniture('railing', v).base);
+    for (const s of sprites) expect(s.buf.countOpaque()).toBeGreaterThan(20);
+    expect(new Set(sprites.map((s) => `${s.ax},${s.ay},${s.buf.w},${s.buf.h},${digest(s.buf.data)}`)).size).toBe(4);
+    // norte e sul: o guarda-corpo corre na horizontal (mais largo que alto); oeste e leste, na vertical
+    expect(sprites[0].buf.w).toBeGreaterThan(sprites[0].buf.h);
+    expect(sprites[2].buf.h).toBeGreaterThan(sprites[2].buf.w);
+  });
+
   it('preenche as regiões dinâmicas pedidas pelo contrato', () => {
     expect(renderFurniture('desk', 'wood').base.rects?.screen).toBeDefined();
     expect(renderFurniture('whiteboard').base.rects?.board).toBeDefined();
@@ -600,13 +609,25 @@ describe('legibilidade das mesas, sofá e olhos', () => {
 });
 
 describe('pisos e paredes', () => {
-  const floors: FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street'];
+  const floors: FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street', 'bridge'];
   it('blocos de piso são opacos e determinísticos', () => {
     for (const k of floors) {
       const a = floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' });
       expect(a.countOpaque(), k).toBe(CHUNK_PX * CHUNK_PX);
       expect(floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' }).data).toEqual(a.data);
     }
+  });
+
+  it('piso da passarela: chapas de metal com emenda e rebites, mais de duas cores por bloco', () => {
+    const a = floorChunk('bridge', 0, 0, { seed: 3 });
+    expect(a.countOpaque()).toBe(CHUNK_PX * CHUNK_PX);
+    const cores = new Set<number>();
+    for (let i = 0; i < a.data.length; i += 4) cores.add((a.data[i] << 16) | (a.data[i + 1] << 8) | a.data[i + 2]);
+    expect(cores.size).toBeGreaterThan(2);
+    // a emenda escura fecha a borda direita e a de baixo de cada tile
+    const px = (x: number, y: number) => (a.data[(y * CHUNK_PX + x) * 4] << 16) | (a.data[(y * CHUNK_PX + x) * 4 + 1] << 8) | a.data[(y * CHUNK_PX + x) * 4 + 2];
+    expect(px(TILE - 1, 3)).toBe(0x5f6670);
+    expect(px(3, TILE - 1)).toBe(0x5f6670);
   });
 
   it('a madeira continua entre blocos vizinhos (sem emenda na borda)', () => {

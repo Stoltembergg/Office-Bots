@@ -187,7 +187,9 @@ export type FurnitureKind =
   | 'sink' // 1x1 pia com gabinete (encostada na parede norte; use 'mirror' na parede acima).
   // --- recepção
   | 'reception_desk' // 3x1 balcão de recepção.
-  | 'bench'; // 2x1 banco de espera (assento, olhando para baixo).
+  | 'bench' // 2x1 banco de espera (assento, olhando para baixo).
+  // --- passarela
+  | 'railing'; // 1x1 guarda-corpo de metal numa borda do tile. variants: 'n' | 's' | 'w' | 'e' (a borda). Não bloqueia.
 
 export interface FurnitureDef {
   mount: 'floor' | 'wall';
@@ -261,6 +263,7 @@ export const FURNITURE: Readonly<Record<FurnitureKind, FurnitureDef>> = {
   sink: { mount: 'floor', footprint: { w: 1, h: 1 }, blocks: true },
   reception_desk: { mount: 'floor', footprint: { w: 3, h: 1 }, blocks: true },
   bench: { mount: 'floor', footprint: { w: 2, h: 1 }, blocks: false, seat: true },
+  railing: { mount: 'floor', footprint: { w: 1, h: 1 }, blocks: false, variants: ['n', 's', 'w', 'e'] },
 };
 
 export type FloorKind =
@@ -272,7 +275,8 @@ export type FloorKind =
   | 'marble' // recepção
   | 'grass' // área externa
   | 'sidewalk' // calçada externa
-  | 'street'; // rua externa (faixas desenhadas pelo render se quiser)
+  | 'street' // rua externa (faixas desenhadas pelo render se quiser)
+  | 'bridge'; // passarela entre blocos: chapas de metal, uma por tile, com emenda escura embaixo e à direita
 
 export type WallPattern = 'plain' | 'stripes' | 'tiles' | 'wood_panel' | 'brick' | 'glass' | 'marble';
 

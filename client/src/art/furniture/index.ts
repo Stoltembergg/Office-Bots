@@ -125,6 +125,8 @@ function build(kind: FurnitureKind, variant: string | undefined, state: number, 
       return C.receptionDesk(seed);
     case 'bench':
       return C.bench();
+    case 'railing':
+      return C.railing(variant);
   }
 }
 
