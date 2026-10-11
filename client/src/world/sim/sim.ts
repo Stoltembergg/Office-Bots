@@ -1454,12 +1454,13 @@ export class Sim {
 
   /**
    * Spot livre de um serviço (café, água, cabine, pia) para `ch`: primeiro na mesma região (bloco) em que ele está
-   * (spec 7.3), senão em qualquer lugar. `near` manda na distância (padrão: o tile de `ch`); `rng` sorteia entre os 3
-   * mais próximos.
+   * (spec 7.3), senão em qualquer lugar. `near` manda na distância (padrão: o tile de `ch`); `at` é o tile cuja região
+   * manda (padrão: o de `ch`; a pia depois da cabine usa a cabine); `rng` sorteia entre os 3 mais próximos.
    */
-  serviceSpot(kind: 'coffee' | 'water' | 'stall' | 'sink', ch: Character, opts: { near?: { tx: number; ty: number }; rng?: () => number } = {}): SpotDef | null {
+  serviceSpot(kind: 'coffee' | 'water' | 'stall' | 'sink', ch: Character, opts: { near?: { tx: number; ty: number }; at?: { tx: number; ty: number }; rng?: () => number } = {}): SpotDef | null {
     const near = opts.near ?? { tx: ch.tx, ty: ch.ty };
-    const here = this.regionOf(ch.tx, ch.ty);
+    const at = opts.at ?? { tx: ch.tx, ty: ch.ty };
+    const here = this.regionOf(at.tx, at.ty);
     if (here) {
       const same = this.spots.findFree(kind, { near, by: ch.id, rng: opts.rng, filter: (s) => this.regionOf(s.tx, s.ty) === here });
       if (same) return same;
@@ -1474,12 +1475,13 @@ export class Sim {
     return cands[Math.floor(ch.rng() * cands.length)];
   }
 
-  private planOuting(ch: Character, now: number): boolean {
+  /** Planeja uma saída ociosa; `what` (testes) força a atividade em vez de sortear. */
+  private planOuting(ch: Character, now: number, what?: IdleActivity): boolean {
     const near = { tx: ch.tx, ty: ch.ty };
     const rng = ch.rng;
     const persona = personaFor(ch.info.seed);
     // colegas à toa: a vontade é de companhia (a personalidade dosa) — TV, jogo, papo, aposta...
-    if (this.social.hasCompany(ch, now) && rng() < 0.45 + persona.sociability * 0.4 && this.social.tryInitiate(ch, now, false)) return true;
+    if (!what && this.social.hasCompany(ch, now) && rng() < 0.45 + persona.sociability * 0.4 && this.social.tryInitiate(ch, now, false)) return true;
     const avail: Partial<Record<IdleActivity, boolean>> = {
       coffee: !!this.spots.findFree('coffee', { by: ch.id }),
       water: !!this.spots.findFree('water', { by: ch.id }),
@@ -1496,7 +1498,7 @@ export class Sim {
       mirror: !!this.social.plan('mirror', 1, ch),
       phone: !!this.randomFree(PHONE_SEATS, ch),
     };
-    const what = pickIdleActivity(rng, avail, soloWeights(persona));
+    what ??= pickIdleActivity(rng, avail, soloWeights(persona)) ?? undefined;
     if (!what) return false;
     const steps: Step[] = [];
     const goUse = (s: SpotDef, held: 'none' | 'coffee' = 'none'): void => {
@@ -1544,7 +1546,7 @@ export class Sim {
         this.pushLeave(ch, steps);
         steps.push({ t: 'go', tx: s.tx, ty: s.ty }, { t: 'stall', spot: s.id, ms: between(rng, 5000, 12000), phase: 0 });
         release(s);
-        const sink = this.serviceSpot('sink', ch, { near: { tx: s.tx, ty: s.ty } });
+        const sink = this.serviceSpot('sink', ch, { near: { tx: s.tx, ty: s.ty }, at: { tx: s.tx, ty: s.ty } });
         if (sink && this.reserveTemp(ch, sink)) {
           goUse(sink);
           steps.push({ t: 'act', pose: 'use', ms: 2200 });
