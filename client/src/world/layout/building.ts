@@ -17,12 +17,6 @@ export interface BuildingLayout {
   rooms: AreaLayout[];
   grid: WalkGrid;
   spots: SpotDef[];
-  /** @deprecated compat até a Tarefa 10: `blocks[0].columns.hi + 1`. */
-  cols: number;
-  /** @deprecated compat até a Tarefa 10: as 4 áreas do núcleo. */
-  core: AreaLayout[];
-  /** @deprecated compat até a Tarefa 10: o corredor do principal. */
-  corridor: AreaLayout;
 }
 
 /** Marca na grade as células caminháveis de uma área, os bloqueios e os assentos. */
@@ -60,5 +54,5 @@ export function assembleBuilding(blocks: readonly BlockLayout[], rooms: readonly
   const grid = buildWalkGrid(rect, all, version);
   const spots: SpotDef[] = [];
   for (const a of all) spots.push(...a.spots);
-  return { blocks: [...blocks], rect, areas, rooms: [...rooms], grid, spots, cols: blocks[0].columns.hi + 1, core, corridor: corridors[0] };
+  return { blocks: [...blocks], rect, areas, rooms: [...rooms], grid, spots };
 }

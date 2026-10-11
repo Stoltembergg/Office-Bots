@@ -4,6 +4,7 @@ import type { AppearanceParts } from '../../../../shared/appearance';
 import type { AgentInfo, OfficeSnapshot, RoomInfo, ShellJob } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
+import { CORRIDOR_ID } from '../layout/corridor';
 import { PRINCIPAL, standingColumns } from '../layout/geometry';
 import type { Character } from './character';
 import { SHELL_DONE_TOOL, Sim } from './sim';
@@ -613,14 +614,14 @@ describe('salas sem buracos', () => {
     expect(sim.building.rooms.map((r) => r.id)).toEqual(['/a']);
     expect(sim.building.blocks[0].columns).toEqual({ lo: 1, hi: 4 });
     expect(sim.building.rect).toEqual({ x: 16, y: 0, w: 64, h: 29 });
-    expect(sim.building.corridor.rect).toEqual({ x: 16, y: 12, w: 64, h: 5 });
+    expect(sim.building.areas.find((a) => a.id === CORRIDOR_ID)!.rect).toEqual({ x: 16, y: 12, w: 64, h: 5 });
     // bia vai embora: sem nenhum outro gatilho, a verificação de 1 s (shrinkPending) encolhe o prédio para as colunas 2–4
     sim.spots.releaseAll('bia');
     sim.chars.delete('bia');
     run(sim, clock, 2.5, () => sim.building.blocks[0].columns.lo === 2);
     expect(sim.building.blocks[0].columns).toEqual({ lo: 2, hi: 4 });
     expect(sim.building.rect).toEqual({ x: 32, y: 0, w: 48, h: 29 });
-    expect(sim.building.corridor.rect).toEqual({ x: 32, y: 12, w: 48, h: 5 });
+    expect(sim.building.areas.find((a) => a.id === CORRIDOR_ID)!.rect).toEqual({ x: 32, y: 12, w: 48, h: 5 });
   });
 
   it('compactação na coluna extra: a sala da vaga 8 (coluna 6) muda para a vaga 4 (coluna 5) e, quando o fantasma some, hi cai de 6 para 5', () => {

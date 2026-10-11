@@ -2,6 +2,8 @@
 // existentes e a trava por coluna. Os números são os das tabelas do plano (00-header, "Regras numéricas").
 import { describe, expect, it } from 'vitest';
 import { BUILDING_H, COL_W, ROOM_H, SOUTH_Y } from '../constants';
+import * as constants from '../constants';
+import * as geometry from './geometry';
 import {
   ANNEX_COLS,
   IMPLEMENTED_BLOCKS,
@@ -416,5 +418,21 @@ describe('retainColumns', () => {
     expect(kept.blocks).not.toBe(base);
     expect(kept.blocks[0]).not.toBe(base[0]);
     expect(kept.blocks[0].columns).not.toBe(base[0].columns);
+  });
+});
+
+describe('superfície pública depois da remoção do legado (Tarefa 10)', () => {
+  const LEGACY = ['slotColumn', 'slotSide', 'cellRect', 'slotRect', 'legacySlotAt', 'columnsFor', 'corridorRect', 'buildingRect'];
+
+  it('geometry.ts não exporta mais as funções da fita; slotAt, rectPx e inRect continuam', () => {
+    const names = Object.keys(geometry);
+    for (const name of LEGACY) expect(names).not.toContain(name);
+    expect(names).toEqual(expect.arrayContaining(['slotAt', 'blockColumnRect', 'existingBlocks', 'worldBounds', 'rectPx', 'inRect']));
+  });
+
+  it('constants.ts não exporta mais CORE_COLS; as medidas locais do bloco continuam', () => {
+    const names = Object.keys(constants);
+    expect(names).not.toContain('CORE_COLS');
+    expect(names).toEqual(expect.arrayContaining(['COL_W', 'ROOM_H', 'CORRIDOR_H', 'NORTH_Y', 'CORRIDOR_Y', 'SOUTH_Y', 'BUILDING_H', 'TILE']));
   });
 });
