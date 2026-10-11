@@ -70,9 +70,10 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
 
   const updateBounds = () => {
     const b = buildingRect();
-    camera.bounds = { x: b.x - 7 * TILE, y: b.y - 6 * TILE, w: b.w + 14 * TILE, h: b.h + 18 * TILE };
+    // o pan vai até a borda da área externa desenhada (D6), não só até uma margem ao redor do prédio
+    camera.bounds = rectPx(renderer.exterior.bounds);
     const fit = camera.fitZoom(b, 16);
-    camera.minZoom = Math.min(1, Math.max(0.25, fit));
+    camera.minZoom = Math.min(1, Math.max(0.15, fit));
     camera.clamp();
   };
 

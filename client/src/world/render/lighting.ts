@@ -447,13 +447,15 @@ export class Lighting {
         for (const fx of [0.25, 0.75]) halo(warm, (r.x + r.w * fx) * TILE, (env.y + env.h) * TILE + 16, 96, 30, 0.35 * k * l);
       }
     }
-    // fachadas de vidro nas duas pontas de cada corredor (pontas do retângulo de pé do bloco, não do envelope)
+    // fachadas de vidro nas pontas de cada corredor (pontas do retângulo de pé do bloco, não do envelope); uma ponta
+    // aberta para a passarela horizontal (fase 3) não tem vidro nem halo
     for (const vis of scene.areas.values()) {
       if (vis.layout.kind !== 'corridor') continue;
       const r = vis.layout.rect;
       const cy = (r.y + r.h / 2) * TILE;
-      halo(warm, r.x * TILE - 20, cy, 56, 92, 0.6 * k);
-      halo(warm, (r.x + r.w) * TILE + 20, cy, 56, 92, 0.45 * k);
+      const glassAt = (tx: number) => vis.layout.furniture.some((f) => f.kind === 'glass_partition' && f.tx === tx);
+      if (glassAt(r.x)) halo(warm, r.x * TILE - 20, cy, 56, 92, 0.6 * k);
+      if (glassAt(r.x + r.w - 1)) halo(warm, (r.x + r.w) * TILE + 20, cy, 56, 92, 0.45 * k);
     }
     // janelas do corredor que dão para os pátios dos slots vazios
     for (const w of scene.shellWindows) {
@@ -619,15 +621,17 @@ export class Lighting {
     }
   }
 
-  /** Vaga-lumes perto de arbustos, flores e árvores (posições fixas pela semente). */
+  /** Vaga-lumes perto de arbustos, flores e árvores: semente por posição do prop, para não mudarem de lugar quando um bloco nasce (D5). */
   private seedFireflies(ext: ExteriorLayout): void {
     this.fliesFor = ext;
     this.flies = [];
-    const rng = mulberry32(0xf1e5 + ext.bounds.w);
     const spots = ext.props.filter((p) => p.kind === 'bush' || p.kind === 'flowers' || p.kind === 'tree');
     if (!spots.length) return;
-    for (let i = 0; i < FIREFLIES; i++) {
-      const p = spots[Math.floor(rng() * spots.length)];
+    // densidade igual à de antes (FIREFLIES por cena de referência), decidida prop a prop
+    const chance = Math.min(1, FIREFLIES / spots.length);
+    for (const p of spots) {
+      const rng = mulberry32(((Math.round(p.x) * 73856093) ^ (Math.round(p.y) * 19349663) ^ 0xf1e5) >>> 0);
+      if (rng() >= chance) continue;
       this.flies.push({
         x: p.x + (rng() - 0.5) * 28,
         y: p.y - 6 - rng() * 14,
