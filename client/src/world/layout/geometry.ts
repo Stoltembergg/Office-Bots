@@ -22,8 +22,8 @@ export const ANNEX_COLS = 5;
 export const STREET_W = 12;
 /** Passo entre fileiras de blocos (tiles): 41. */
 export const ROW_STEP = BUILDING_H + STREET_W;
-/** Transitório (spec 7.5): quantos blocos da ordem existem nesta fase. Fase 1 = 1. */
-export const IMPLEMENTED_BLOCKS = 1;
+/** Transitório (spec 7.5): quantos blocos da ordem existem nesta fase. Fase 2 = 2 (principal e anexo 1). */
+export const IMPLEMENTED_BLOCKS = 2;
 /** Chegada do bloco: decide a ordem das vagas (spec 1.2) e a coluna de ligação (1.3). */
 export type Arrival = 'core' | 'hub' | 'west' | 'east';
 export interface SlotAddress {
@@ -217,13 +217,23 @@ export function standingRect(block: BlockId, span: ColumnSpan): TileRect {
   return { x: env.x + span.lo * COL_W, y: env.y, w: (span.hi - span.lo + 1) * COL_W, h: BUILDING_H };
 }
 
-/** Blocos existentes (spec 1.3): os das vagas, seus ancestrais e o principal, ordenados por blockIndex. */
-export function existingBlocks(slots: Iterable<number>, k = IMPLEMENTED_BLOCKS): BlockLayout[] {
+/** Chave dos blocos de pé ("0,0:0-5;0,1:2-3"): muda só quando um bloco entra/sai ou uma coluna sobe/desce. */
+export function standingKey(blocks: readonly BlockLayout[]): string {
+  return blocks.map((b) => `${blockKey(b.id)}:${b.columns.lo}-${b.columns.hi}`).join(';');
+}
+
+/**
+ * Blocos existentes (spec 1.3): os das vagas, seus ancestrais e o principal, ordenados por blockIndex. `keep` são
+ * blocos mantidos sem vaga (trava de encolher, spec 7.2): entram com os ancestrais e ficam só com o miolo.
+ */
+export function existingBlocks(slots: Iterable<number>, k = IMPLEMENTED_BLOCKS, keep: readonly BlockId[] = []): BlockLayout[] {
   const slotList = [...slots];
   const ids = new Map<string, BlockId>([[blockKey(PRINCIPAL), PRINCIPAL]]);
-  for (const s of slotList) {
-    for (let b: BlockId | null = blockFor(s, k); b !== null; b = parentOf(b)) ids.set(blockKey(b), b);
-  }
+  const add = (from: BlockId) => {
+    for (let b: BlockId | null = from; b !== null; b = parentOf(b)) ids.set(blockKey(b), b);
+  };
+  for (const s of slotList) add(blockFor(s, k));
+  for (const b of keep) add(b);
   const ordered = [...ids.values()].sort((a, b) => blockIndex(a) - blockIndex(b));
   return ordered.map((id) => {
     const children = ordered.filter((o) => {
@@ -235,18 +245,18 @@ export function existingBlocks(slots: Iterable<number>, k = IMPLEMENTED_BLOCKS):
   });
 }
 
-/** União dos retângulos de pé. Sem blocos: o principal recortado às colunas 2–3. */
-export function worldBounds(blocks: readonly BlockLayout[]): TileRect {
+/** União dos retângulos de pé e dos trechos das passarelas. Sem blocos: o principal recortado às colunas 2–3. */
+export function worldBounds(blocks: readonly BlockLayout[], bridges: readonly BridgeLayout[] = []): TileRect {
   if (blocks.length === 0) return standingRect(PRINCIPAL, standingColumns(PRINCIPAL, []));
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
-  for (const b of blocks) {
-    x0 = Math.min(x0, b.rect.x);
-    y0 = Math.min(y0, b.rect.y);
-    x1 = Math.max(x1, b.rect.x + b.rect.w);
-    y1 = Math.max(y1, b.rect.y + b.rect.h);
+  for (const r of [...blocks.map((b) => b.rect), ...bridges.flatMap((b) => b.rects)]) {
+    x0 = Math.min(x0, r.x);
+    y0 = Math.min(y0, r.y);
+    x1 = Math.max(x1, r.x + r.w);
+    y1 = Math.max(y1, r.y + r.h);
   }
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
@@ -297,6 +307,124 @@ export function retainColumns(blocks: readonly BlockLayout[], refs: readonly Col
     return { id: b.id, envelope: b.envelope, columns, rect: standingRect(b.id, columns) };
   });
   return { blocks: out, retained };
+}
+
+/** Referência a uma passarela com alguém (trava): o bloco filho dela e o id. */
+export interface BridgeRef {
+  block: BlockId;
+  bridge: string;
+}
+export type RegionRef = ColumnRef | BridgeRef;
+export function isColumnRef(r: RegionRef): r is ColumnRef {
+  return 'col' in r;
+}
+
+/** Colunas (por bloco) e passarelas do layout dado onde há algum tile da lista. */
+export function occupiedRegions(blocks: readonly BlockLayout[], bridges: readonly BridgeLayout[], tiles: Iterable<{ tx: number; ty: number }>): RegionRef[] {
+  const list = [...tiles];
+  const refs: RegionRef[] = occupiedColumns(blocks, list);
+  for (const br of bridges) {
+    if (list.some((t) => br.rects.some((r) => inRect(r, t.tx, t.ty)))) refs.push({ block: br.child, bridge: br.id });
+  }
+  return refs;
+}
+
+/**
+ * Trava de encolher por regiões (spec 7.2): os blocos das vagas presentes mais os blocos (e ancestrais) das
+ * referências, com as colunas estendidas até cobri-las. `retained` diz se algo além do layout fresco ficou de pé.
+ */
+export function retainRegions(slots: Iterable<number>, refs: readonly RegionRef[], k = IMPLEMENTED_BLOCKS): { blocks: BlockLayout[]; retained: boolean } {
+  const slotList = [...slots];
+  const fresh = existingBlocks(slotList, k);
+  const kept = existingBlocks(slotList, k, refs.map((r) => r.block));
+  const out = retainColumns(kept, refs.filter(isColumnRef));
+  return { blocks: out.blocks, retained: out.retained || kept.length !== fresh.length };
+}
+
+// ---- Passarelas ---------------------------------------------------------------------------------
+
+/** Largura da passarela (tiles). */
+export const BRIDGE_W = 3;
+/** x local (na coluna) da porta externa de 3 tiles: lx 7..10. */
+export const DOOR_LX = 7;
+
+export interface BridgeLayout {
+  /** `passarela:<bx>,<by>` do bloco filho. */
+  id: string;
+  child: BlockId;
+  parent: BlockId;
+  /** Trechos retangulares (tiles), do pai ao filho. */
+  rects: TileRect[];
+  /** Tiles das portas em que a passarela encosta (no pai e no filho): não recebem guarda-corpo. */
+  openings: TileRect[];
+}
+
+export function bridgeId(child: BlockId): string {
+  return `passarela:${blockKey(child)}`;
+}
+
+/**
+ * Trechos da passarela do bloco filho ao pai (spec 3.6). Fase 2: só o anexo 1 (0, 1), em Z sobre a rua: sai pela
+ * porta sul do lounge (coluna 3 do principal), corre para oeste e entra pela porta norte do saguão (coluna 2 do
+ * anexo). Qualquer outro bloco lança (passarelas horizontais e colunas de ligação são da fase 3).
+ */
+export function bridgeRects(child: BlockId): TileRect[] {
+  const parent = parentOf(child);
+  if (!parent || child.bx !== 0 || child.by !== 1) throw new Error(`passarela de ${blockKey(child)} ainda não implementada (fase 3)`);
+  const from = blockRect(parent);
+  const to = blockRect(child);
+  const exitX = from.x + coreColumns(parent)[1] * COL_W + DOOR_LX;
+  const entryX = to.x + coreColumns(child)[0] * COL_W + DOOR_LX;
+  const y0 = from.y + from.h;
+  return [
+    { x: exitX, y: y0, w: BRIDGE_W, h: 4 },
+    { x: Math.min(exitX, entryX), y: y0 + 4, w: Math.abs(exitX - entryX) + BRIDGE_W, h: 3 },
+    { x: entryX, y: y0 + 7, w: BRIDGE_W, h: to.y - (y0 + 7) },
+  ];
+}
+
+/** Tiles das portas em que a passarela encosta: a porta sul do lounge (1 linha) e a porta norte do saguão (2 linhas). */
+export function bridgeOpenings(child: BlockId): TileRect[] {
+  const rects = bridgeRects(child);
+  const first = rects[0];
+  const last = rects[rects.length - 1];
+  return [
+    { x: first.x, y: first.y - 1, w: first.w, h: 1 },
+    { x: last.x, y: last.y + last.h, w: last.w, h: 2 },
+  ];
+}
+
+/** Passarelas dos blocos existentes: uma por bloco que não é o principal, até o pai. */
+export function bridgesFor(blocks: readonly BlockLayout[]): BridgeLayout[] {
+  const out: BridgeLayout[] = [];
+  for (const b of blocks) {
+    const parent = parentOf(b.id);
+    if (!parent) continue;
+    out.push({ id: bridgeId(b.id), child: b.id, parent, rects: bridgeRects(b.id), openings: bridgeOpenings(b.id) });
+  }
+  return out;
+}
+
+// ---- Regiões (bloco ou passarela) ---------------------------------------------------------------
+
+/** Bloco cujo retângulo de pé contém o tile, ou null. */
+export function blockAt(blocks: readonly BlockLayout[], tx: number, ty: number): BlockLayout | null {
+  return blocks.find((b) => inRect(b.rect, tx, ty)) ?? null;
+}
+
+export type Region = { kind: 'block'; block: BlockLayout } | { kind: 'bridge'; bridge: BridgeLayout };
+
+/** Região do tile (spec 5): o bloco de pé que o contém, senão a passarela, senão null (rua, jardim, fora). */
+export function regionAt(blocks: readonly BlockLayout[], bridges: readonly BridgeLayout[], tx: number, ty: number): Region | null {
+  const block = blockAt(blocks, tx, ty);
+  if (block) return { kind: 'block', block };
+  for (const bridge of bridges) if (bridge.rects.some((r) => inRect(r, tx, ty))) return { kind: 'bridge', bridge };
+  return null;
+}
+
+/** `bloco:<bx>,<by>` ou o id da passarela. */
+export function regionKey(r: Region): string {
+  return r.kind === 'block' ? `bloco:${blockKey(r.block.id)}` : r.bridge.id;
 }
 
 // ---- Retângulos ---------------------------------------------------------------------------------

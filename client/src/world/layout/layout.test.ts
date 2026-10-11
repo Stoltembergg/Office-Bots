@@ -27,7 +27,7 @@ function corridorOf(b: BuildingLayout): AreaLayout {
   return b.areas.find((a) => a.id === CORRIDOR_ID)!;
 }
 
-/** Prédio montado com as salas das vagas dadas (fase 1: só o principal). */
+/** Prédio montado com as salas das vagas dadas (K = 2: as vagas 8..15 montam o anexo 1; s ≥ 16 é o transitório 7.5). */
 function buildFor(slots: number[]): { rooms: AreaLayout[]; b: BuildingLayout; corridor: AreaLayout } {
   const rooms = roomsFor(slots);
   const b = assembleBuilding(existingBlocks(slots), rooms);
@@ -155,8 +155,8 @@ describe('montagem por blocos', () => {
     expect(rooms.map((r) => `${r.rect.x / COL_W}${r.side === 'north' ? 'N' : 'S'}`)).toEqual(['4N', '1N', '4S', '1S', '5N', '0N', '5S', '0S']);
   });
 
-  it('vaga 8 (transitório 7.5) cai na coluna 6: a coluna 5 fica sem sala, hi = 6 e o corredor vai até x 112', () => {
-    const { b, rooms, corridor } = buildFor([0, 1, 2, 3, 8]);
+  it('vaga 16 (transitório 7.5) cai na coluna 6: a coluna 5 fica sem sala, hi = 6 e o corredor vai até x 112', () => {
+    const { b, rooms, corridor } = buildFor([0, 1, 2, 3, 16]);
     expect(b.blocks[0].columns).toEqual({ lo: 1, hi: 6 });
     expect(b.rect).toEqual({ x: 16, y: 0, w: 96, h: 29 });
     expect(corridor.rect).toEqual({ x: 16, y: CORRIDOR_Y, w: 96, h: CORRIDOR_H });
@@ -168,8 +168,8 @@ describe('montagem por blocos', () => {
     expect(b.grid.walkable(110, CORRIDOR_Y + 2)).toBe(true);
   });
 
-  it('vaga 8 sozinha: colunas 2–6 com as colunas 4 e 5 vazias, corredor de 80 tiles e a sala em x 96 alcançável', () => {
-    const { b, rooms, corridor } = buildFor([8]);
+  it('vaga 16 sozinha: colunas 2–6 com as colunas 4 e 5 vazias, corredor de 80 tiles e a sala em x 96 alcançável', () => {
+    const { b, rooms, corridor } = buildFor([16]);
     expect(b.blocks[0].columns).toEqual({ lo: 2, hi: 6 });
     expect(b.rect).toEqual({ x: 32, y: 0, w: 80, h: 29 });
     expect(corridor.rect).toEqual({ x: 32, y: CORRIDOR_Y, w: 80, h: CORRIDOR_H });
@@ -580,7 +580,7 @@ describe('área externa por blocos', () => {
     expect(gates([])).toEqual(new Set());
     expect(gates([0])).toEqual(new Set([2]));
     expect(gates([0, 1, 2, 3, 4, 5])).toEqual(new Set([7, 3, 2, 6]));
-    expect(gates([0, 1, 2, 3, 8])).toEqual(new Set([3, 2, 6, 9]));
+    expect(gates([0, 1, 2, 3, 16])).toEqual(new Set([3, 2, 6, 17]));
     // extensão: de world.x a world.x + world.w − 2, de 2 em 2 tiles (colunas 1–4 → x 16..80)
     const xs = hedgesOf([0, 1]).map((p) => (p.x - TILE) / TILE);
     expect(Math.min(...xs)).toBe(16);
@@ -618,15 +618,15 @@ describe('área externa por blocos', () => {
   });
 
   it('pátios do prédio: um por coluna de pé fora do miolo; cap leste só em hi, oeste só em lo (Review Focus 1 e 3)', () => {
-    // colunas de pé 1..6 com a 5 vazia
-    const blocks = existingBlocks([0, 1, 2, 3, 8]);
+    // colunas de pé 1..6 com a 5 vazia (vaga 16 = coluna 6 norte, transitório 7.5)
+    const blocks = existingBlocks([0, 1, 2, 3, 16]);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].columns).toEqual({ lo: 1, hi: 6 });
-    const shells = shellsOf([0, 1, 2, 3, 8]);
-    expect(shells.map((s) => s.sh.slot)).toEqual([1, 3, 0, 2, 4, 6, 8, 9]);
+    const shells = shellsOf([0, 1, 2, 3, 16]);
+    expect(shells.map((s) => s.sh.slot)).toEqual([1, 3, 0, 2, 4, 6, 16, 17]);
     expect(shells.map((s) => s.col)).toEqual([1, 1, 4, 4, 5, 5, 6, 6]);
     expect(capsAt(shells, 16 * TILE)).toEqual([1, 3]); // oeste: só a coluna lo = 1
-    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([8, 9]); // leste: só a coluna hi = 6 (x 96..112, fora do envelope)
+    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([16, 17]); // leste: só a coluna hi = 6 (x 96..112, fora do envelope)
     for (const s of shells) {
       const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
       expect(caps, `vaga ${s.sh.slot} (coluna ${s.col})`).toBe(s.col === 1 || s.col === 6 ? 1 : 0);
@@ -670,15 +670,15 @@ describe('área externa por blocos', () => {
     expect(gates([4])).toEqual(new Set([2, 6]));
   });
 
-  it('pátios com as colunas 4 e 5 vazias entre o miolo e a sala da coluna 6 (vaga 8): cap leste só na coluna 6, nenhum cap a oeste porque a ponta oeste é o miolo', () => {
-    // existingBlocks([8]) → colunas 2–6: 2 e 3 miolo, 4 e 5 pátio dos dois lados, a 6 tem a sala (vaga 8 = 6N, transitório 7.5) e o pátio da vaga 9 ao sul
-    expect(existingBlocks([8])[0].columns).toEqual({ lo: 2, hi: 6 });
-    const shells = shellsOf([8]);
-    expect(shells.map((s) => s.sh.slot)).toEqual([0, 2, 4, 6, 8, 9]);
+  it('pátios com as colunas 4 e 5 vazias entre o miolo e a sala da coluna 6 (vaga 16): cap leste só na coluna 6, nenhum cap a oeste porque a ponta oeste é o miolo', () => {
+    // existingBlocks([16]) → colunas 2–6: 2 e 3 miolo, 4 e 5 pátio dos dois lados, a 6 tem a sala (vaga 16 = 6N, transitório 7.5) e o pátio da vaga 17 ao sul
+    expect(existingBlocks([16])[0].columns).toEqual({ lo: 2, hi: 6 });
+    const shells = shellsOf([16]);
+    expect(shells.map((s) => s.sh.slot)).toEqual([0, 2, 4, 6, 16, 17]);
     expect(shells.map((s) => s.col)).toEqual([4, 4, 5, 5, 6, 6]);
-    expect(shells[4].sh.rect).toEqual({ x: 96, y: 0, w: 16, h: 12 }); // vaga 8 = coluna 6, norte (fora do envelope)
-    expect(shells[5].sh.rect).toEqual({ x: 96, y: SOUTH_Y, w: 16, h: 12 }); // vaga 9 = coluna 6, sul
-    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([8, 9]); // leste: só a coluna hi = 6
+    expect(shells[4].sh.rect).toEqual({ x: 96, y: 0, w: 16, h: 12 }); // vaga 16 = coluna 6, norte (fora do envelope)
+    expect(shells[5].sh.rect).toEqual({ x: 96, y: SOUTH_Y, w: 16, h: 12 }); // vaga 17 = coluna 6, sul
+    expect(capsAt(shells, 7 * COL_W * TILE - 8)).toEqual([16, 17]); // leste: só a coluna hi = 6
     expect(capsAt(shells, 32 * TILE)).toEqual([]); // a ponta oeste (lo = 2) é miolo: sem shell e sem cap
     for (const s of shells) {
       const caps = s.sh.walls.filter((w) => w.kind === 'cap').length;
@@ -686,6 +686,6 @@ describe('área externa por blocos', () => {
     }
     expect(shells.some((s) => s.col === 2 || s.col === 3)).toBe(false);
     // a cerca viva abre diante das vagas sul das colunas 4, 5 e 6
-    expect(gates([8])).toEqual(new Set([2, 6, 9]));
+    expect(gates([16])).toEqual(new Set([2, 6, 17]));
   });
 });

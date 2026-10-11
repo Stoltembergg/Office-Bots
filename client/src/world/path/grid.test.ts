@@ -97,6 +97,20 @@ describe('WalkGrid com origem (−16, −41)', () => {
     expect(g.nearestWalkable(-12, -38)).toBeNull();
   });
 
+  it('nearestWalkable com accept: só tiles aceitos; sem nenhum no raio, null (nunca um tile de outra região)', () => {
+    const g = WalkGrid.forRect({ x: 0, y: 0, w: 10, h: 1 });
+    g.fill(0, 0, 10, 1, FREE);
+    // o próprio tile é livre mas não aceito: segue para o aceito mais próximo
+    expect(g.nearestWalkable(0, 0, 12, (x) => x >= 5)).toEqual({ x: 5, y: 0 });
+    // raio curto demais para alcançar um aceito: null, mesmo havendo tiles livres a 1 de distância
+    expect(g.nearestWalkable(0, 0, 3, (x) => x >= 5)).toBeNull();
+    // sem accept, o comportamento de sempre
+    expect(g.nearestWalkable(0, 0, 3)).toEqual({ x: 0, y: 0 });
+    // o tile de partida recusado, um vizinho aceito de cada lado: devolve um dos dois
+    const n = g.nearestWalkable(2, 0, 12, (x) => x !== 2);
+    expect([1, 3]).toContain(n!.x);
+  });
+
   it('reachableFrom marca índices por key e não sai da caixa', () => {
     const g = gridFrom(['..#..', '..#..', '.....'], X0, Y0);
     const seen = g.reachableFrom(X0, Y0);

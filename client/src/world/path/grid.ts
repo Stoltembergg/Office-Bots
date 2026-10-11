@@ -54,16 +54,20 @@ export class WalkGrid {
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) this.set(xx, yy, v);
   }
 
-  /** Tile caminhável mais próximo (busca em anel), ou null. Só devolve tiles de dentro da caixa. */
-  nearestWalkable(x: number, y: number, maxR = 12): { x: number; y: number } | null {
-    if (this.walkable(x, y)) return { x, y };
+  /**
+   * Tile caminhável mais próximo (busca em anel), ou null. Só devolve tiles de dentro da caixa; com `accept`, só os
+   * que ele aprova (ex.: a mesma região do prédio, para ninguém "atravessar a rua" num relayout).
+   */
+  nearestWalkable(x: number, y: number, maxR = 12, accept?: (x: number, y: number) => boolean): { x: number; y: number } | null {
+    const ok = (tx: number, ty: number) => this.walkable(tx, ty) && (!accept || accept(tx, ty));
+    if (ok(x, y)) return { x, y };
     for (let r = 1; r <= maxR; r++) {
       let best: { x: number; y: number } | null = null;
       let bestD = Infinity;
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-          if (!this.walkable(x + dx, y + dy)) continue;
+          if (!ok(x + dx, y + dy)) continue;
           const d = dx * dx + dy * dy;
           if (d < bestD) {
             bestD = d;
