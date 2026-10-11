@@ -5,6 +5,7 @@ import { assembleBuilding, type BuildingLayout } from './building';
 import * as core from './core';
 import { CORRIDOR_ID, corridorId } from './corridor';
 import { existingBlocks, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
+import { annexRestroomId, hubAreas, hubId, layoutHub } from './hub';
 import { layoutProjectRoom, roomVariant } from './room';
 import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, layoutExterior, slotShell, type SlotShell } from './exterior';
 import type { AreaLayout } from './types';
@@ -480,6 +481,86 @@ describe('núcleo por bloco (coreAreas)', () => {
     expect(core.layoutRestroom({ x: 0, y: 17, w: 16, h: 12 }).door).toEqual({ x: 7, y: 17, w: 2, h: 2 });
     expect(core.layoutCafe({ x: 16, y: 0, w: 16, h: 12 }).rect).toEqual({ x: 16, y: 0, w: 16, h: 12 });
     expect(core.layoutLounge({ x: 16, y: 17, w: 16, h: 12 }).door).toEqual({ x: 23, y: 17, w: 3, h: 2 });
+  });
+});
+
+describe('saguão e WC do anexo (hubAreas)', () => {
+  const A1 = { bx: 0, by: 1 };
+  const inside = (r: { x: number; y: number; w: number; h: number }, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+  const kinds = (a: AreaLayout, kind: string) => a.spots.filter((s) => s.kind === kind);
+
+  it('ids pelo bloco; saguão (hub) na coluna 2 ao norte e WC (restroom) ao sul, nos retângulos do anexo 1', () => {
+    expect(hubId(A1)).toBe('anexo:0,1:saguao');
+    expect(annexRestroomId(A1)).toBe('anexo:0,1:wc');
+    const [hub, wc] = hubAreas(A1, true);
+    expect([hub.id, hub.kind, hub.rect]).toEqual(['anexo:0,1:saguao', 'hub', { x: 40, y: 41, w: 16, h: 12 }]);
+    expect([wc.id, wc.kind, wc.rect]).toEqual(['anexo:0,1:wc', 'restroom', { x: 40, y: 58, w: 16, h: 12 }]);
+    expect(wc.door).toEqual({ x: 47, y: 58, w: 2, h: 2 });
+  });
+
+  it('com passarela: porta externa de 3 tiles na face norte (exit, vão, batente wide3), sem janela', () => {
+    const hub = layoutHub(A1, true);
+    expect(hub.exit).toEqual({ x: 47, y: 41, w: 3, h: 2 });
+    expect(hub.walkable).toContainEqual({ x: 47, y: 41, w: 3, h: 2 });
+    expect(hub.walls.find((w) => w.kind === 'face')!.doorways).toEqual([{ x: 47 * TILE, w: 3 * TILE }]);
+    const frames = hub.wallItems.filter((w) => w.kind === 'door_frame');
+    expect(frames).toHaveLength(1);
+    expect(frames[0].variant).toBe('wide3');
+    expect(hub.wallItems.some((w) => w.kind === 'window')).toBe(false);
+    expect(hub.door).toBeUndefined();
+  });
+
+  it('sem passarela (Review Focus c): face fechada com janela, nenhum tile caminhável nas linhas da porta', () => {
+    const hub = layoutHub(A1, false);
+    expect(hub.exit).toBeUndefined();
+    expect(hub.walls.find((w) => w.kind === 'face')!.doorways).toBeUndefined(); // o builder não guarda lista vazia
+    expect(hub.wallItems.some((w) => w.kind === 'door_frame')).toBe(false);
+    expect(hub.wallItems.filter((w) => w.kind === 'window')).toHaveLength(1);
+    expect(hub.walkable.every((r) => r.y >= 43)).toBe(true);
+  });
+
+  it('aberto para o corredor ao sul como a recepção: vidro só nas pontas da linha 11, o meio livre', () => {
+    const hub = layoutHub(A1, true);
+    expect(hub.walkable).toContainEqual({ x: 41, y: 43, w: 14, h: 10 });
+    expect(hub.walls.some((w) => w.kind === 'south')).toBe(false);
+    expect(hub.furniture.filter((f) => f.kind === 'glass_partition' && f.variant === 'h' && f.ty === 52).map((f) => f.tx)).toEqual([41, 42, 43, 52, 53, 54]);
+  });
+
+  it('serviços do saguão: um café, uma água, uma pia, uma cabine, dois lugares no banco, dois de conversa; nada de lanche, geladeira, mesa ou janela', () => {
+    const hub = layoutHub(A1, true);
+    expect(kinds(hub, 'coffee')).toHaveLength(1);
+    expect(kinds(hub, 'water')).toHaveLength(1);
+    expect(kinds(hub, 'sink')).toHaveLength(1);
+    expect(kinds(hub, 'stall')).toHaveLength(1);
+    expect(kinds(hub, 'bench')).toHaveLength(2);
+    expect(kinds(hub, 'talk')).toHaveLength(2);
+    for (const k of ['snack', 'fridge', 'cafe_seat', 'window', 'elevator']) expect(kinds(hub, k), k).toHaveLength(0);
+    expect(kinds(hub, 'coffee')[0].furnitureId).toBeDefined();
+    expect(kinds(hub, 'stall')[0].furnitureId).toBeDefined();
+    expect(kinds(hub, 'talk').map((s) => s.group)).toEqual(['talk:anexo:0,1:saguao', 'talk:anexo:0,1:saguao']);
+    // o banheirinho fica atrás de vidro (divisória vertical em lx 10, linhas 2–5)
+    expect(hub.furniture.filter((f) => f.kind === 'glass_partition' && f.tx === 50).map((f) => [f.ty, f.variant])).toEqual([[43, 'v'], [44, 'v'], [45, 'v'], [46, 'end']]);
+  });
+
+  it('nada fica fora do retângulo da área (saguão com e sem porta, WC)', () => {
+    for (const a of [...hubAreas(A1, true), layoutHub(A1, false)]) {
+      const r = a.rect;
+      const px = { x: r.x * TILE, y: r.y * TILE, w: r.w * TILE, h: r.h * TILE };
+      for (const t of [...a.walkable, ...(a.blocked ?? []), ...(a.door ? [a.door] : []), ...(a.exit ? [a.exit] : [])]) {
+        expect(inside(r, t.x, t.y) && inside(r, t.x + t.w - 1, t.y + t.h - 1), `${a.id} tiles ${t.x},${t.y} ${t.w}×${t.h}`).toBe(true);
+      }
+      for (const f of a.furniture) expect(inside(r, f.tx, f.ty), f.id).toBe(true);
+      for (const s of a.spots) expect(inside(r, s.tx, s.ty), s.id).toBe(true);
+      for (const w of a.wallItems) expect(w.cx >= px.x && w.cx <= px.x + px.w && w.baseY >= px.y && w.baseY <= px.y + px.h, w.id).toBe(true);
+      for (const w of [...a.walls, ...a.floors, ...a.rugs]) expect(w.x >= px.x && w.x + w.w <= px.x + px.w && w.y >= px.y && w.y <= px.y + px.h, `${a.id} px ${w.x},${w.y}`).toBe(true);
+    }
+  });
+
+  it('cache por bloco e por ter ou não passarela', () => {
+    expect(hubAreas(A1, true)).toBe(hubAreas({ bx: 0, by: 1 }, true));
+    expect(hubAreas(A1, true)).not.toBe(hubAreas(A1, false));
+    expect(hubAreas(A1, false)[0].exit).toBeUndefined();
+    expect(hubAreas(A1, true)[0].exit).toBeDefined();
   });
 });
 
