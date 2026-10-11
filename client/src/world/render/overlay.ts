@@ -8,6 +8,7 @@ import { TILE } from '../../art/api';
 import type { WorldOptions } from '../api';
 import type { Camera } from '../camera';
 import { COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
+import { blockKey, blockRect, inRect, PRINCIPAL, type BlockLayout } from '../layout/geometry';
 import type { Character } from '../sim/character';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
@@ -179,6 +180,22 @@ export function rationBubbles(items: readonly { room: string; prio: number; chan
     keep.add(i);
   }
   return keep;
+}
+
+/**
+ * Chave do racionamento da visão geral: (bloco, coluna local, faixa norte/corredor/sul) do tile em que o
+ * personagem está. A coluna é contada pelo ENVELOPE do bloco (não pelo retângulo de pé), então vale também
+ * em colunas vazias; fora de todo bloco, usa o primeiro (sem bloco algum, o envelope do principal).
+ * Nunca lança: a chave só agrupa balões. Pura (testável).
+ */
+export function bubbleAreaKey(tx: number, ty: number, blocks: readonly BlockLayout[]): string {
+  const block: BlockLayout | undefined = blocks.find((b) => inRect(b.rect, tx, ty)) ?? blocks[0];
+  const id = block ? block.id : PRINCIPAL;
+  const env = block ? block.envelope : blockRect(PRINCIPAL);
+  const col = Math.floor((tx - env.x) / COL_W);
+  const ly = ty - env.y;
+  const band = ly < CORRIDOR_Y ? 'n' : ly < SOUTH_Y ? 'c' : 's';
+  return `${blockKey(id)}:${col}:${band}`;
 }
 
 export class Overlay {
@@ -388,13 +405,14 @@ export class Overlay {
     if (zoom >= OVERVIEW_ZOOM) return;
     const rin = this.rationIn;
     const idx = this.rationIdx;
+    const blocks = this.sim.building.blocks;
     rin.length = 0;
     idx.length = 0;
     for (const it of items) {
       if (it.type !== 'bubble' || (it.tone !== 'info' && it.tone !== 'shell' && it.tone !== 'say') || it.prio >= 75) continue;
-      // por área FÍSICA (onde o personagem está agora), que é o que polui a tela
+      // por área FÍSICA (bloco, coluna local e faixa em que o personagem está agora), que é o que polui a tela
       const ch = it.ch;
-      rin.push({ room: `${Math.floor(ch.tx / COL_W)}:${ch.ty < CORRIDOR_Y ? 'n' : ch.ty < SOUTH_Y ? 'c' : 's'}`, prio: it.prio, changedAt: it.changedAt });
+      rin.push({ room: bubbleAreaKey(ch.tx, ch.ty, blocks), prio: it.prio, changedAt: it.changedAt });
       idx.push(it);
     }
     if (!idx.length) return;
