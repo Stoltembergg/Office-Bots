@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { FURNITURE, TILE, type FurnitureKind, type RoomTheme } from '../../art/api';
 import { BUILDING_H, COL_W, CORRIDOR_H, CORRIDOR_Y, ROOM_H, SOUTH_Y } from '../constants';
+import { PathFinder } from '../path/astar';
+import { layoutBridge } from './bridge';
 import { assembleBuilding, type BuildingLayout } from './building';
 import * as core from './core';
 import { CORRIDOR_ID, corridorId } from './corridor';
-import { existingBlocks, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
+import { bridgesFor, existingBlocks, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
 import { annexRestroomId, hubAreas, hubId, layoutHub } from './hub';
 import { layoutProjectRoom, roomVariant } from './room';
 import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, layoutExterior, slotShell, type SlotShell } from './exterior';
@@ -48,7 +50,7 @@ describe('montagem por blocos', () => {
     expect(b.rooms).toHaveLength(1);
     expect(b.areas.map((a) => a.id)).toEqual(['core:recepcao', 'core:banheiros', 'core:copa', 'core:lounge', CORRIDOR_ID]);
     // o BuildingLayout só tem o modelo de blocos: sem cols, core nem corridor
-    expect(Object.keys(b).sort()).toEqual(['areas', 'blocks', 'grid', 'rect', 'rooms', 'spots']);
+    expect(Object.keys(b).sort()).toEqual(['areas', 'blocks', 'bridges', 'grid', 'rect', 'rooms', 'spots']);
   });
 
   it('sem sala: só o miolo (colunas 2–3, x 32..64) e a grade começa em x 32', () => {
@@ -195,6 +197,96 @@ describe('montagem por blocos', () => {
     expect(b.grid.walkable(56, 28)).toBe(true);
     expect(b.grid.walkable(56, 29)).toBe(false);
     expect(b.grid.inside(56, 29)).toBe(false);
+  });
+
+  it('a 9ª sala (vaga 8) monta o anexo 1 com saguão, WC e corredor, e a passarela do lounge ao saguão', () => {
+    const { b, rooms } = buildFor([8]);
+    expect(b.blocks.map((blk) => [blk.id.bx, blk.id.by, blk.columns.lo, blk.columns.hi])).toEqual([
+      [0, 0, 2, 3],
+      [0, 1, 2, 3],
+    ]);
+    expect(b.bridges.map((br) => br.id)).toEqual(['passarela:0,1']);
+    expect(b.rect).toEqual({ x: 32, y: 0, w: 40, h: 70 });
+    expect(b.areas.map((a) => a.id)).toEqual([
+      'core:recepcao',
+      'core:banheiros',
+      'core:copa',
+      'core:lounge',
+      'anexo:0,1:saguao',
+      'anexo:0,1:wc',
+      'core:corredor',
+      'anexo:0,1:corredor',
+      'passarela:0,1',
+    ]);
+    expect(rooms[0].rect).toEqual({ x: 56, y: 41, w: 16, h: 12 }); // vaga 8 = coluna 3 norte do anexo
+    expect(rooms[0].side).toBe('north');
+    // o saguão tem a porta externa (há passarela)
+    expect(b.areas.find((a) => a.id === 'anexo:0,1:saguao')!.exit).toEqual({ x: 47, y: 41, w: 3, h: 2 });
+    // ids de spots únicos (duas áreas restroom, dois corredores)
+    const ids = b.spots.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('a grade liga os blocos pela passarela: do elevador ao saguão, ao WC do anexo, à sala da vaga 8 e ao ponto de conversa do anexo', () => {
+    const { b, rooms } = buildFor([8]);
+    const reception = b.areas.find((a) => a.id === core.RECEPTION_ID)!;
+    const elevator = reception.spots.find((s) => s.kind === 'elevator')!;
+    const reach = b.grid.reachableFrom(elevator.tx, elevator.ty);
+    const at = (tx: number, ty: number) => reach[b.grid.key(tx, ty)];
+    // passarela: um tile de cada trecho
+    expect(at(56, 30)).toBe(1);
+    expect(at(52, 34)).toBe(1);
+    expect(at(48, 39)).toBe(1);
+    // saguão (café), WC (cabine), sala (porta) e conversa do corredor do anexo
+    const hub = b.areas.find((a) => a.id === 'anexo:0,1:saguao')!;
+    const coffee = hub.spots.find((s) => s.kind === 'coffee')!;
+    expect(at(coffee.tx, coffee.ty)).toBe(1);
+    const wc = b.areas.find((a) => a.id === 'anexo:0,1:wc')!;
+    const stall = wc.spots.find((s) => s.kind === 'stall')!;
+    expect(at(stall.tx, stall.ty)).toBe(1);
+    const door = rooms[0].door!;
+    expect(door).toEqual({ x: 63, y: 52, w: 2, h: 1 }); // sala ao norte do corredor do anexo: porta na linha 52 (DOOR_X 7, DOOR_W 2)
+    expect(at(door.x, door.y)).toBe(1);
+    const talk = b.spots.filter((s) => s.group === 'anexo:0,1:corredor:talk:3');
+    expect(talk).toHaveLength(2);
+    expect(at(talk[0].tx, talk[0].ty)).toBe(1);
+    // a rua não é caminhável
+    expect(b.grid.walkable(40, 35)).toBe(false);
+    expect(b.grid.walkable(60, 31)).toBe(false);
+  });
+
+  it('o caminho do lounge ao saguão passa pelo Z da passarela', () => {
+    const { b } = buildFor([8]);
+    const pf = new PathFinder(b.grid);
+    const out: number[] = [];
+    expect(pf.find(56, 27, 48, 44, out)).toBe(true);
+    const tiles: [number, number][] = [];
+    for (let i = 0; i < out.length; i += 2) tiles.push([out[i], out[i + 1]]);
+    expect(tiles.some(([x, y]) => x >= 55 && x <= 57 && y >= 29 && y <= 32)).toBe(true);
+    expect(tiles.some(([x, y]) => x >= 47 && x <= 49 && y >= 36 && y <= 40)).toBe(true);
+    for (const [x, y] of tiles) expect(b.grid.walkable(x, y), `${x},${y}`).toBe(true);
+  });
+
+  it('nove salas: principal com as colunas 0–5 e o anexo com 2–3; o mundo vai de x 0 a 96 e de y 0 a 70', () => {
+    const { b } = buildFor([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(b.blocks.map((blk) => [blk.columns.lo, blk.columns.hi])).toEqual([
+      [0, 5],
+      [2, 3],
+    ]);
+    expect(b.rect).toEqual({ x: 0, y: 0, w: 96, h: 70 });
+    expect(b.bridges).toHaveLength(1);
+  });
+
+  it('corredor do anexo: colunas 2–3 em y 53..58, decorado pelo miolo do anexo (coluna 2) e pela coluna de sala (3)', () => {
+    const { b } = buildFor([8]);
+    const corridor = b.areas.find((a) => a.id === corridorId({ bx: 0, by: 1 }))!;
+    expect(corridor.rect).toEqual({ x: 40, y: 53, w: 32, h: 5 });
+    // miolo (coluna 2): palmeira em lx 2, ly 4; coluna 3 = primeira coluna de sala (k = 2, par): bebedouro em lx 3, ly 0
+    expect(corridor.furniture.some((f) => f.kind === 'plant_tall' && f.variant === 'palm' && f.tx === 42 && f.ty === 57)).toBe(true);
+    expect(corridor.furniture.some((f) => f.kind === 'water_cooler' && f.tx === 59 && f.ty === 53)).toBe(true);
+    // o principal com só o miolo continua igual (colunas 2 e 3 decoradas como miolo)
+    const main = corridorOf(b);
+    expect(main.furniture.some((f) => f.kind === 'bench' && f.tx === 50 && f.ty === 12)).toBe(true);
   });
 
   it('os spots vêm na ordem núcleo, corredor, salas; os grupos de conversa do corredor levam o id da área', () => {
@@ -561,6 +653,51 @@ describe('saguão e WC do anexo (hubAreas)', () => {
     expect(hubAreas(A1, true)).not.toBe(hubAreas(A1, false));
     expect(hubAreas(A1, false)[0].exit).toBeUndefined();
     expect(hubAreas(A1, true)[0].exit).toBeDefined();
+  });
+});
+
+describe('passarela como área (layoutBridge)', () => {
+  const bridge = bridgesFor(existingBlocks([8]))[0];
+  const area = layoutBridge(bridge);
+
+  it('id da passarela, kind bridge, retângulo = caixa dos três trechos, sem paredes', () => {
+    expect(area.id).toBe('passarela:0,1');
+    expect(area.kind).toBe('bridge');
+    expect(area.rect).toEqual({ x: 47, y: 29, w: 11, h: 12 });
+    expect(area.walls).toEqual([]);
+    expect(area.wallItems).toEqual([]);
+    expect(area.spots).toEqual([]);
+    expect(area.door).toBeUndefined();
+  });
+
+  it('piso de chapas e tiles caminháveis só nos trechos (o canto da caixa fora do Z fica vazio)', () => {
+    expect(area.floors.map((f) => [f.kind, f.x / TILE, f.y / TILE, f.w / TILE, f.h / TILE])).toEqual([
+      ['bridge', 55, 29, 3, 4],
+      ['bridge', 47, 33, 11, 3],
+      ['bridge', 47, 36, 3, 5],
+    ]);
+    expect(area.walkable).toEqual(bridge.rects);
+  });
+
+  it('guarda-corpo em cada borda de tile que não dá em outro trecho nem numa porta: 8 n, 8 s, 12 w, 12 e', () => {
+    const rails = area.furniture.filter((f) => f.kind === 'railing');
+    expect(rails).toHaveLength(40);
+    const by = (v: string) => rails.filter((f) => f.variant === v);
+    expect(by('n')).toHaveLength(8);
+    expect(by('s')).toHaveLength(8);
+    expect(by('w')).toHaveLength(12);
+    expect(by('e')).toHaveLength(12);
+    // as pontas encostam nas portas: nada de guarda-corpo ao norte da linha 29 nem ao sul da linha 40
+    expect(by('n').some((f) => f.ty === 29)).toBe(false);
+    expect(by('s').some((f) => f.ty === 40)).toBe(false);
+    // o trecho do meio: norte em x 47..54 (os tiles 55..57 dão no trecho de cima), sul em x 50..57
+    expect(by('n').map((f) => f.tx).sort((a, b) => a - b)).toEqual([47, 48, 49, 50, 51, 52, 53, 54]);
+    expect(by('s').map((f) => f.tx).sort((a, b) => a - b)).toEqual([50, 51, 52, 53, 54, 55, 56, 57]);
+    expect(area.furniture.every((f) => f.kind === 'railing')).toBe(true);
+  });
+
+  it('cache por id', () => {
+    expect(layoutBridge(bridge)).toBe(area);
   });
 });
 

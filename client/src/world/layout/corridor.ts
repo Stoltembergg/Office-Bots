@@ -1,7 +1,7 @@
 // Corredor de um bloco: atravessa as colunas de pé de oeste a leste, com bebedouros, bancos e plantas.
 import { COL_W, CORRIDOR_H, CORRIDOR_Y } from '../constants';
 import { AreaBuilder } from './builder';
-import { isPrincipal, type BlockId, type BlockLayout } from './geometry';
+import { coreColumns, isPrincipal, type BlockId, type BlockLayout } from './geometry';
 import type { AreaLayout } from './types';
 
 export const CORRIDOR_ID = 'core:corredor';
@@ -16,7 +16,7 @@ export function corridorId(block: BlockId): string {
   return isPrincipal(block) ? CORRIDOR_ID : `anexo:${block.bx},${block.by}:corredor`;
 }
 
-/** Corredor sobre as colunas de pé `lo..hi` do bloco, com vidro nas duas pontas (fase 1: sem passarela). */
+/** Corredor sobre as colunas de pé `lo..hi` do bloco, com vidro nas duas pontas (as passarelas chegam pelo saguão e pelo lounge, não pelo corredor). */
 export function layoutCorridor(block: BlockLayout): AreaLayout {
   const { lo, hi } = block.columns;
   const env = block.envelope;
@@ -31,20 +31,21 @@ export function layoutCorridor(block: BlockLayout): AreaLayout {
   }
   b.walk(1, 0, w - 2, CORRIDOR_H);
 
+  const core = coreColumns(block.id);
   for (let c = lo; c <= hi; c++) {
     const x = (c - lo) * COL_W;
-    if (c === 2) {
-      // miolo: recepção ao norte, banheiros ao sul
+    if (c === core[0]) {
+      // miolo: recepção (ou saguão) ao norte, banheiros ao sul
       b.furn('plant_tall', x + 2, 4, 'palm', { order: 0.5 });
       b.furn('plant_small', x + 13, 4, 'flower', { order: 0.5 });
-    } else if (c === 3) {
-      // miolo: copa ao norte, lounge ao sul
+    } else if (c === core[1]) {
+      // miolo do principal: copa ao norte, lounge ao sul
       const bench = b.furn('bench', x + 2, 0, undefined, { order: 0.5 });
       for (let i = 0; i < 2; i++) b.seat('bench', 'bench', x + 2 + i, 0, 'down', undefined, { noFurniture: true, furnitureId: bench });
       b.furn('plant_tall', x + 13, 0, 'monstera', { order: 0.5 });
     } else {
-      // colunas de projeto alternam: bebedouro (pares) e banco de espera (ímpares)
-      const k = c < 2 ? c : c - 2;
+      // colunas de projeto alternam: bebedouro (pares) e banco de espera (ímpares), contadas sem o miolo
+      const k = c < core[0] ? c : c - core.length;
       if (k % 2 === 0) {
         b.furn('water_cooler', x + 3, 0, undefined, { order: 0.5 });
         b.spot('water', x + 3, 1, 'up', { dy: -3 });
