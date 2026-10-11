@@ -27,6 +27,16 @@ do meio (0.**3**.0).
   na parede norte, por uma passarela em Z por cima da rua norte. O saguão de cada anexo fica do lado da passarela e
   tem a porta larga para ela; os banheiros ficam do outro lado do corredor.
 
+- **Vida na rua.** Em frente à entrada há uma faixa de pedestres com semáforo: os carros param no amarelo e no
+  vermelho (fazendo fila) e seguem no verde; pedestres passeiam pelas duas calçadas, atravessam na faixa quando o
+  sinal fecha para os carros e, quando se cruzam, às vezes param para conversar. Eles são figurantes: não são
+  clicáveis nem entram no escritório.
+- **Terreno sem fim.** Além da área externa calculada, o gramado, as ruas (com calçadas, asfalto e faixa tracejada)
+  e as árvores continuam até onde a câmera for, em qualquer zoom; os carros nunca andam fora do asfalto.
+- **Demonstração com número de sessões.** O cartão "O escritório está vazio" pergunta quantas sessões a
+  demonstração deve manter abertas (1 a 40, padrão 4) ao lado de "Ver demonstração". `POST /api/demo` aceita
+  `sessions` (inteiro de 0 a 40): ligando, o simulador nasce com esse alvo; já ligado, só ajusta.
+
 ### Alterado
 
 - **O prédio cresce para os dois lados.** A recepção, a copa, os banheiros e o lounge ficam no centro do prédio, e
@@ -43,6 +53,10 @@ do meio (0.**3**.0).
   postes e faixa tracejada; carros só na rua principal. Árvores e arbustos não mudam de lugar quando um bloco nasce,
   e a cerca viva de cada bloco fica só do lado que dá para uma rua. A câmera pode andar até a borda da área externa e
   afastar mais (zoom mínimo 0,15).
+- **Chegada e saída pela porta.** Ninguém mais usa o elevador: quem chega surge na calçada, sobe o caminho de pedra
+  e entra pela porta da recepção; quem vai embora sai pela porta, desce até a calçada, vira para um lado e some
+  andando. O elevador ficou de decoração, com a porta fechada, e o "ding" (Configurações › Sons › Elevador) toca na
+  porta quando alguém entra ou sai.
 - **Porta nos fundos do lounge.** O lounge ganhou uma porta na parede sul, de onde sai a passarela do anexo; enquanto
   o anexo não existe, ela dá para o jardim e ninguém passa por ela.
 - A câmera, a luz das janelas, os pátios e os balões da visão geral acompanham o prédio quando ele cresce para o

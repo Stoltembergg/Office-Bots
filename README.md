@@ -52,8 +52,8 @@ para dar a letra de cada conta). Nada sai do computador: o Habblaud não lê cre
 
 ## Como é
 
-**Visão geral.** No centro do prédio ficam a recepção com elevadores, a copa, os banheiros e o lounge, e a entrada
-é pela porta da recepção, que dá na calçada da rua. Cada projeto com uma sessão aberta ganha a sua sala ao longo do
+**Visão geral.** No centro do prédio ficam a recepção, a copa, os banheiros e o lounge, e a entrada é pela porta da
+recepção, que dá no caminho de pedra até a calçada: é por ali que todo mundo chega e vai embora. Cada projeto com uma sessão aberta ganha a sua sala ao longo do
 corredor, de um lado ou do outro do núcleo — a primeira a leste, a segunda a oeste, e assim por diante, até quatro
 salas de cada lado. A nona sala abre um anexo do outro lado da rua, ligado ao lounge por uma passarela: no lugar do
 núcleo, um saguão com café, água e pia, e banheiros; as salas se abrem dos dois lados dele, como no principal. Da
@@ -79,7 +79,7 @@ de cada conta; à esquerda, as salas e os agentes; embaixo, o feed de atividade.
   <tr>
     <td width="42%"><img src="docs/screenshots/collab.png" alt="Subagente entregando o resultado ao agente principal enquanto outra agente pede permissão" /></td>
     <td width="58%">
-      <b>Colaboração à vista.</b> Subagentes são colegas com nome próprio e crachá: chegam pelo elevador, trabalham na
+      <b>Colaboração à vista.</b> Subagentes são colegas com nome próprio e crachá: chegam pela porta, trabalham na
       sala do projeto e, ao terminar, vão até o agente que os chamou entregar o resultado (📦) antes de ir embora.<br /><br />
       <b>Precisa de você.</b> Quando um agente espera uma permissão ou resposta no terminal, ele corre para a mesa e
       levanta a mão, com um alerta piscando — e um aviso aparece na tela (opcionalmente com som e notificação do navegador).
@@ -103,7 +103,7 @@ de cada conta; à esquerda, as salas e os agentes; embaixo, o feed de atividade.
 </table>
 
 **A luz apaga.** Quando você fecha a última sessão de um projeto, o último personagem vai até o interruptor,
-apaga a luz, sai pelo elevador — e a sala é desmontada, virando jardim até um novo projeto chegar. Se sobrou uma
+apaga a luz, sai pela porta e some andando pela calçada — e a sala é desmontada, virando jardim até um novo projeto chegar. Se sobrou uma
 vaga livre antes da última ocupada, a sala da maior vaga se muda para lá: é montada no lugar vago, o pessoal vai
 andando até ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com buracos e encolhe sozinho,
 dos dois lados do núcleo (as vagas alternam leste e oeste). Quando a última sala do anexo sai, o anexo e a passarela
@@ -166,7 +166,7 @@ npm start
 
 Abra **http://localhost:4747**. Para desenvolver, use `npm run dev` (servidor + Vite com recarga automática).
 
-Agora abra o Claude Code em qualquer projeto e veja o seu agente chegar pelo elevador. 🎉
+Agora abra o Claude Code em qualquer projeto e veja o seu agente chegar pela calçada e entrar pela porta. 🎉
 
 ### 3. Instale o mod do Habblaud no Claude Code (recomendado)
 
@@ -320,7 +320,7 @@ desinstaladores antigos deixam cópias `settings.json.habblaud-backup-<data>` na
 | **Precisa de você** | Corre para a mesa e levanta a mão, com alerta piscando: está esperando uma permissão ou resposta no terminal. |
 | **Esperando o shell** | Terminou o turno mas deixou um comando rodando (testes, build, deploy…), então fica na mesa com uma ampulheta virando sobre a cabeça e o terminal em progresso: come pipoca assistindo, depois de 3 min cruza os braços e gira na cadeira, depois de 10 min junta teia de aranha e depois de 25 min cochila; quando o comando termina, levanta e comemora com confete (ou ganha uma nuvem de chuva, se falhou). Depois de 40 s, se houver colegas à toa, pode sair para uma roda — com a ampulheta na cabeça. |
 | **Ocioso** | Terminou o turno e passeia: café na copa, bebedouro, banheiro, sofá do lounge, celular no puff, espelho. Com colegas à toa, entra numa roda: TV, videogame, ping-pong, papo na copa, jokenpô (veja [Vida social](#vida-social)). Depois de 10 min parado, cochila — mas um colega pode acordá-lo para uma roda. |
-| **Subagente concluído** | Vai até o agente que o chamou, entrega o resultado e sai pelo elevador. |
+| **Subagente concluído** | Vai até o agente que o chamou, entrega o resultado e sai pela porta. |
 | **Sessão encerrada** | Vai embora; se era o último da sala, apaga a luz antes de sair. |
 
 Cada personagem tem um **nome brasileiro único** (Marina, Henrique, Luan…) que se mantém enquanto a sessão existir, e
@@ -357,7 +357,7 @@ desenha faixas de luz no piso — curtas ao meio-dia, longas e alaranjadas no fi
 dia/noite** dá para escolher automático, sempre dia ou sempre noite; para testar um horário, use `?hora=21:30` na URL.
 
 Os **sons** vêm desligados. Ligados em **Configurações › Sons**, são sintetizados no próprio navegador (sem arquivos
-de áudio) e baixinhos: o teclado de quem trabalha nas salas à vista, o "ding" do elevador quando alguém chega ou vai
+de áudio) e baixinhos: o teclado de quem trabalha nas salas à vista, o "ding" da porta quando alguém chega ou vai
 embora, o sino quando alguém precisa de você, o estalo de tarefa concluída e o pingue-pongue e o fliperama das rodas.
 Há volume geral e cada categoria liga e desliga à parte. Com a aba oculta, só o sino toca.
 
