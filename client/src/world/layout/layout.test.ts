@@ -9,7 +9,7 @@ import { CORRIDOR_ID, corridorId } from './corridor';
 import { bridgesFor, existingBlocks, inRect, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
 import { annexRestroomId, hubAreas, hubId, layoutHub } from './hub';
 import { layoutProjectRoom, roomVariant } from './room';
-import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, layoutExterior, slotShell, type SlotShell } from './exterior';
+import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, layoutExterior, slotShell, type ExteriorLayout, type SlotShell, type Street } from './exterior';
 import type { AreaLayout } from './types';
 
 const theme: RoomTheme = {
@@ -1143,12 +1143,12 @@ describe('área externa por blocos', () => {
       }
     }
     // sem anexo nem passarela, a cena do principal não muda: contagem e digest dos props pinados com a entrada ao sul (D9)
-    // (1, 4 e 8 salas; qualquer filtro novo que tire ou mova um prop do principal quebra aqui)
+    // e as árvores por posição (D5) (1, 4 e 8 salas; qualquer filtro novo que tire ou mova um prop do principal quebra aqui)
     const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
     for (const [n, count, dg] of [
-      [1, 195, 265584],
-      [4, 216, -274993],
-      [8, 279, -116528],
+      [1, 186, 866660],
+      [4, 209, -913710],
+      [8, 279, -683169],
     ] as const) {
       const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
       expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);
@@ -1189,5 +1189,94 @@ describe('área externa por blocos', () => {
     expect(slotShell(0, { west: false, east: false }).walls.find((w) => w.kind === 'face')).toMatchObject({ y: (CORRIDOR_Y - 2) * TILE });
     expect(slotShell(0, { west: false, east: false }).side).toBe('north');
     expect(slotShell(2, { west: false, east: false }).props.some((p) => p.kind === 'paving' && p.y === BUILDING_H * TILE)).toBe(true);
+  });
+});
+
+describe('exterior da fase 3 (D5): ruas, props por posição, cercas e pátios por lado com rua', () => {
+  const slots = (n: number) => Array.from({ length: n }, (_, i) => i);
+  const ext = (n: number) => {
+    const b = existingBlocks(slots(n));
+    return { b, e: layoutExterior(b, bridgesFor(b)) };
+  };
+  /** Faixa de calçada + asfalto de uma rua (tiles): h → linhas 2..10 do rect; v → colunas 1..9. */
+  const paved = (s: Street): { x: number; y: number; w: number; h: number } =>
+    s.axis === 'h' ? { x: s.rect.x, y: s.rect.y + 2, w: s.rect.w, h: 9 } : { x: s.rect.x + 1, y: s.rect.y, w: 9, h: s.rect.h };
+
+  it('ruas: só a principal com 9 salas; A2 traz a norte–sul em x 96; A4 a de x −12; A6 a rua norte', () => {
+    const e9 = ext(9).e;
+    expect(e9.streets.map((s) => [s.axis, s.rect.x, s.rect.y, s.rect.w, s.rect.h, s.cars])).toEqual([['h', e9.bounds.x, 29, e9.bounds.w, 12, true]]);
+    const e17 = ext(17).e;
+    expect(e17.streets.filter((s) => s.axis === 'v').map((s) => [s.rect.x, s.rect.w, s.cars])).toEqual([[96, 12, false]]);
+    expect(e17.streets.find((s) => s.axis === 'v')!.rect).toMatchObject({ y: e17.bounds.y, h: e17.bounds.h });
+    const e33 = ext(33).e;
+    expect(e33.streets.filter((s) => s.axis === 'v').map((s) => s.rect.x).sort((a, b) => a - b)).toEqual([-12, 96]);
+    const e49 = ext(49).e;
+    expect(e49.streets.filter((s) => s.axis === 'h').map((s) => [s.rect.y, s.cars])).toEqual([
+      [29, true],
+      [-12, false],
+    ]);
+    // pisos: calçadas e asfalto de cada rua, calçadas antes do asfalto (cruzamentos limpos)
+    const kinds = e49.floors.map((f) => f.kind);
+    expect(kinds.lastIndexOf('sidewalk' as const) > kinds.indexOf('street')).toBe(true); // o caminho de pedra da entrada vem por último
+    expect(kinds.indexOf('street')).toBeGreaterThan(kinds.indexOf('sidewalk'));
+    expect(e49.floors.filter((f) => f.kind === 'street')).toHaveLength(e49.streets.length);
+  });
+
+  it('Review Focus 4: nenhum prop em rua, calçada, bloco ou passarela com 17, 33 e 49 salas (menos o mobiliário da calçada); carros só na principal', () => {
+    const sidewalkFurniture = new Set(['lamp', 'bench', 'totem']);
+    for (const n of [17, 33, 49]) {
+      const { b, e } = ext(n);
+      const bridges = bridgesFor(b);
+      for (const p of e.props) {
+        const tx = Math.floor(p.x / TILE);
+        const ty = Math.floor(p.y / TILE);
+        const onStreet = e.streets.some((s) => inRect(paved(s), tx, ty));
+        expect(onStreet && !sidewalkFurniture.has(p.kind), `${p.kind} em ${tx},${ty} na rua (${n} salas)`).toBe(false);
+        expect(b.some((blk) => inRect(blk.rect, tx, ty)), `${p.kind} em ${tx},${ty} dentro de bloco (${n} salas)`).toBe(false);
+        expect(bridges.some((br) => br.rects.some((r) => inRect(r, tx, ty))), `${p.kind} em ${tx},${ty} sob passarela (${n} salas)`).toBe(false);
+      }
+      expect(e.lanes).toHaveLength(2);
+      expect(e.streets.filter((s) => s.cars)).toHaveLength(1);
+    }
+  });
+
+  it('árvores por posição: as que existem com 9 salas continuam no mesmo lugar com 17 (a oeste da rua nova)', () => {
+    const trees = (e: ExteriorLayout) => e.props.filter((p) => p.kind === 'tree' || p.kind === 'pine' || p.kind === 'bush');
+    const a = trees(ext(9).e);
+    const set = new Set(trees(ext(17).e).map((p) => `${p.x},${p.y}`));
+    const kept = a.filter((p) => p.x < 90 * TILE);
+    expect(kept.length).toBeGreaterThan(20);
+    for (const p of kept) expect(set.has(`${p.x},${p.y}`), `${p.kind} em ${p.x},${p.y}`).toBe(true);
+  });
+
+  it('cerca viva por lado com rua: principal ao sul e, com A6, também ao norte (menos sob a passarela); A6 ao sul; nada ao norte sem a rua norte', () => {
+    const hedges = (e: ExteriorLayout, y: number) => e.props.filter((p) => (p.kind === 'hedge' || p.kind === 'flowers') && p.y === y).map((p) => p.x / TILE - 1).sort((a, b) => a - b);
+    const { b: b49, e: e49 } = ext(49);
+    expect(hedges(e49, (BUILDING_H + 1) * TILE + 10).length).toBeGreaterThan(0); // sul do principal
+    const north = hedges(e49, -TILE + 10);
+    expect(north.length).toBeGreaterThan(0);
+    const bridgeA6 = bridgesFor(b49).find((br) => br.child.by === -1)!;
+    for (const x of north) expect(bridgeA6.rects.some((r) => inRect(r, x, -1)) || bridgeA6.rects.some((r) => inRect(r, x + 1, -1)), `cerca em x ${x} sob a passarela de A6`).toBe(false);
+    expect(hedges(e49, (-41 + BUILDING_H + 1) * TILE + 10).length).toBeGreaterThan(0); // sul de A6 (y −11)
+    expect(hedges(ext(9).e, -TILE + 10)).toEqual([]);
+    expect(hedges(ext(17).e, -TILE + 10)).toEqual([]);
+  });
+
+  it('postes na calçada norte da rua principal e na calçada sul da rua norte; nenhum nas norte–sul', () => {
+    const lamps = ext(49).e.props.filter((p) => p.kind === 'lamp');
+    expect(new Set(lamps.map((p) => p.y))).toEqual(new Set([(29 + 3) * TILE + 6, -3 * TILE + 6]));
+    const lamps33 = ext(33).e.props.filter((p) => p.kind === 'lamp');
+    expect(new Set(lamps33.map((p) => p.y))).toEqual(new Set([(29 + 3) * TILE + 6]));
+  });
+
+  it('pátios: caminho de pedra e paving só do lado com rua (D5)', () => {
+    expect(slotShell(2, { west: false, east: false, street: true }).props.some((p) => p.kind === 'paving')).toBe(true);
+    expect(slotShell(2, { west: false, east: false, street: false }).props.some((p) => p.kind === 'paving')).toBe(false);
+    expect(slotShell(2, { west: false, east: false, street: false }).floors.filter((f) => f.kind === 'sidewalk')).toHaveLength(1); // só a borda do deck
+    expect(slotShell(0, { west: false, east: false, street: true }).props.some((p) => p.kind === 'paving' && p.y === -2 * TILE)).toBe(true); // vaga norte com a rua norte
+    expect(slotShell(0, { west: false, east: false, street: false }).props.some((p) => p.kind === 'paving')).toBe(false);
+    // sem `street`, vale a regra antiga: só o sul do principal
+    expect(slotShell(2, { west: false, east: false }).props.some((p) => p.kind === 'paving')).toBe(true);
+    expect(slotShell(0, { west: false, east: false }).props.some((p) => p.kind === 'paving')).toBe(false);
   });
 });

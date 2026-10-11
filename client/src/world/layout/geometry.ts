@@ -74,6 +74,12 @@ export function blockRect(b: BlockId): TileRect {
   return { x: ANNEX_STEP * b.bx, y, w: ANNEX_W, h: BUILDING_H };
 }
 
+/** x (tiles) da rua norte–sul que separa a coluna de blocos bx da vizinha mais perto do principal (spec 1.6): 96 para bx = 1, −12 para bx = −1. */
+export function streetX(bx: number): number {
+  if (bx === 0) throw new Error('não há rua norte–sul na coluna do principal');
+  return bx > 0 ? MAIN_W + ANNEX_STEP * (bx - 1) : ANNEX_STEP * bx + ANNEX_W;
+}
+
 /** Anel 1 da ordem dos blocos (spec 1.4): A1..A8. */
 const RING_1: readonly BlockId[] = [
   { bx: 0, by: 1 },

@@ -5,7 +5,7 @@ import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type S
 import type { WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
-import { layoutExterior, slotShell, type ExteriorLayout, type SlotShell } from '../layout/exterior';
+import { layoutExterior, slotShell, streetSides, type ExteriorLayout, type SlotShell } from '../layout/exterior';
 import { inRect, isCoreColumn, slotAt, standingKey } from '../layout/geometry';
 import type { ExteriorProp, TileRect } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
@@ -199,17 +199,28 @@ export class Renderer {
     ctx.imageSmoothingEnabled = false;
     ctx.translate(-this.baseX, -this.baseY);
     paintShell(this.art, ctx, this.exterior.floors, []);
-    // faixas da rua
-    const ly = this.exterior.streetY + Math.round(this.exterior.streetH / 2) - 1;
+    // faixa tracejada no eixo de cada rua (asfalto: linhas 4–8 de uma rua h, colunas 3–7 de uma v)
     ctx.fillStyle = 'rgba(255,236,170,0.75)';
-    for (let x = this.baseX + 4; x < this.baseX + c.width; x += 24) ctx.fillRect(x, ly, 12, 2);
+    for (const s of this.exterior.streets) {
+      const r = s.rect;
+      if (s.axis === 'h') {
+        const ly = r.y * TILE + 6 * TILE + TILE / 2 - 1;
+        for (let x = r.x * TILE + 4; x < (r.x + r.w) * TILE; x += 24) ctx.fillRect(x, ly, 12, 2);
+      } else {
+        const lx = r.x * TILE + 5 * TILE + TILE / 2 - 1;
+        for (let y = r.y * TILE + 4; y < (r.y + r.h) * TILE; y += 24) ctx.fillRect(lx, y, 2, 12);
+      }
+    }
     this.shells = [];
     this.shellWindows = [];
-    for (const blk of this.sim.building.blocks) {
+    const blocks = this.sim.building.blocks;
+    const northStreet = blocks.some((b) => b.id.by === -1);
+    for (const blk of blocks) {
+      const sides = streetSides(blk.id, northStreet);
       for (let c = blk.columns.lo; c <= blk.columns.hi; c++) {
         if (isCoreColumn(blk.id, c)) continue;
         for (const side of ['north', 'south'] as const) {
-          const sh = slotShell(slotAt(blk.id, c, side), { west: c === blk.columns.lo, east: c === blk.columns.hi });
+          const sh = slotShell(slotAt(blk.id, c, side), { west: c === blk.columns.lo, east: c === blk.columns.hi, street: sides.includes(side) });
           this.shells.push(sh);
           paintShell(this.art, ctx, sh.floors, sh.walls);
           for (const w of sh.windows) this.shellWindows.push(toWallVis(w, `shell:${sh.slot}`));
