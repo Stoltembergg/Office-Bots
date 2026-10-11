@@ -745,7 +745,8 @@ describe('entrada decorativa na face norte da recepção', () => {
 
 describe('área externa por blocos', () => {
   const PLANTS = new Set(['tree', 'pine', 'bush']);
-  const hedgesOf = (slots: number[]) => layoutExterior(existingBlocks(slots)).props.filter((p) => p.kind === 'hedge' || p.kind === 'flowers');
+  const isHedge = (p: { kind: string }) => p.kind === 'hedge' || p.kind === 'flowers';
+  const hedgesOf = (slots: number[]) => layoutExterior(existingBlocks(slots)).props.filter((p) => isHedge(p) && p.y === (BUILDING_H + 1) * TILE + 10);
   /** Vagas que a cerca viva deixa abertas (whenRoom), conferindo de passagem que nenhuma fica diante do miolo. */
   const gates = (slots: number[]) => {
     const hedges = hedgesOf(slots);
@@ -938,5 +939,73 @@ describe('área externa por blocos', () => {
     expect(shells.some((s) => s.col === 2 || s.col === 3)).toBe(false);
     // a cerca viva abre diante das vagas sul das colunas 4, 5 e 6
     expect(gates([16])).toEqual(new Set([2, 6, 17]));
+  });
+
+  it('com o anexo 1: a rua continua ao sul do principal (y 33..38) e os bounds abraçam os dois blocos e a passarela', () => {
+    const ext = layoutExterior(existingBlocks([8]));
+    expect(ext.bounds).toEqual({ x: 12, y: -16, w: 80, h: 110 });
+    const street = ext.floors.filter((f) => f.kind === 'street');
+    expect(street).toHaveLength(1);
+    expect(street[0]).toMatchObject({ y: (BUILDING_H + 4) * TILE, h: 5 * TILE });
+    expect(ext.floors.filter((f) => f.kind === 'sidewalk').map((f) => f.y / TILE).sort((a, b) => a - b)).toEqual([-4, 31, 38]);
+    expect(ext.streetY).toBe((BUILDING_H + 4) * TILE);
+    // os postes ficam na mesma calçada e nas mesmas posições que sem o anexo, menos o de x 56 (sob a saída da passarela,
+    // tiles 55..57 × 29..32) e o de x 96 (com [0] o principal tem três colunas e os bounds vão a x 100; com [8], a x 92)
+    const lamps = (slots: number[]) => layoutExterior(existingBlocks(slots)).props.filter((p) => p.kind === 'lamp').map((p) => [p.x, p.y]);
+    const withAnnex = lamps([8]);
+    expect(withAnnex.map(([x]) => x / TILE)).toEqual([16, 26, 36, 46, 66, 76, 86]);
+    expect(withAnnex.every(([, y]) => y === (BUILDING_H + 3) * TILE + 6)).toBe(true);
+    expect(lamps([0]).filter(([x]) => withAnnex.some(([ax]) => ax === x))).toEqual(withAnnex);
+  });
+
+  it('Review Focus 5: nenhum prop externo cai sob a passarela nem dentro do retângulo de pé do anexo', () => {
+    const blocks = existingBlocks([8]);
+    const bridges = bridgesFor(blocks);
+    const ext = layoutExterior(blocks, bridges);
+    const annex = blocks[1].rect;
+    for (const p of ext.props) {
+      const tx = Math.floor(p.x / TILE);
+      const ty = Math.floor(p.y / TILE);
+      expect(tx >= annex.x && tx < annex.x + annex.w && ty >= annex.y && ty < annex.y + annex.h, `${p.kind} em ${tx},${ty} dentro do anexo`).toBe(false);
+      for (const r of bridges[0].rects) expect(tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h, `${p.kind} em ${tx},${ty} sob a passarela`).toBe(false);
+    }
+    // sem anexo nem passarela, a cena da fase 1 não muda (mesmos props, na mesma ordem)
+    expect(layoutExterior(existingBlocks([0, 1]), []).props).toEqual(layoutExterior(existingBlocks([0, 1])).props);
+  });
+
+  it('cerca viva ao norte do anexo 1 (y 40): cobre o retângulo de pé menos as peças sob a passarela, abre só diante da coluna da sala', () => {
+    const ext = layoutExterior(existingBlocks([8]));
+    const north = ext.props.filter((p) => isHedge(p) && p.y === 40 * TILE + 10);
+    expect(north).toHaveLength(14); // x 40..70 de 2 em 2 (16 peças) menos as duas sob a passarela (x 46 e 48)
+    const xs = north.map((p) => (p.x - TILE) / TILE);
+    expect(Math.min(...xs)).toBe(40);
+    expect(Math.max(...xs)).toBe(70);
+    expect(xs).not.toContain(46);
+    expect(xs).not.toContain(48);
+    expect(new Set(north.map((p) => p.whenRoom).filter((s): s is number => s !== undefined))).toEqual(new Set([8]));
+    // diante do miolo do anexo (coluna local 2, x 40..56) nada abre
+    for (const p of north) if ((p.x - TILE) / TILE < 56) expect(p.whenRoom, `cerca em x ${(p.x - TILE) / TILE}`).toBeUndefined();
+    // a cerca sul do principal cobre o miolo de pé (x 32..62) menos as duas peças sob a saída da passarela (x 54 e 56 → tiles 55 e 57)
+    expect(hedgesOf([8]).map((p) => (p.x - TILE) / TILE)).toEqual([32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 58, 60, 62]);
+    expect(gates([8])).toEqual(new Set());
+  });
+
+  it('pátios da fileira 1: lado e y relativos à vaga; o pátio sul do anexo não tem caminho nem paving para a rua', () => {
+    const n = slotShell(8, { west: false, east: true });
+    expect(n.side).toBe('north');
+    expect(n.rect).toEqual({ x: 56, y: 41, w: 16, h: 12 });
+    expect(n.walls.find((w) => w.kind === 'face')).toMatchObject({ x: 56 * TILE, y: (41 + ROOM_H - 2) * TILE });
+    expect(n.windows.every((w) => w.baseY === (41 + ROOM_H) * TILE)).toBe(true);
+    expect(n.walls.filter((w) => w.kind === 'cap')).toHaveLength(1);
+    const s = slotShell(10, { west: false, east: false });
+    expect(s.side).toBe('south');
+    expect(s.rect).toEqual({ x: 56, y: 58, w: 16, h: 12 });
+    expect(s.walls.find((w) => w.kind === 'south')).toMatchObject({ x: 56 * TILE, y: 58 * TILE });
+    expect(s.props.some((p) => p.kind === 'paving')).toBe(false);
+    expect(s.floors.filter((f) => f.kind === 'sidewalk')).toHaveLength(1); // só a borda do deck
+    // o principal não muda: pátio norte da vaga 0 e sul da vaga 2 como antes
+    expect(slotShell(0, { west: false, east: false }).walls.find((w) => w.kind === 'face')).toMatchObject({ y: (CORRIDOR_Y - 2) * TILE });
+    expect(slotShell(0, { west: false, east: false }).side).toBe('north');
+    expect(slotShell(2, { west: false, east: false }).props.some((p) => p.kind === 'paving' && p.y === BUILDING_H * TILE)).toBe(true);
   });
 });
