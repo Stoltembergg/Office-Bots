@@ -201,8 +201,10 @@ export interface RoomInfo {
    * compact). Vaga no cliente (client/src/world/layout/geometry.ts, slotAddress): a vaga s vai para o bloco
    * floor(s / 8) e a vaga local s mod 8 segue a ordem do bloco; no principal, (coluna, lado) = 4N, 1N, 4S, 1S, 5N,
    * 0N, 5S, 0S, com o núcleo nas colunas 2–3 (as salas alternam leste e oeste dele, primeiro ao norte do corredor,
-   * depois ao sul). Enquanto os anexos não existem (IMPLEMENTED_BLOCKS = 1), as vagas s >= 8 ficam em colunas
-   * extras a leste do principal: coluna 6 + floor((s - 8) / 2), par = norte, ímpar = sul.
+   * depois ao sul). As vagas 8–15 ficam no anexo 1 (bloco (0,1), do outro lado da rua, ligado ao lounge por uma
+   * passarela): o miolo dele é só a coluna 2 (saguão ao norte, banheiros ao sul) e a ordem é 3N, 1N, 3S, 1S, 4N,
+   * 0N, 4S, 0S. Enquanto os demais anexos não existem (IMPLEMENTED_BLOCKS = 2), as vagas s >= 16 ficam em colunas
+   * extras a leste do principal: coluna 6 + floor((s - 16) / 2), par = norte, ímpar = sul.
    */
   slot: number;
   /** Semente para cores/decoração determinísticas. */

@@ -10,14 +10,24 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Anexo do outro lado da rua.** A nona sala abre um segundo prédio ao sul da rua, ligado ao lounge por uma
+  passarela em Z com guarda-corpo, por cima da rua. No lugar do núcleo, o anexo tem um saguão (balcão com café,
+  água e pia, e um banheirinho) e banheiros; as salas se abrem dos dois lados dele, na mesma ordem do principal
+  (vagas 9 a 16). Quem está no anexo toma café, bebe água e vai ao banheiro no próprio anexo, e a roda do espelho se
+  forma no banheiro mais perto de quem puxa. O anexo e a passarela só são desmontados quando a última sala do anexo
+  sai e ninguém mais está lá nem na passarela. No console do navegador, `habblaud.world.debug.state()` mostra
+  `bridges` (as passarelas de pé, com os trechos).
+
 ### Alterado
 
 - **O prédio cresce para os dois lados.** A recepção, a copa, os banheiros e o lounge ficam no centro do prédio, e
   as salas de projeto se abrem dos dois lados deles: a primeira a leste, a segunda a oeste, e assim por diante,
-  alternando leste e oeste — primeiro ao norte do corredor, depois ao sul —, até quatro salas de cada lado. Da nona
-  sala em diante, o prédio segue crescendo em colunas novas a leste, como antes. Sem nenhuma sala, sobra só o
-  núcleo. A compactação não muda: quando uma vaga fica livre, a sala da maior vaga se muda para ela, e o prédio
-  encolhe pelos dois lados.
+  alternando leste e oeste — primeiro ao norte do corredor, depois ao sul —, até quatro salas de cada lado. Da
+  décima sétima sala em diante, o prédio segue crescendo em colunas novas a leste, como antes. Sem nenhuma sala,
+  sobra só o núcleo. A compactação não muda: quando uma vaga fica livre, a sala da maior vaga se muda para ela, e o
+  prédio encolhe pelos dois lados.
 - **Entrada ao norte.** A porta do prédio fica na fachada norte da recepção, com caminho de pedra, totem e banco; a
   entrada pela ponta oeste do corredor (calçada, banco, totem e capacho) saiu. O corredor tem vidro nas duas pontas
   e os pátios das vagas vazias fecham do lado que for ponta, a leste ou a oeste.

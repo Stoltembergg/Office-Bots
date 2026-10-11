@@ -55,7 +55,9 @@ para dar a letra de cada conta). Nada sai do computador: o Habblaud não lê cre
 **Visão geral.** No centro do prédio ficam a recepção com elevadores, a copa, os banheiros e o lounge, e a entrada
 é pela porta ao norte da recepção. Cada projeto com uma sessão aberta ganha a sua sala ao longo do corredor, de um
 lado ou do outro do núcleo — a primeira a leste, a segunda a oeste, e assim por diante, até quatro salas de cada
-lado; da nona em diante, as salas seguem em colunas novas a leste. No topo, os contadores e o uso de cada conta; à
+lado. A nona sala abre um anexo do outro lado da rua, ligado ao lounge por uma passarela: no lugar do núcleo, um
+saguão com café, água e pia, e banheiros; as salas se abrem dos dois lados dele, como no principal. Da décima
+sétima em diante, as salas seguem em colunas novas a leste. No topo, os contadores e o uso de cada conta; à
 esquerda, as salas e os agentes; embaixo, o feed de atividade.
 
 ![Visão geral do Habblaud: prédio com recepção, copa, banheiros, lounge e salas de projeto; barra lateral com salas e agentes; uso das contas no topo; feed de atividade embaixo](docs/screenshots/overview.png)
@@ -102,7 +104,8 @@ esquerda, as salas e os agentes; embaixo, o feed de atividade.
 apaga a luz, sai pelo elevador — e a sala é desmontada, virando jardim até um novo projeto chegar. Se sobrou uma
 vaga livre antes da última ocupada, a sala da maior vaga se muda para lá: é montada no lugar vago, o pessoal vai
 andando até ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com buracos e encolhe sozinho,
-dos dois lados do núcleo (as vagas alternam leste e oeste).
+dos dois lados do núcleo (as vagas alternam leste e oeste). Quando a última sala do anexo sai, o anexo e a passarela
+são desmontados também — a não ser que alguém ainda esteja lá, ou na passarela; aí esperam a pessoa sair.
 
 | 1. A sala é montada, ainda apagada | 2. Alguém acende a luz e todos trabalham | 3. O último sai e apaga a luz | 4. A sala vira jardim |
 | --- | --- | --- | --- |
