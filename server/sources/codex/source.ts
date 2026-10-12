@@ -32,6 +32,7 @@ import type { AccountEntry, AccountsService } from '../../accounts/service';
 import { errMsg, log } from '../../log';
 import type { Office, TranscriptSummary } from '../../model/office';
 import { cwdOutOfScope } from '../../model/rooms';
+import { fileScope } from '../scope';
 import type { AgentSource } from '../source';
 import { FileTail } from '../tail';
 import type { TerminalParser } from '../terminal';
@@ -574,6 +575,14 @@ export class CodexSource implements AgentSource, CodexLive {
 
   /** Lê o começo (session_meta, título) e a janela do fim do rollout; o resto do começo vai em segundo plano. */
   private load(t: ThreadTracker, path: string): void {
+    // Escopo por pasta: o rollout inteiro precisa ser de dentro antes de qualquer linha ir ao escritório (uma troca de
+    // pasta antes da janela lida passaria). Sem cwd ainda: espera.
+    const office = this.opts.office;
+    if (office.scoped) {
+      const scan = fileScope(path, office.inScope);
+      if (scan.status === 'out') return this.noteCwd(t, scan.cwd);
+      if (scan.status === 'unknown') return;
+    }
     const head = readRolloutHead(path);
     if (head.meta) this.setMeta(t, head.meta);
     const tail = new FileTail(path);

@@ -307,10 +307,11 @@ export class Office {
 
   // ---------------------------------------------------------------- agentes principais
 
-  /** O cwd está no escopo (OfficeDeps.projectRoots)? As fontes perguntam antes, para nem ler a sessão de fora. */
-  inScope(cwd: string): boolean {
-    return inRoots(cwd, this.deps.projectRoots ?? []);
-  }
+  /**
+   * O cwd está no escopo (OfficeDeps.projectRoots)? As fontes perguntam antes, para nem ler a sessão de fora. Função
+   * fixa (arrow), para servir de chave ao cache de fileScope.
+   */
+  readonly inScope = (cwd: string): boolean => inRoots(cwd, this.deps.projectRoots ?? []);
 
   /** Há escopo por pasta (OfficeDeps.projectRoots não vazio). */
   get scoped(): boolean {

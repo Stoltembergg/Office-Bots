@@ -20,5 +20,7 @@ describe('loadConfig: dados por escopo', () => {
     // A mesma lista em outra ordem é o mesmo escopo; outra lista, outra pasta.
     expect(cfg({ HABBLAUD_PROJECT_ROOTS: '/srv/b/,/srv/a' }).dataDir).toBe(a);
     expect(cfg({ HABBLAUD_PROJECT_ROOTS: '/srv/a' }).dataDir).not.toBe(a);
+    // Uma pasta com quebra de linha no nome não cai no mesmo lugar que duas pastas.
+    expect(cfg({ HABBLAUD_PROJECT_ROOTS: '/srv/a\n/srv/b' }).dataDir).not.toBe(a);
   });
 });

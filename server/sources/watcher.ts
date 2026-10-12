@@ -16,7 +16,8 @@ import type { Office, TranscriptSummary } from '../model/office';
 import { cwdOutOfScope } from '../model/rooms';
 import { compareVersions, registryStatus, RegistryReader, SHELL_STATUS_VERSION, type RegistryEntry } from './registry';
 import { SHELL_FALLBACK_MAX_AGE_MS, ShellTracker, toShellJob, type ShellFinish } from './shells';
-import { headCwd, type AgentSource } from './source';
+import { fileScope } from './scope';
+import type { AgentSource } from './source';
 import {
   BOOT_RECENT_MS,
   concludedByIdle,
@@ -313,6 +314,10 @@ export class ClaudeWatcher implements AgentSource {
       });
     } else if (t.outOfScope && t.sessionId === entry.sessionId) {
       return;
+    } else if (t.outOfScope) {
+      // Saiu do escopo e agora é outra conversa (/clear, /resume): o agente foi apagado, entra de novo do zero.
+      this.sessions.delete(key);
+      return this.syncSession(key, accountId, dir, entry, boot);
     } else if (t.sessionId !== entry.sessionId) {
       // /clear ou /resume no mesmo processo: mesmo personagem, transcript novo.
       for (const sub of t.subs.values()) office.completeSub(sub.id, { notify: false });
@@ -427,15 +432,11 @@ export class ClaudeWatcher implements AgentSource {
     const name = `${t.sessionId}.jsonl`;
     const projects = join(t.dir, 'projects');
     const expected = join(projects, encodeCwd(t.entry.cwd), name);
-    // Escopo por pasta: o arquivo escolhido precisa ter o cwd de dentro gravado (um /resume pode achar pelo id a
-    // conversa de outro projeto). Ainda sem linha com cwd: espera a próxima tentativa.
+    // Escopo por pasta: todos os cwds do arquivo escolhido precisam ser de dentro (um /resume pode achar pelo id a
+    // conversa de outro projeto, e uma conversa pode ter passado por outra pasta antes da janela lida). Ainda sem linha
+    // com cwd: espera a próxima tentativa.
     const office = this.opts.office;
-    const usable = (p: string) => {
-      if (!existsSync(p)) return false;
-      if (!office.scoped) return true;
-      const cwd = headCwd(p);
-      return cwd !== undefined && office.inScope(cwd);
-    };
+    const usable = (p: string) => existsSync(p) && (!office.scoped || fileScope(p, office.inScope).status === 'in');
     if (usable(expected)) return expected;
     // Caminhos longos podem ser abreviados pelo Claude Code: procura pelo sessionId.
     try {
@@ -508,11 +509,6 @@ export class ClaudeWatcher implements AgentSource {
   }
 
   /**
-   * Aplica um lote de linhas do principal. O Claude Code só grava a chamada de AskUserQuestion junto
-   * com a resposta: se a pergunta chega no lote já respondida, ela vira "Recebeu a sua resposta"
-   * (no lugar certo do feed) em vez de um "Fazendo uma pergunta" atrasado.
-   */
-  /**
    * Escopo por pasta: alguma das linhas é de outra pasta (um cd, um /add-dir)? Então a sessão inteira sai do
    * escritório agora e não volta (até um /clear), e nada dessas linhas é aplicado.
    */
@@ -530,6 +526,11 @@ export class ClaudeWatcher implements AgentSource {
     this.opts.office.leaveScope(t.key);
   }
 
+  /**
+   * Aplica um lote de linhas do principal. O Claude Code só grava a chamada de AskUserQuestion junto
+   * com a resposta: se a pergunta chega no lote já respondida, ela vira "Recebeu a sua resposta"
+   * (no lugar certo do feed) em vez de um "Fazendo uma pergunta" atrasado.
+   */
   private applyMainLines(t: SessionTracker, lines: string[], live: boolean): void {
     if (this.leavesScope(t, lines)) return;
     const results = lines.map((line) => parseLine(t.state, line, { idPrefix: t.key, now: this.now() }));
@@ -573,7 +574,8 @@ export class ClaudeWatcher implements AgentSource {
         const office = this.opts.office;
         const prefix = await scanPrefix(path, end, skip, { ...opts, scope: office.scoped ? (c) => office.inScope(c) : undefined });
         if (prefix.outOfScope !== undefined) {
-          if (this.sessions.get(t.key) === t && !t.outOfScope) this.dropOutOfScope(t);
+          // Só se o arquivo lido ainda é o da sessão (um prefixo velho não derruba o transcript que o substituiu).
+          if (this.sessions.get(t.key) === t && t.state === state && !t.outOfScope) this.dropOutOfScope(t);
           return;
         }
         mergePrefix(state, prefix.state);
@@ -764,6 +766,12 @@ export class ClaudeWatcher implements AgentSource {
 
   private openSubUnsafe(t: SessionTracker, file: SubagentFile, mode: 'new' | 'replay' | 'regrown'): void {
     const office = this.opts.office;
+    // Escopo por pasta: o subagente precisa mostrar a pasta dele, toda de dentro; não basta a do principal.
+    if (office.scoped) {
+      const scan = fileScope(file.path, office.inScope);
+      if (scan.status === 'out') return this.dropOutOfScope(t);
+      if (scan.status === 'unknown') return;
+    }
     const now = this.now();
     const meta = readSubagentMeta(file.metaPath);
     const tail = new FileTail(file.path);

@@ -17,6 +17,7 @@ import { errMsg, log } from '../log';
 import type { Office } from '../model/office';
 import { cwdOutOfScope } from '../model/rooms';
 import { FileTail } from '../sources/tail';
+import { fileScope } from '../sources/scope';
 import { createTerminalParser, type TerminalParser } from '../sources/terminal';
 import { sendJson } from './app';
 import { frame } from './sse';
@@ -126,6 +127,9 @@ class TranscriptSource implements ConversationSource {
 
   load(): TerminalInit {
     this.parser = this.o.createParser();
+    // Escopo por pasta: o arquivo inteiro precisa ser de dentro (uma troca de pasta antes da janela lida passaria).
+    if (this.o.scope && fileScope(this.tail.path, this.o.scope).status !== 'in') this.closed = true;
+    if (this.closed) return { agentId: this.agentId, entries: [], truncated: false };
     const offset = this.tail.seekTail(this.o.initTailBytes);
     const keep = this.o.initEntries;
     let entries: TerminalEntry[] = [];
@@ -308,7 +312,7 @@ export class TerminalStreams {
   /** Escopo por pasta do Office (HABBLAUD_PROJECT_ROOTS), para as conexões novas. */
   private scope(): ((cwd: string) => boolean) | undefined {
     const office = this.opts.office;
-    return office.scoped ? (cwd) => office.inScope(cwd) : undefined;
+    return office.scoped ? office.inScope : undefined;
   }
 
   /** Fonte da conversa do agente, ou a mensagem do 404. */

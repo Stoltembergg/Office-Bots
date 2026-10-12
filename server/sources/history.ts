@@ -10,6 +10,7 @@ import { truncate } from '../../shared/activity';
 import type { AgentInfo, RecentSession } from '../../shared/types';
 import { errMsg, log } from '../log';
 import type { HistoryProvider, HistoryResolveResult } from './source';
+import { fileScope } from './scope';
 import { sessionDirOf } from './subagents';
 import { createTerminalParser } from './terminal';
 import { createTranscriptState, parseLine, titleOf } from './transcript';
@@ -131,7 +132,8 @@ export class SessionHistory implements HistoryProvider {
         if (meta.title) s.title = meta.title;
         if (meta.firstAt !== undefined) s.firstAt = meta.firstAt;
         if (agentId) s.agentId = agentId;
-        if (this.opts.inScope && !(meta.project && this.opts.inScope(meta.project))) return;
+        // Escopo: o projeto e todo cwd do arquivo (uma conversa que passou por outra pasta fica de fora, título e tudo).
+        if (this.opts.inScope && !(meta.project && this.opts.inScope(meta.project) && fileScope(c.path, this.opts.inScope).status === 'in')) return;
         out.push(s);
       });
     }

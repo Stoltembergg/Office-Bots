@@ -112,7 +112,7 @@ const terminals = config.terminal
   ? new TerminalStreams({ office, transcriptPathOf: (id) => agents.transcriptPathOf(id), parserFor: (id) => agents.parserFor(id) })
   : undefined;
 // Histórico do terminal (sessões recentes, abertas ou encerradas, de todas as ferramentas): mesma trava.
-const inScope = config.projectRoots.length ? (project: string) => office.inScope(project) : undefined;
+const inScope = config.projectRoots.length ? office.inScope : undefined;
 const history = config.terminal
   ? new HistorySet(
       [new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid), inScope })],

@@ -9,7 +9,7 @@ import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
 import { NameStore } from './names';
 import { DONE_GRACE_MS, Office, OFFLINE_GRACE_MS, SNAPSHOT_RECENT } from './office';
-import { inRoots, normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
+import { cwdsInText, inRoots, normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 
 setQuiet(true);
 
@@ -51,6 +51,8 @@ describe('salas', () => {
     // `..` e `.` contam pelo destino, não pelo texto.
     expect(inRoots('/Users/eu/Claude/empresa-a/../empresa-b', roots)).toBe(false);
     expect(inRoots('/Users/eu/Claude/empresa-a/./app', roots)).toBe(true);
+    // URI file:// (comandos do Codex) vira o caminho; valor ilegível conta como fora.
+    expect(cwdsInText('{"cwd":"file:///Users/eu/Claude/empresa-a/app"} {"cwd":"/x"} {"cwd":"\\x"}')).toEqual(['/Users/eu/Claude/empresa-a/app', '/x', '?']);
   });
 
   it('desambigua basenames repetidos com o diretório pai', () => {

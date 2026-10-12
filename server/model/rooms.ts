@@ -1,5 +1,6 @@
 // Salas do escritório: identidade (cwd normalizado), nome exibido e posição (slot) no prédio.
 import { posix } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** cwd normalizado: sem barras repetidas nem barra final. */
 export function normalizeCwd(cwd: string): string {
@@ -21,25 +22,46 @@ export function inRoots(cwd: string, roots: readonly string[]): boolean {
   });
 }
 
-/** Todo `"cwd"` de uma linha crua de JSONL (Claude Code: em cada linha; Codex: session_meta e turn_context). */
+/** Todo `"cwd"` de um texto de JSONL (Claude Code: em cada linha; Codex: session_meta, turn_context e comandos). */
 const CWD_RE = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/g;
 
 /**
- * A primeira pasta fora do escopo citada na linha, ou undefined. Busca no texto cru (sem parse da linha inteira):
- * barato o bastante para rodar em toda linha. Um valor ilegível conta como fora.
+ * Os cwds citados no texto, já como caminho (uma URI file:// do Codex vira o caminho dela). Busca no texto cru, sem
+ * parse da linha inteira: barato para rodar em toda linha e em arquivos grandes. Um valor ilegível vira '?' (fora).
+ * ponytail: casa a chave em qualquer nível (um argumento de ferramenta chamado cwd também conta) e só a grafia comum
+ * ("cwd", sem escapes); é o que o Claude Code e o Codex gravam.
  */
-export function cwdOutOfScope(line: string, scope: (cwd: string) => boolean): string | undefined {
-  if (!line.includes('"cwd"')) return undefined;
-  for (const m of line.matchAll(CWD_RE)) {
-    let cwd: unknown;
+export function cwdsInText(text: string): string[] {
+  if (!text.includes('"cwd"')) return [];
+  const out: string[] = [];
+  for (const m of text.matchAll(CWD_RE)) {
+    let v: unknown;
     try {
-      cwd = JSON.parse(m[1]);
+      v = JSON.parse(m[1]);
     } catch {
-      return '?';
+      out.push('?');
+      continue;
     }
-    if (typeof cwd !== 'string' || !scope(cwd)) return String(cwd);
+    if (typeof v !== 'string') {
+      out.push('?');
+      continue;
+    }
+    if (v.startsWith('file://')) {
+      try {
+        v = fileURLToPath(v);
+      } catch {
+        out.push('?');
+        continue;
+      }
+    }
+    out.push(v as string);
   }
-  return undefined;
+  return out;
+}
+
+/** A primeira pasta fora do escopo citada na linha, ou undefined. */
+export function cwdOutOfScope(line: string, scope: (cwd: string) => boolean): string | undefined {
+  return cwdsInText(line).find((cwd) => !scope(cwd));
 }
 
 function segments(path: string): string[] {

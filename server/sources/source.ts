@@ -12,9 +12,9 @@
 // depois, SEMPRE em par (num `finally`, inclusive num boot assíncrono). O Office conta os boots: enquanto alguma
 // fonte boota não há avisos e o feed fica guardado para sair em ordem cronológica no fim do último boot (uma fonte
 // que nunca chamasse endBoot calaria os avisos de todas).
-import { closeSync, openSync, readSync } from 'node:fs';
 import type { Provider, RecentSession, SourceInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
+import { fileScope } from './scope';
 import { HISTORY_LIMIT } from './history';
 import { createTerminalParser, type TerminalParser } from './terminal';
 
@@ -151,7 +151,8 @@ export class HistorySet implements SessionLookup {
   private readonly list_: HistoryProvider[] = [];
   /**
    * `inScope`: escopo por pasta (HABBLAUD_PROJECT_ROOTS). Sessão sem projeto conhecido fica de fora da lista, e
-   * resolve() confere o cwd gravado no próprio arquivo que vai abrir (o id sozinho pode existir em outra pasta).
+   * resolve() confere todos os cwds do próprio arquivo que vai abrir (fileScope): o id sozinho pode existir em outra
+   * pasta, e uma conversa pode ter passado por outra pasta no meio.
    */
   constructor(
     providers: readonly HistoryProvider[] = [],
@@ -188,37 +189,6 @@ export class HistorySet implements SessionLookup {
     const owner = this.list_.find((p) => p.hasAccount(account)) ?? this.list_[0];
     const found: HistoryResolveResult = owner ? owner.resolve(account, sessionId) : { status: 404, error: 'conta desconhecida' };
     if (!this.inScope || !('path' in found)) return found;
-    const cwd = headCwd(found.path);
-    return cwd !== undefined && this.inScope(cwd) ? found : { status: 404, error: 'sessão não encontrada' };
-  }
-}
-
-/** Quanto do começo do arquivo headCwd lê: o session_meta do Codex pode trazer as instruções inteiras. */
-const HEAD_CWD_BYTES = 256 * 1024;
-
-/**
- * O primeiro `"cwd"` do começo do arquivo (Claude Code: em cada linha; Codex: no session_meta), ou undefined.
- * Busca no texto, não por linha: uma primeira linha maior que o trecho lido ainda serve.
- */
-export function headCwd(path: string): string | undefined {
-  let text: string;
-  try {
-    const fd = openSync(path, 'r');
-    try {
-      const buf = Buffer.alloc(HEAD_CWD_BYTES);
-      text = buf.toString('utf8', 0, readSync(fd, buf, 0, buf.length, 0));
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    return undefined;
-  }
-  const m = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(text);
-  if (!m) return undefined;
-  try {
-    const cwd: unknown = JSON.parse(m[1]);
-    return typeof cwd === 'string' && cwd ? cwd : undefined;
-  } catch {
-    return undefined;
+    return fileScope(found.path, this.inScope).status === 'in' ? found : { status: 404, error: 'sessão não encontrada' };
   }
 }

@@ -546,10 +546,13 @@ describe('fonte do Codex: escopo por pasta (HABBLAUD_PROJECT_ROOTS)', () => {
     ]);
     ctx.home.lock(T, at);
     ctx.source.boot();
+    // Nem antes da leitura em segundo plano: o rollout inteiro é conferido antes de qualquer linha ir ao escritório.
+    expect(texts(ctx)).not.toMatch(/SEGREDO_B|fim/);
     await ctx.source.idle();
     ctx.poll();
     expect(ctx.office.has(KEY)).toBe(false);
-    expect(texts(ctx)).not.toContain('SEGREDO_B');
+    expect(texts(ctx)).not.toMatch(/SEGREDO_B|fim/);
+    expect(JSON.stringify(ctx.office.recentFeed(50))).not.toMatch(/SEGREDO_B|fim/);
   });
 
   it('subagente com cwd de fora (ou ainda sem cwd) não entra pelo pai de dentro', () => {

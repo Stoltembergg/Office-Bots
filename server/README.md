@@ -144,7 +144,7 @@ local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`)
 ## Linha do tempo (timelapse)
 
 `history/timeline.ts` grava o escritório para o timelapse do cliente em `<HABBLAUD_DATA_DIR>/timeline/AAAA-MM-DD.jsonl`
-(dia local do servidor; no Docker, `/data/timeline`). Formato e reconstrução em `shared/timeline.ts`; um registro por linha:
+(dia local do servidor; no Docker, `/data/timeline`; com `HABBLAUD_PROJECT_ROOTS`, dentro de `escopos/<hash>`). Formato e reconstrução em `shared/timeline.ts`; um registro por linha:
 
 - `{"t":"k", at, v, every, boot?, rooms, agents, accounts}`: **keyframe**, o estado completo. Abre cada arquivo, se
   repete a cada 5 min (`every`) e marca o boot do servidor;
@@ -375,7 +375,7 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | `HABBLAUD_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
 | `HABBLAUD_ALLOWED_HOSTS` | — | nomes extras aceitos no `Host`/`Origin` (vírgula); `localhost`, `*.localhost` e IPs sempre valem |
-| `HABBLAUD_PROJECT_ROOTS` | — | só agentes com cwd nessas pastas (vírgula, `~` vale); o filtro fica em `Office.addMain`, e o `HistorySet` lista só sessões com projeto no escopo e só resolve as listadas |
+| `HABBLAUD_PROJECT_ROOTS` | — | só sessões com cwd nessas pastas (vírgula, `~` vale). `Office.addMain` recusa o agente de fora e `Office.leaveScope` tira na hora quem passa a mexer em outra pasta. Antes de ler um transcript ou rollout (fonte, histórico, terminal), `sources/scope.ts` confere todos os cwds do arquivo inteiro (`fileScope`, com cache por tamanho e mtime); depois, cada linha nova passa por `cwdOutOfScope`. Os dados vão para `<HABBLAUD_DATA_DIR>/escopos/<hash das pastas>` |
 
 No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
 preferência): `HABBLAUD_PORT` (porta do Habblaud, padrão `4747`), `HABBLAUD_PERMISSION_TIMEOUT` (segundos de espera

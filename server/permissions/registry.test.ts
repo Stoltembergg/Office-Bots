@@ -93,6 +93,8 @@ describe('PermissionRegistry: registro', () => {
     expect(registry.register(hookInput({ cwd: '/p/outra', agent_id: 'sub-x', agent_type: 'Explore', tool_input: { command: 'cat SEGREDO_B' } }))).toEqual({ skip: 'unknown-session' });
     expect(registry.size).toBe(0);
     expect(registry.register(hookInput({ cwd: '/p/loja/app' }))).toMatchObject({ id: expect.any(String) });
+    // Sem cwd não há como saber a pasta: fica de fora.
+    expect(registry.register(hookInput({ cwd: undefined, agent_id: 'sub-y', agent_type: 'Explore' }))).toEqual({ skip: 'unknown-session' });
   });
 
   it('corpo inválido lança (vira 400 na rota)', () => {

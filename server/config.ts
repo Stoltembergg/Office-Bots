@@ -157,7 +157,7 @@ export function messagesOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
  */
 function scopedDataDir(base: string, roots: readonly string[]): string {
   if (!roots.length) return base;
-  const key = [...new Set(roots.map((r) => normalizeCwd(r)))].sort().join('\n');
+  const key = JSON.stringify([...new Set(roots.map((r) => normalizeCwd(r)))].sort());
   return join(base, 'escopos', createHash('sha256').update(key).digest('hex').slice(0, 12));
 }
 

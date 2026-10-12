@@ -57,7 +57,8 @@ export interface OfficeLike {
   addActivity(id: string, activity: Activity, current: boolean, opts?: { feed?: boolean }): void;
   /** Aviso "pede permissão" ou "tem uma pergunta" (mesmo dedupe do aviso "precisa de você" do status). */
   noticePermission(id: string, what: string, kind?: 'permission' | 'question'): void;
-  /** Escopo por pasta (Office.inScope); ausente = sem escopo. */
+  /** Escopo por pasta (Office.scoped/inScope); ausentes = sem escopo. */
+  readonly scoped?: boolean;
   inScope?(cwd: string): boolean;
 }
 
@@ -392,7 +393,9 @@ export class PermissionRegistry {
     if (ask && (!questions?.length || questions.length !== askCount(req.input.questions))) return { skip: 'unsupported-tool' };
     if (this.opts.viewers() <= 0) return { skip: 'no-viewers' };
     // Escopo por pasta: um pedido de outra pasta não entra, nem pela sessão de um principal de dentro.
-    if (req.cwd && this.opts.office.inScope && !this.opts.office.inScope(req.cwd)) return { skip: 'unknown-session' };
+    // Sem cwd não há como saber a pasta: com escopo, fica de fora (os hooks sempre mandam o cwd).
+    const inScope = this.opts.office.scoped ? this.opts.office.inScope : undefined;
+    if (inScope && !(req.cwd && inScope(req.cwd))) return { skip: 'unknown-session' };
     const target = codex
       ? this.resolveCodexAgent(req.sessionId, req.agentId, req.agentType, this.opts.codexAccount?.(req.account, req.codexHome) ?? req.account)
       : this.resolveAgent(req.sessionId, req.agentId, req.agentType);

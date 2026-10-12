@@ -446,9 +446,19 @@ describe('terminal: transporte', () => {
       expect(view(s)).toEqual(['a', 'b']);
       s.close();
 
+      // Troca de pasta antes da janela lida no init: o arquivo inteiro é conferido, e nada dele vai.
+      const third = join(env.dir, 's3.jsonl');
+      writeLines(third, [JSON.stringify({ id: 'velho', text: 'SEGREDO_PREFIXO', cwd: '/p/outra' }), ...Array.from({ length: 50 }, (_, i) => JSON.stringify({ id: `n${i}`, text: 'x'.repeat(200), cwd: '/p/loja' }))]);
+      env.paths.set(MAIN, third);
+      const u = await open(env.base, route(MAIN));
+      await waitFor(() => expect(inits(u)).toHaveLength(1));
+      expect(inits(u)[0].entries).toEqual([]);
+      expect(u.raw).not.toContain('SEGREDO_PREFIXO');
+      u.close();
+
       // Agente que sai do escritório (leaveScope): o stream aberto para de ler.
       const second = join(env.dir, 's2.jsonl');
-      writeLines(second, [line('x')]);
+      writeLines(second, [JSON.stringify({ id: 'x', text: 'x', cwd: '/p/loja' })]);
       env.paths.set(MAIN, second);
       const t = await open(env.base, route(MAIN));
       await waitFor(() => expect(view(t)).toEqual(['x']));

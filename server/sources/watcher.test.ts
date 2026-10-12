@@ -704,7 +704,7 @@ describe('ClaudeWatcher: escopo por pasta', () => {
     }
   });
 
-  it('linha de outra pasta no começo de um transcript grande (lido em segundo plano): o agente sai', async () => {
+  it('linha de outra pasta no começo de um transcript grande: nada do arquivo é lido, nem a janela do fim', async () => {
     const c = setup({ projectRoots: [CWD], tailBytes: 200 });
     try {
       const big = 'x'.repeat(400);
@@ -717,8 +717,44 @@ describe('ClaudeWatcher: escopo por pasta', () => {
       c.openSession(100, 'sess-a');
       c.watcher.boot();
       await c.watcher.idle();
+      // O arquivo inteiro é conferido antes de ler a janela do fim: nada dele é lido.
+      expect(c.watcher.transcriptPathOf('.claude:100')).toBeUndefined();
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toMatch(/SEGREDO_B|fim/);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('/clear depois de sair do escopo: a conversa nova, toda de dentro, traz o agente de volta', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      writeLines(c.transcript('s1'), [withCwd(L.prompt('dentro', { at: c.now() - 1000 }), CWD)]);
+      c.openSession(100, 's1');
+      c.watcher.boot();
+      appendLines(c.transcript('s1'), [withCwd(L.prompt('fora', { at: c.now() }), '/projetos/outra')]);
+      c.poll();
       expect(c.office.has('.claude:100')).toBe(false);
-      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_B');
+      writeLines(c.transcript('s2'), [withCwd(L.prompt('nova', { at: c.now() }), CWD)]);
+      c.openSession(100, 's2');
+      c.poll();
+      expect(c.office.has('.claude:100')).toBe(true);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('subagente sem pasta própria (nenhuma linha com cwd) não entra pelo principal de dentro', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      writeLines(c.transcript('s1'), [withCwd(L.prompt('pai', { at: c.now() - 1000 }), CWD)]);
+      const { cwd: _, ...noCwd } = JSON.parse(L.prompt('SEGREDO_SUB', { at: c.now() - 500 })) as Record<string, unknown>;
+      c.subFile('s1', 'abc123', { agentType: 'Explore' }, [JSON.stringify(noCwd)]);
+      c.openSession(100, 's1');
+      c.watcher.boot();
+      expect(c.office.has('.claude:100')).toBe(true);
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_SUB');
     } finally {
       c.watcher.stop();
       c.tmp.cleanup();

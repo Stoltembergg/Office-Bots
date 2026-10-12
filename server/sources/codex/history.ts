@@ -10,6 +10,7 @@ import type { RecentSession } from '../../../shared/types';
 import { errMsg, log } from '../../log';
 import { HISTORY_LIMIT, HISTORY_MAX_AGE_MS } from '../history';
 import type { HistoryProvider, HistoryResolveResult } from '../source';
+import { fileScope } from '../scope';
 import { encodeCwd } from '../watcher';
 import { parseRolloutName, rolloutDirs } from './files';
 import { createCodexState, isThreadId, metaFromLine, parseRolloutLine, type RolloutMeta } from './rollout';
@@ -106,7 +107,7 @@ export class CodexHistory implements HistoryProvider {
         if (s.title) r.title = s.title;
         if (s.firstAt !== undefined) r.firstAt = s.firstAt;
         if (agentId) r.agentId = agentId;
-        if (this.opts.inScope && !(cwd && this.opts.inScope(cwd))) return;
+        if (this.opts.inScope && !(cwd && this.opts.inScope(cwd) && fileScope(c.path, this.opts.inScope).status === 'in')) return;
         out.push(r);
       });
     }
