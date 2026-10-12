@@ -794,7 +794,7 @@ describe('salas sem buracos', () => {
     expect(sim.building.bridges).toEqual([]);
   });
 
-  it('relayout(true) com alguém na rua (fora de toda região, sem filtro): vai para o tile caminhável mais próximo em raio COL_W + 2, a porta sul do lounge', () => {
+  it('relayout(true) com alguém na rua (fora de toda região, sem filtro): vai para o tile caminhável mais próximo em raio COL_W + 2, o fundo do lounge', () => {
     const sim = newSim();
     const clock = { now: T0 };
     sim.applySnapshot(snap(...nineRooms()), clock.now);
@@ -810,10 +810,10 @@ describe('salas sem buracos', () => {
     sim.rooms.delete('/i');
     sim.relayout(true);
     expect(sim.building.blocks).toHaveLength(1);
-    // sem região própria, o fallback é o de sempre (tile caminhável mais próximo, raio COL_W + 2): a porta sul do lounge, logo acima
+    // sem região própria, o fallback é o de sempre (tile caminhável mais próximo, raio COL_W + 2): a última linha do lounge
+    // (a parede sul fica fechada sem passarela, então a linha 28 não é caminhável)
     expect(sim.building.grid.walkable(iza.tx, iza.ty)).toBe(true);
-    expect(iza.ty).toBeLessThanOrEqual(28);
-    expect([iza.tx, iza.ty]).toEqual([56, 28]);
+    expect([iza.tx, iza.ty]).toEqual([56, 27]);
   });
 
   it('serviceSpot: café, água, cabine e pia do mesmo bloco primeiro (quem está no anexo usa o saguão e o WC do anexo; quem está no principal, a copa e os banheiros)', () => {

@@ -134,7 +134,8 @@ export function layoutRestroom(rect: TileRect, id = RESTROOM_ID, side: Side = 's
   return b.build();
 }
 
-export function layoutCafe(rect: TileRect): AreaLayout {
+/** `open` = há passarela saindo pela porta norte (D4); sem ela a parede fica fechada. */
+export function layoutCafe(rect: TileRect, open = true): AreaLayout {
   const b = new AreaBuilder(CAFE_ID, 'cafe', rect);
   const wall = CORE_WALLS.cafe;
   b.floor('tile_check', 0, 0, 16, 12, 301);
@@ -142,9 +143,13 @@ export function layoutCafe(rect: TileRect): AreaLayout {
   // + parede clara com janela (leste)
   b.face(0.5, 6.5, CORE_WALLS.cafeSplash);
   b.face(10, 5.5, wall);
-  b.wall('door_frame', DOOR_LX + BRIDGE_W / 2, 'wide3', { order: 0.05 });
-  b.walk(DOOR_LX, 0, BRIDGE_W, HUB_DOOR_H);
-  b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0, w: BRIDGE_W, h: HUB_DOOR_H };
+  if (open) {
+    b.wall('door_frame', DOOR_LX + BRIDGE_W / 2, 'wide3', { order: 0.05 });
+    b.walk(DOOR_LX, 0, BRIDGE_W, HUB_DOOR_H);
+    b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0, w: BRIDGE_W, h: HUB_DOOR_H };
+  } else {
+    b.face(DOOR_LX, BRIDGE_W, wall);
+  }
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
 
@@ -205,7 +210,8 @@ export function layoutCafe(rect: TileRect): AreaLayout {
   return b.build();
 }
 
-export function layoutLounge(rect: TileRect): AreaLayout {
+/** `open` = há passarela saindo pela porta sul (lx 7..10); sem ela a parede sul fica fechada. */
+export function layoutLounge(rect: TileRect, open = true): AreaLayout {
   const b = new AreaBuilder(LOUNGE_ID, 'lounge', rect);
   const wall = CORE_WALLS.lounge;
   b.floor('wood', 0, 0, 16, 12, 401);
@@ -214,15 +220,17 @@ export function layoutLounge(rect: TileRect): AreaLayout {
   // parede com TV a oeste; vidro a leste; passagem larga no meio
   b.face(0.5, 6.5, wall);
   b.face(10, 5.5, CORE_WALLS.glass);
-  // parede sul com a porta da passarela (lx 7..10): sem anexo, o tile da porta é caminhável mas dá no jardim (fora da grade)
-  b.south(0.5, 15, 11, { ...wall, exterior: true }, [{ lx: DOOR_LX, w: BRIDGE_W }]);
+  // parede sul com a porta da passarela (lx 7..10); sem passarela a parede é inteira
+  b.south(0.5, 15, 11, { ...wall, exterior: true }, open ? [{ lx: DOOR_LX, w: BRIDGE_W }] : []);
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
   b.walk(1, 2, 14, 9);
   b.walk(7, 0, 3, 2);
-  b.walk(DOOR_LX, 11, BRIDGE_W, LOUNGE_EXIT_H);
   b.area.door = { x: b.x0 + 7, y: b.y0, w: 3, h: 2 };
-  b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0 + 11, w: BRIDGE_W, h: LOUNGE_EXIT_H };
+  if (open) {
+    b.walk(DOOR_LX, 11, BRIDGE_W, LOUNGE_EXIT_H);
+    b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0 + 11, w: BRIDGE_W, h: LOUNGE_EXIT_H };
+  }
 
   b.wall('tv', 4.5, undefined, { order: 0.4 });
   b.wall('painting', 1.75, undefined, { order: 0.5 });
@@ -272,19 +280,26 @@ export function layoutLounge(rect: TileRect): AreaLayout {
 
 const coreCache = new Map<string, AreaLayout[]>();
 
+/** Portas externas do núcleo que têm passarela: a sul do lounge (para A1) e a norte da copa (para A6). */
+export interface CoreDoors {
+  lounge: boolean;
+  cafe: boolean;
+}
+
 /**
  * As quatro áreas do núcleo de um bloco: recepção e WC na coluna 2, copa e lounge na coluna 3 (no principal,
- * x 32..64). Calculadas uma vez por bloco (chave `blockKey`): a mesma lista volta a cada chamada.
+ * x 32..64). As portas do lounge e da copa só abrem com passarela (`doors`); sem ela a parede é inteira.
+ * Calculadas uma vez por bloco e por combinação de portas: a mesma lista volta a cada chamada.
  */
-export function coreAreas(block: BlockId): AreaLayout[] {
-  const key = blockKey(block);
+export function coreAreas(block: BlockId, doors: CoreDoors = { lounge: false, cafe: false }): AreaLayout[] {
+  const key = `${blockKey(block)}:${doors.lounge ? 1 : 0}${doors.cafe ? 1 : 0}`;
   const cached = coreCache.get(key);
   if (cached) return cached;
   const areas = [
     layoutReception(blockColumnRect(block, 2, 'south')),
     layoutRestroom(blockColumnRect(block, 2, 'north'), RESTROOM_ID, 'north'),
-    layoutCafe(blockColumnRect(block, 3, 'north')),
-    layoutLounge(blockColumnRect(block, 3, 'south')),
+    layoutCafe(blockColumnRect(block, 3, 'north'), doors.cafe),
+    layoutLounge(blockColumnRect(block, 3, 'south'), doors.lounge),
   ];
   coreCache.set(key, areas);
   return areas;

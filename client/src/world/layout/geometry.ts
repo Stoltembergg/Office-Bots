@@ -462,6 +462,12 @@ export function bridgeOpenings(child: BlockId): TileRect[] {
   return bridgeGeometry(child).openings;
 }
 
+/** Portas externas do núcleo do principal que têm passarela: sul do lounge (filho (0, 1)) e norte da copa (filho (0, −1)). */
+export function coreDoorsFor(bridges: readonly BridgeLayout[]): { lounge: boolean; cafe: boolean } {
+  const fromMain = (by: number) => bridges.some((b) => isPrincipal(b.parent) && b.child.bx === 0 && b.child.by === by);
+  return { lounge: fromMain(1), cafe: fromMain(-1) };
+}
+
 /** Passarelas dos blocos existentes: uma por bloco que não é o principal, até o pai. */
 export function bridgesFor(blocks: readonly BlockLayout[]): BridgeLayout[] {
   const out: BridgeLayout[] = [];

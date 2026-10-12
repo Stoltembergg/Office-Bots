@@ -197,11 +197,16 @@ describe('montagem por blocos', () => {
     expect(b.spots.filter((s) => s.group === 'anexo:1,0:corredor:talk:1')).toHaveLength(2);
   });
 
-  it('Review Focus 4: sem anexo, a porta sul do lounge é caminhável mas o jardim abaixo fica fora da grade', () => {
+  it('Review Focus 4: sem passarela a parede sul do lounge é inteira (nenhum vão, tile da linha 28 bloqueado); com o anexo 1 abre', () => {
     const { b } = buildFor([0]);
-    expect(b.grid.walkable(56, 28)).toBe(true);
-    expect(b.grid.walkable(56, 29)).toBe(false);
+    const lounge = b.areas.find((a) => a.id === core.LOUNGE_ID)!;
+    expect(lounge.exit).toBeUndefined();
+    expect(lounge.walls.find((w) => w.kind === 'south')!.doorways).toBeUndefined();
+    expect(b.grid.walkable(56, 28)).toBe(false);
     expect(b.grid.inside(56, 29)).toBe(false);
+    const com = buildFor([8]).b;
+    expect(com.areas.find((a) => a.id === core.LOUNGE_ID)!.exit).toEqual({ x: 55, y: 28, w: 3, h: 1 });
+    expect(com.grid.walkable(56, 28)).toBe(true);
   });
 
   it('a 9ª sala (vaga 8) monta o anexo 1 com saguão, WC e corredor, e a passarela do lounge ao saguão', () => {
@@ -542,7 +547,7 @@ describe('núcleo por bloco (coreAreas)', () => {
   });
 
   it('porta sul do lounge (para a passarela): vão de 3 tiles na parede sul, tile da linha 28 caminhável e `exit` separado de `door`', () => {
-    const lounge = byId('core:lounge');
+    const lounge = core.coreAreas(PRINCIPAL, { lounge: true, cafe: true }).find((a) => a.id === 'core:lounge')!;
     expect(lounge.exit).toEqual({ x: 55, y: 28, w: 3, h: 1 });
     expect(lounge.walkable).toContainEqual({ x: 55, y: 28, w: 3, h: 1 });
     expect(lounge.door).toEqual({ x: 55, y: 17, w: 3, h: 2 }); // a porta do corredor não muda
@@ -555,7 +560,9 @@ describe('núcleo por bloco (coreAreas)', () => {
 
   it('o WC não tem porta externa; a recepção tem a entrada na parede sul (D9) e a copa a porta norte (D4)', () => {
     expect(byId('core:banheiros').exit).toBeUndefined();
-    expect(byId('core:copa').exit).toEqual({ x: 55, y: 0, w: 3, h: 2 }); // porta norte da copa (D4)
+    expect(core.coreAreas(PRINCIPAL, { lounge: false, cafe: true }).find((a) => a.id === 'core:copa')!.exit).toEqual({ x: 55, y: 0, w: 3, h: 2 }); // porta norte da copa (D4)
+    expect(byId('core:copa').exit).toBeUndefined(); // sem passarela a parede é inteira
+    expect(byId('core:lounge').exit).toBeUndefined();
     const reception = byId('core:recepcao');
     expect(reception.exit).toEqual({ x: 39, y: 28, w: 3, h: 1 });
     expect(reception.walkable).toContainEqual({ x: 39, y: 28, w: 3, h: 1 });
@@ -721,12 +728,15 @@ describe('saguão dos dois lados e porta da copa (fase 3, D1 e D4)', () => {
     expect(reach[b.grid.key(148, 42)]).toBe(1);
   });
 
-  it('copa: porta norte de 3 tiles (exit), caminhável até a linha 0; sem A6 o jardim fica fora da grade', () => {
-    const b = assembleBuilding(existingBlocks([0]), roomsFor([0]));
+  it('copa: parede norte inteira sem A6; com A6 porta norte de 3 tiles (exit), caminhável até a linha 0', () => {
+    const fechada = assembleBuilding(existingBlocks([0]), roomsFor([0])).areas.find((a) => a.id === core.CAFE_ID)!;
+    expect(fechada.exit).toBeUndefined();
+    expect(fechada.wallItems.some((w) => w.kind === 'door_frame')).toBe(false);
+    const b = assembleBuilding(existingBlocks([48]), roomsFor([48]));
     const cafe = b.areas.find((a) => a.id === core.CAFE_ID)!;
     expect(cafe.exit).toEqual({ x: 55, y: 0, w: 3, h: 2 });
     expect(b.grid.walkable(56, 0)).toBe(true);
-    expect(b.grid.inside(56, -1)).toBe(false);
+    expect(b.grid.walkable(56, -1)).toBe(true); // a passarela de A6 começa logo acima
     expect(cafe.wallItems.filter((w) => w.kind === 'window').map((w) => w.cx)).toEqual([(48 + 13.25) * TILE]);
     const frame = cafe.wallItems.find((w) => w.kind === 'door_frame')!;
     expect([frame.variant, frame.cx]).toEqual(['wide3', (48 + 8.5) * TILE]);
