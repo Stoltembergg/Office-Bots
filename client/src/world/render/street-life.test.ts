@@ -339,6 +339,18 @@ describe('cruzamentos (ruas norte–sul)', () => {
     expect(h.x).toBeLessThanOrEqual(K.x0 - 2 * 16);
   });
 
+  it('um carro norte–sul perto não trava quem atravessa a rua principal na faixa do cruzamento', () => {
+    const l = lifeV();
+    // faixa sem sinal da principal a leste do quadrado (x 1120..1152) e um carro norte–sul parado no STOP ao lado dela
+    l.cars.push(vcar(K.stopN + CAR_HALF_L, -1, 60, { v: 0, stoppedAt: 1 }));
+    const p = ped(l, 1136, 1, 'n', true);
+    p.zebra = { x0: 1120, x1: 1152, light: false };
+    p.state = 'wait';
+    runV(l, 1000, 4000);
+    expect(p.row).toBe('s');
+    expect(p.state).toBe('walk');
+  });
+
   it('o pedestre para na borda do asfalto da rua norte–sul com um carro chegando, atravessa quando ele está parado no STOP e o carro espera', () => {
     const l = lifeV();
     const c = vcar(400, 1);

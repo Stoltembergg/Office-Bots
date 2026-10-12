@@ -438,6 +438,8 @@ export class StreetLife {
    */
   crossingClear(z: Zebra = this.geo.zebras[0], minStop = 0): boolean {
     return this.cars.every((c) => {
+      // só os carros da rua principal passam por estas faixas; um norte–sul tem x fixo e nunca "passaria"
+      if (c.axis !== 'h') return true;
       if (c.x >= z.x0 - CROSS_CLEAR_PX && c.x <= z.x1 + CROSS_CLEAR_PX) return false;
       const passed = c.dir > 0 ? c.x > z.x1 : c.x < z.x0;
       if (passed) return true;
