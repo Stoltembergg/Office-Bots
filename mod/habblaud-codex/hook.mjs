@@ -67,6 +67,41 @@ function expandHome(p, home) {
 }
 
 /**
+ * Uma instância do Habblaud por pasta (`HABBLAUD_INSTANCE=<nome> npm run docker:up` grava ~/.habblaud/instances.json:
+ * {instances: [{name, port, roots}]}): a porta da instância cuja pasta contém o cwd da sessão, a mais específica
+ * primeiro. Fora de todas, ou arquivo ausente ou estranho, vale `fallback`.
+ */
+export function portForCwd(cwd, instances, fallback) {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return fallback;
+  const norm = (p) => p.replace(/\/{2,}/g, '/').replace(/(.)\/+$/, '$1');
+  const c = norm(cwd);
+  const list = instances && typeof instances === 'object' && Array.isArray(instances.instances) ? instances.instances : [];
+  let port = fallback;
+  let best = -1;
+  for (const inst of list) {
+    if (!inst || !Number.isInteger(inst.port) || inst.port <= 0 || inst.port >= 65_536 || !Array.isArray(inst.roots)) continue;
+    for (const root of inst.roots) {
+      if (typeof root !== 'string' || !root.startsWith('/')) continue;
+      const r = norm(root);
+      if ((c === r || c.startsWith(r === '/' ? r : `${r}/`)) && r.length > best) {
+        best = r.length;
+        port = inst.port;
+      }
+    }
+  }
+  return port;
+}
+
+/** ~/.habblaud/instances.json, ou undefined. */
+export function readInstances(home) {
+  try {
+    return JSON.parse(readFileSync(join(home, '.habblaud', 'instances.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Porta e espera: ~/.habblaud/codex-hook.json ({port, permissionTimeoutS}); sem porta no arquivo, HABBLAUD_PORT;
  * senão os padrões. Arquivo ausente ou ilegível = padrões.
  */
@@ -215,7 +250,7 @@ export async function run(env = process.env, stdinText) {
     const cfg = readConfig(env);
     const codexHome = codexHomeOf(env, input);
     const account = accountOf(codexHome);
-    const base = `http://127.0.0.1:${cfg.port}`;
+    const base = `http://127.0.0.1:${portForCwd(input.cwd, readInstances(env.HOME || homedir()), cfg.port)}`;
     const sent = await call(base, 'POST', '/api/codex/events', eventBody(input, account, codexHome), event === 'SessionEnd' ? SESSION_END_TIMEOUT_MS : EVENT_TIMEOUT_MS);
     debug(`${event}: ${sent ? `${sent.status} ${JSON.stringify(sent.json ?? null)}` : 'Habblaud fora do ar'}`);
     if (event !== 'PermissionRequest' || typeof input.tool_name !== 'string' || !input.tool_name) return undefined;

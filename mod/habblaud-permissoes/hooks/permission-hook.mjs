@@ -27,7 +27,9 @@
 //
 // Regras: Node puro (22+), sem dependências; nunca trava nem quebra a sessão (todo erro = sair sem
 // decidir). Só fala com 127.0.0.1. HABBLAUD_HOOK_DEBUG=1 escreve o que acontece no stderr.
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 4747;
@@ -61,6 +63,41 @@ export function parseOptions(argv, env = process.env) {
     port: Number.isInteger(port) && port > 0 && port < 65_536 ? port : DEFAULT_PORT,
     timeoutMs: (Number.isFinite(timeout) && timeout > 0 ? Math.min(MAX_TIMEOUT_S, Math.max(MIN_TIMEOUT_S, timeout)) : DEFAULT_TIMEOUT_S) * 1_000,
   };
+}
+
+/**
+ * Uma instância do Habblaud por pasta (`HABBLAUD_INSTANCE=<nome> npm run docker:up` grava ~/.habblaud/instances.json:
+ * {instances: [{name, port, roots}]}): a porta da instância cuja pasta contém o cwd da sessão, a mais específica
+ * primeiro. Fora de todas, ou arquivo ausente ou estranho, vale `fallback`.
+ */
+export function portForCwd(cwd, instances, fallback) {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return fallback;
+  const norm = (p) => p.replace(/\/{2,}/g, '/').replace(/(.)\/+$/, '$1');
+  const c = norm(cwd);
+  const list = instances && typeof instances === 'object' && Array.isArray(instances.instances) ? instances.instances : [];
+  let port = fallback;
+  let best = -1;
+  for (const inst of list) {
+    if (!inst || !Number.isInteger(inst.port) || inst.port <= 0 || inst.port >= 65_536 || !Array.isArray(inst.roots)) continue;
+    for (const root of inst.roots) {
+      if (typeof root !== 'string' || !root.startsWith('/')) continue;
+      const r = norm(root);
+      if ((c === r || c.startsWith(r === '/' ? r : `${r}/`)) && r.length > best) {
+        best = r.length;
+        port = inst.port;
+      }
+    }
+  }
+  return port;
+}
+
+/** ~/.habblaud/instances.json, ou undefined. */
+export function readInstances(home) {
+  try {
+    return JSON.parse(readFileSync(join(home, '.habblaud', 'instances.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Corta textos longos dos argumentos (conteúdo de um Write enorme, por exemplo). */
@@ -211,7 +248,8 @@ export async function run(argv = process.argv.slice(2), env = process.env, stdin
     if (!input || typeof input !== 'object' || typeof input.session_id !== 'string' || typeof input.tool_name !== 'string') return undefined;
     if (input.hook_event_name !== undefined && input.hook_event_name !== 'PermissionRequest') return undefined;
 
-    const base = `http://127.0.0.1:${opts.port}`;
+    const port = portForCwd(input.cwd, readInstances(env.HOME || homedir()), opts.port);
+    const base = `http://127.0.0.1:${port}`;
     const deadline = Date.now() + opts.timeoutMs;
     const reg = await call(base, 'POST', '/api/permissions', requestBody(input, opts.timeoutMs), REGISTER_TIMEOUT_MS);
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {

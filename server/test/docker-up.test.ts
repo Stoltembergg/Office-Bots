@@ -7,10 +7,13 @@ import {
   CODEX_MOUNTED_SUBDIRS,
   codexAccountsPayload,
   codexDisabled,
+  composeArgs,
   copyVolumeArgs,
   type DockerState,
   envFileKeys,
   hostTimeZone,
+  instanceNames,
+  instancesWith,
   parseArgs,
   planCodexMounts,
   planMounts,
@@ -218,5 +221,41 @@ describe('docker-up: migração do nome antigo (CodeTown)', () => {
     expect(msg).toBe('variáveis do nome antigo ignoradas no .env: CODETOWN_BIND → HABBLAUD_BIND, CODETOWN_PORT → HABBLAUD_PORT. Renomeie para valer de novo.');
     expect(msg).not.toContain('0.0.0.0');
     expect(envFileKeys('')).toEqual([]);
+  });
+});
+
+describe('docker-up: uma instância por pasta (HABBLAUD_INSTANCE)', () => {
+  it('sem instância: os nomes de sempre e o compose de sempre (com o override automático)', () => {
+    const names = instanceNames({});
+    expect(names).toEqual({ project: 'habblaud', container: 'habblaud', overrideFile: 'docker-compose.override.yml', dataVolume: 'habblaud_habblaud-data' });
+    expect(composeArgs(names, ['up', '-d'])).toEqual(['up', '-d']);
+  });
+
+  it('com instância: projeto, container, volume e override próprios, para subir lado a lado', () => {
+    const names = instanceNames({ HABBLAUD_INSTANCE: 'empresa-a' });
+    expect(names).toEqual({
+      instance: 'empresa-a',
+      project: 'habblaud-empresa-a',
+      container: 'habblaud-empresa-a',
+      overrideFile: 'docker-compose.empresa-a.override.yml',
+      dataVolume: 'habblaud-empresa-a_habblaud-data',
+    });
+    expect(composeArgs(names, ['up', '-d'])).toEqual(['-p', 'habblaud-empresa-a', '-f', 'docker-compose.yml', '-f', 'docker-compose.empresa-a.override.yml', 'up', '-d']);
+  });
+
+  it('nome inválido (vira nome de container, de arquivo e de domínio .localhost): erro', () => {
+    for (const bad of ['Empresa A', '../x', '-a', 'a_b', 'x'.repeat(41)]) expect(() => instanceNames({ HABBLAUD_INSTANCE: bad })).toThrow(/HABBLAUD_INSTANCE/);
+  });
+
+  it('registro das instâncias (~/.habblaud/instances.json): entra ou troca pelo nome; sem porta, sai', () => {
+    const a = { name: 'empresa-a', port: 4801, roots: ['/Users/f/Claude/empresa-a'] };
+    const b = { name: 'empresa-b', port: 4802, roots: ['/Users/f/Claude/empresa-b'] };
+    let reg = instancesWith(undefined, a);
+    reg = instancesWith(reg, b);
+    expect(reg).toEqual({ instances: [a, b] });
+    expect(instancesWith(reg, { ...a, port: 4811 })).toEqual({ instances: [b, { ...a, port: 4811 }] });
+    expect(instancesWith(reg, { name: 'empresa-a' })).toEqual({ instances: [b] });
+    // Arquivo estranho: recomeça sem quebrar.
+    expect(instancesWith('lixo', a)).toEqual({ instances: [a] });
   });
 });

@@ -4,7 +4,8 @@
 // O que faz, e `claude plugin validate` lista exatamente o que o módulo chama (a saída está no mod/README.md):
 //
 // 1. A cada 2 s, só onde a sessão desenha (`$.session.surfaces()` vazia = `claude -p`/SDK: nada a fazer), pergunta
-//    ao Habblaud local se há mensagens para ela: POST http://127.0.0.1:<HABBLAUD_PORT ou 4747>/api/mod/inbox com
+//    ao Habblaud local se há mensagens para ela: POST http://127.0.0.1:<HABBLAUD_PORT ou 4747>/api/mod/inbox (e em
+//    cada porta de HABBLAUD_PORTS, uma instância por pasta) com
 //    {session, account}. A pergunta também marca a presença da sessão: é ela que acende, no escritório, a caixa de
 //    mensagem deste agente. Fora do ar, ou respondendo qualquer coisa que não seja 2xx (403 = mensagens desligadas
 //    no Habblaud; 404 = uma versão sem a rota), passa a perguntar a cada 30 s até ele voltar.
@@ -65,7 +66,8 @@ type Submitted = { ok: true } | { ok: false; error: string }
 interface ModEnv {
   /** Id da conta (o nome da pasta, como o servidor chama); ausente sem HOME (ou USERPROFILE) nem CLAUDE_CONFIG_DIR. */
   accountId?: string
-  port: number
+  /** HABBLAUD_PORT primeiro, depois as instâncias extras de HABBLAUD_PORTS (uma por pasta; ver portsOf). */
+  ports: number[]
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -118,6 +120,19 @@ export function accountIdOf(configDir: string): string | undefined {
 export function portOf(raw: string | undefined): number {
   const n = Number.parseInt(raw ?? '', 10)
   return Number.isInteger(n) && n > 0 && n < 65_536 ? n : DEFAULT_PORT
+}
+
+/**
+ * Uma instância do Habblaud por pasta (HABBLAUD_INSTANCE no docker:up): o plugin não sabe a pasta da sessão, então
+ * pergunta a todas (HABBLAUD_PORTS, separadas por vírgula) e cada uma só responde pelas sessões dela.
+ */
+export function portsOf(port: string | undefined, extra: string | undefined): number[] {
+  const out = [portOf(port)]
+  for (const raw of (extra ?? '').split(',')) {
+    const n = Number.parseInt(raw.trim(), 10)
+    if (Number.isInteger(n) && n > 0 && n < 65_536 && !out.includes(n)) out.push(n)
+  }
+  return out
 }
 
 /** Corpo de POST /api/mod/inbox: a conta só quando se sabe qual é. */
@@ -179,7 +194,7 @@ async function readEnv($: EngineInterface): Promise<ModEnv> {
   // No Windows, HOME só existe se alguém o definir: vale o USERPROFILE (a mesma ordem do mod habblaud).
   const home = (await $.env.get('HOME'))?.trim() || (await $.env.get('USERPROFILE'))?.trim() || undefined
   const configDir = configDirOf(await $.env.get('CLAUDE_CONFIG_DIR'), home)
-  const next: ModEnv = { port: portOf(await $.env.get('HABBLAUD_PORT')) }
+  const next: ModEnv = { ports: portsOf(await $.env.get('HABBLAUD_PORT'), await $.env.get('HABBLAUD_PORTS')) }
   const accountId = configDir ? accountIdOf(configDir) : undefined
   if (accountId) next.accountId = accountId
   env = next
@@ -269,17 +284,19 @@ async function round($: EngineInterface): Promise<void> {
     if (!surfaces.length) return
     const e = await readEnv($)
     const session = await $.session.id()
-    const res = await postJson($, e.port, '/api/mod/inbox', inboxBody(session, e.accountId))
-    const messages = res?.ok ? parseInbox(res.text) : undefined
-    if (!messages) {
-      schedule($, OFFLINE_POLL_MS)
-      return
+    // Uma instância no ar basta para seguir no ritmo de 2 s; todas fora do ar, recua para 30 s.
+    let online = false
+    for (const port of e.ports) {
+      const res = await postJson($, port, '/api/mod/inbox', inboxBody(session, e.accountId))
+      const messages = res?.ok ? parseInbox(res.text) : undefined
+      if (!messages) continue
+      online = true
+      if (!messages.length) continue
+      const results = await deliver($, messages)
+      // Falhou a confirmação: o servidor dá as mensagens como falhas em 30 s ("a sessão não confirmou a entrega").
+      await postJson($, port, '/api/mod/inbox/ack', ackBody(session, results))
     }
-    schedule($, POLL_MS)
-    if (!messages.length) return
-    const results = await deliver($, messages)
-    // Falhou a confirmação: o servidor dá as mensagens como falhas em 30 s ("a sessão não confirmou a entrega").
-    await postJson($, e.port, '/api/mod/inbox/ack', ackBody(session, results))
+    schedule($, online ? POLL_MS : OFFLINE_POLL_MS)
   } catch {
     // silêncio: a próxima rodada tenta de novo
   } finally {

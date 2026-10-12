@@ -223,6 +223,24 @@ Depois, **abra o Codex e aprove os hooks do Habblaud em `/hooks`**: o Codex só 
 aprova (o Habblaud nunca grava essa aprovação). Com o Habblaud no Docker, para mandar mensagens às sessões do Codex
 deixe também `npm run codex:bridge` rodando no Mac (veja [Codex](#codex)).
 
+### Um escritório por pasta (opcional)
+
+Para separar, por exemplo, uma empresa de outra, suba uma instância do Habblaud por pasta. Cada uma mostra só as
+sessões abertas dentro da pasta dela e tem endereço, porta, nomes e linha do tempo próprios:
+
+```bash
+HABBLAUD_INSTANCE=empresa-a HABBLAUD_PORT=4801 HABBLAUD_PROJECT_ROOTS=~/Claude/empresa-a npm run docker:up
+HABBLAUD_INSTANCE=empresa-b HABBLAUD_PORT=4802 HABBLAUD_PROJECT_ROOTS=~/Claude/empresa-b npm run docker:up
+# abre em http://empresa-a.localhost:4801 e http://empresa-b.localhost:4802
+HABBLAUD_INSTANCE=empresa-a npm run docker:down    # derruba só a da empresa-a
+```
+
+Os nomes `*.localhost` funcionam sem mexer em DNS nem no `/etc/hosts`. O `docker:up` anota cada instância em
+`~/.habblaud/instances.json`: o hook de permissão do Claude Code e os hooks do Codex mandam cada pedido para a
+instância da pasta da sessão. As mensagens pelo escritório precisam saber as portas: acrescente
+`"HABBLAUD_PORTS": "4801,4802"` ao `env` do `settings.json` de cada conta. Com o Codex no Docker, rode um
+`npm run codex:bridge -- --port <porta>` por instância. Sem `HABBLAUD_INSTANCE`, tudo segue como antes.
+
 ### Abrir no celular (opcional)
 
 Por padrão o Habblaud só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:
@@ -614,11 +632,12 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH (no Windows, `codex.exe`) | O binário do Codex que entrega as mensagens (`codex queue`), no modo Node ou no `npm run codex:bridge`. |
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `HABBLAUD_PROJECT_ROOTS` | todas as pastas | Só mostra as sessões abertas nessas pastas (ou dentro delas), separadas por vírgula; `~` vale. Ex.: `~/Claude/empresa-a`. O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. A comparação é pelo caminho como a ferramenta o grava (com `..` resolvido, sem seguir links, diferenciando maiúsculas), e qualquer campo `cwd` da conversa conta: um argumento de ferramenta com esse nome apontando para outra pasta também tira a sessão. As contas (nome e pasta de configuração) continuam aparecendo. |
+| `HABBLAUD_INSTANCE` | — | Só `docker:up`/`docker:down`: nome de uma instância extra (minúsculas, dígitos e hífen), com container, volume e endereço `<nome>.localhost` próprios. Veja [Um escritório por pasta](#um-escritório-por-pasta-opcional). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR`,
-`HABBLAUD_PROJECT_ROOTS` e `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
+`HABBLAUD_PROJECT_ROOTS`, `HABBLAUD_INSTANCE` e `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
 ## Como funciona

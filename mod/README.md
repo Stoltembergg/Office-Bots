@@ -67,7 +67,9 @@ Um hook `PermissionRequest` comum (sem mod), em `habblaud-permissoes/hooks/hooks
 O script `hooks/permission-hook.mjs` é o mesmo que o `npm run hooks:install` instala (fonte única; Node puro, só
 `node:*`, porque o Claude Code copia apenas a pasta do plugin para o cache). Ele manda o pedido ao Habblaud local
 e espera a resposta por até 5 min; o diálogo continua no terminal e vale o que você responder primeiro. Sem o
-Habblaud no ar ou sem nenhuma página aberta, sai na hora. Porta: `HABBLAUD_PORT` (padrão 4747); espera:
+Habblaud no ar ou sem nenhuma página aberta, sai na hora. Porta: `HABBLAUD_PORT` (padrão 4747), ou a da instância
+cuja pasta contém o cwd da sessão em `~/.habblaud/instances.json` (uma instância por pasta, gravado pelo
+`docker:up` com `HABBLAUD_INSTANCE`); espera:
 `HABBLAUD_PERMISSION_TIMEOUT` (padrão 300 s; o tempo limite do hook no plugin é fixo em 330 s, então valores
 maiores que 300 são cortados pelo Claude Code). Precisa de `node` 22+ no `PATH` da sessão.
 
@@ -108,7 +110,7 @@ Saída de `claude plugin validate --strict mod/habblaud-mensagens`:
 ❯ ./register.ts hooks: session.start
 ❯ ./register.ts calls: $.clock.after (via waitAtMost), $.clock.every (via schedule), $.env.get (via readEnv), $.http.fetch (via postJson), $.prompt.submit (via submitOne), $.session.id (via round), $.session.surfaces (via round)
 ❯ ./register.ts env writes: nothing
-❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, HABBLAUD_PORT, HOME, USERPROFILE
+❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, HABBLAUD_PORT, HABBLAUD_PORTS, HOME, USERPROFILE
 ```
 
 Em palavras: um hook só (`session.start`, que liga o relógio das rodadas); a única ação na sessão é o
@@ -116,7 +118,8 @@ Em palavras: um hook só (`session.start`, que liga o relógio das rodadas); a �
 variáveis de ambiente (a conta sai do `CLAUDE_CONFIG_DIR`, como no mod). `$.clock.after` é o prazo de 2 s de cada
 pedido ao Habblaud e de cada `$.prompt.submit`.
 
-Porta: `HABBLAUD_PORT` (padrão 4747). Precisa do Claude Code 2.1.287+ e de um Habblaud com as mensagens ligadas: a
+Porta: `HABBLAUD_PORT` (padrão 4747), mais as de `HABBLAUD_PORTS` (separadas por vírgula) com uma instância do
+Habblaud por pasta: pergunta a todas, e cada uma só responde pelas sessões dela. Precisa do Claude Code 2.1.287+ e de um Habblaud com as mensagens ligadas: a
 mesma trava do terminal e das permissões (porta presa ao `127.0.0.1` e cabeçalho Host local) e `HABBLAUD_MENSAGENS`
 não desligado (`0`, `false`, `off` ou `no` desligam). Qualquer processo desta máquina que fale com o Habblaud
 consegue mandar uma mensagem às sessões com o plugin: por isso a trava local.

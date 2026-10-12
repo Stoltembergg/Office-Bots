@@ -180,6 +180,15 @@ describe('hook.mjs do Codex (processo)', () => {
     expect(r).toMatchObject({ code: 0, stdout: '' });
   });
 
+  it('uma instância por pasta (~/.habblaud/instances.json): o evento vai para a instância do cwd da sessão', async () => {
+    srv = await servePermissions({ codex: true, codexLive: live });
+    writeConfig({ port: 1 });
+    writeFileSync(join(home, '.habblaud', 'instances.json'), JSON.stringify({ instances: [{ name: 'p', port: srv.port, roots: ['/p'] }] }));
+    const run = runHook(JSON.stringify(permission()), { CODEX_HOME: codexHome });
+    srv.registry!.decide(await pendingId(srv), { behavior: 'allow' });
+    expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'allow' });
+  });
+
   it('HABBLAUD_PORT vale como reserva quando o arquivo não tem a porta', async () => {
     srv = await servePermissions({ codex: true, codexLive: live });
     const run = runHook(JSON.stringify(permission()), { CODEX_HOME: codexHome, HABBLAUD_PORT: String(srv.port) });

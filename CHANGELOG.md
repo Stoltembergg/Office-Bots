@@ -16,6 +16,11 @@ do meio (0.**3**.0).
   O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer
   em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. No Docker, o
   `docker:up` repassa as pastas já expandidas.
+  O histórico do terminal segue o mesmo filtro. No Docker, o `docker:up` repassa as pastas já expandidas.
+- Um escritório por pasta: `HABBLAUD_INSTANCE=<nome> npm run docker:up` sobe uma instância extra, lado a lado com as
+  outras (container, volume e endereço `<nome>.localhost` próprios). Os hooks de permissão do Claude Code e do
+  Codex mandam cada pedido para a instância da pasta da sessão, e o plugin de mensagens pergunta às portas de
+  `HABBLAUD_PORTS`.
 
 ## [0.8.0] - 2026-10-09
 
