@@ -118,7 +118,12 @@ stats.load();
 // Terminal: só existe com bind local (ver terminalOffReason em config.ts).
 // Cada agente com o parser da ferramenta dele (o do Claude Code por padrão).
 const terminals = config.terminal
-  ? new TerminalStreams({ office, transcriptPathOf: (id) => agents.transcriptPathOf(id), parserFor: (id) => agents.parserFor(id) })
+  ? new TerminalStreams({
+      office,
+      transcriptPathOf: (id) => agents.transcriptPathOf(id),
+      parserFor: (id) => agents.parserFor(id),
+      checkerFor: (id) => agents.checkerFor(id),
+    })
   : undefined;
 // Histórico do terminal (sessões recentes, abertas ou encerradas, de todas as ferramentas): mesma trava.
 const inScope = config.projectRoots.length ? office.inScope : undefined;

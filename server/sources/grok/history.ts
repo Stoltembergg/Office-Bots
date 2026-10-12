@@ -7,7 +7,7 @@ import type { RecentSession } from '../../../shared/types';
 import { HISTORY_LIMIT, HISTORY_MAX_AGE_MS } from '../history';
 import type { HistoryProvider, HistoryResolveResult } from '../source';
 import { fileScope } from '../scope';
-import { findSessionDir, groupCwd, isGrokSessionId, readSummary, SESSIONS_DIR, SUMMARY_FILE, updatesPathOf, type GrokSummary } from './files';
+import { findSessionDir, groupCwd, isGrokSessionId, readSummary, SESSIONS_DIR, SUMMARY_FILE, updatesPathOf, updatesPathOk, type GrokSummary } from './files';
 import { createGrokTerminalParser } from './updates';
 
 export interface GrokHistoryOptions {
@@ -92,7 +92,7 @@ export class GrokHistory implements HistoryProvider {
     const dir = findSessionDir(acc.dir, sessionId);
     const path = dir && updatesPathOf(acc.dir, dir);
     if (!dir || !path) return { status: 404, error: 'sessão não encontrada' };
-    const found: HistoryResolveResult = { path, createParser: () => createGrokTerminalParser(this.now), grok: true };
+    const found: HistoryResolveResult = { path, createParser: () => createGrokTerminalParser(this.now), grok: true, check: (p) => updatesPathOk(acc.dir, p) };
     // A pasta da sessão nem sempre aparece no updates.jsonl: o escopo confere a do summary.json (ou a do grupo), a
     // mesma que a listagem mostra.
     const groupDir = dirname(dir);

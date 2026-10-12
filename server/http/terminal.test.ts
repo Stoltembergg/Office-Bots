@@ -505,6 +505,25 @@ describe('terminal: transporte', () => {
     }
   });
 
+  it('conferência do arquivo (Grok): falhou depois de conectado, o stream para e nada novo sai', async () => {
+    let ok = true;
+    const env = await serve({ streams: { checkerFor: () => () => ok } });
+    try {
+      const path = join(env.dir, 'k1.jsonl');
+      writeLines(path, [line('a')]);
+      env.paths.set(MAIN, path);
+      const s = await open(env.base, route(MAIN));
+      await waitFor(() => expect(view(s)).toEqual(['a']));
+      ok = false;
+      appendLines(path, [line('SEGREDO_TROCADO')]);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(s.raw).not.toContain('SEGREDO_TROCADO');
+      s.close();
+    } finally {
+      await env.close();
+    }
+  });
+
   it('stop() encerra os streams abertos', async () => {
     const env = await serve();
     try {

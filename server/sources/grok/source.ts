@@ -29,7 +29,7 @@ import { fileScope } from '../scope';
 import type { AgentSource } from '../source';
 import { FileTail } from '../tail';
 import type { TerminalParser } from '../terminal';
-import { findSessionDir, readActiveSessions, readSummary, recentSessions, updatesPathOf, type ActiveSession, type GrokSummary } from './files';
+import { findSessionDir, readActiveSessions, readSummary, recentSessions, sessionDirOk, updatesPathOf, updatesPathOk, type ActiveSession, type GrokSummary } from './files';
 import { createGrokState, createGrokTerminalParser, parseGrokLine, type GrokLineResult, type GrokState } from './updates';
 
 /** Docker: presença = conversa modificada nos últimos 30 min (revista a cada 10 s). */
@@ -182,6 +182,11 @@ export class GrokSource implements AgentSource {
     return t?.inOffice ? t.path : undefined;
   }
 
+  /** O terminal confere antes de cada leitura: o arquivo continua sendo uma conversa dentro de sessions/, sem links. */
+  transcriptOk(path: string): boolean {
+    return updatesPathOk(this.opts.dir, path);
+  }
+
   terminalParser(agentId: string): TerminalParser | undefined {
     return this.trackers.has(agentId) ? createGrokTerminalParser(this.now) : undefined;
   }
@@ -290,6 +295,13 @@ export class GrokSource implements AgentSource {
 
   /** Acha a pasta da sessão, relê o summary.json (se mudou) e abre a conversa quando ela aparecer. */
   private resolve(t: Tracker): void {
+    // Pasta já achada que virou link (o grupo trocado por outro): nada mais dela é lido, nem o resumo.
+    if (t.sessionDir && !sessionDirOk(this.opts.dir, t.sessionDir)) {
+      if (exists(t.sessionDir)) return this.outOfScope(t);
+      delete t.sessionDir;
+      delete t.tail;
+      delete t.path;
+    }
     t.sessionDir ??= findSessionDir(this.opts.dir, t.sessionId, t.cwd);
     if (!t.sessionDir) return;
     let mtime: number | undefined;
@@ -393,6 +405,8 @@ export class GrokSource implements AgentSource {
   private outOfScope(t: Tracker): void {
     t.outOfScope = true;
     delete t.tail;
+    delete t.path;
+    t.summary = {};
     t.backlog = [];
     if (t.inOffice) this.opts.office.leaveScope(t.key);
     t.inOffice = false;

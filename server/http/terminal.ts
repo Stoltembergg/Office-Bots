@@ -50,6 +50,8 @@ export interface TerminalOptions {
    * = createParser.
    */
   parserFor?: (agentId: string) => TerminalParser | undefined;
+  /** Conferência do arquivo do terminal de um agente antes de cada leitura (SourceSet.checkerFor). */
+  checkerFor?: (agentId: string) => ((path: string) => boolean) | undefined;
   /** Fábrica do parser padrão (testes); padrão: createTerminalParser (o do Claude Code). */
   createParser?: () => TerminalParser;
   /** Conversa fictícia dos agentes do demo (testes); padrão: demoTerminalEntries. */
@@ -110,6 +112,8 @@ interface ScopeGuard {
   cwd?: string;
   /** Conversa do Grok: o escopo conta também o `current_dir`. */
   grok?: boolean;
+  /** Conferência do arquivo antes de cada leitura (Grok: dentro de sessions/, sem links); falhou = o stream para. */
+  check?: (path: string) => boolean;
 }
 
 /**
@@ -134,6 +138,7 @@ class TranscriptSource implements ConversationSource {
 
   load(): TerminalInit {
     this.parser = this.o.createParser();
+    if (this.o.check && !this.o.check(this.tail.path)) this.closed = true;
     // Escopo por pasta: o arquivo inteiro precisa ser de dentro (uma troca de pasta antes da janela lida passaria).
     if (this.o.scope) {
       const st = fileScope(this.tail.path, this.o.scope, this.o.grok).status;
@@ -163,6 +168,10 @@ class TranscriptSource implements ConversationSource {
 
   poll(): PollResult {
     if (this.closed || (this.o.alive && !this.o.alive())) {
+      this.closed = true;
+      return { stop: true };
+    }
+    if (this.o.check && !this.o.check(this.tail.path)) {
       this.closed = true;
       return { stop: true };
     }
@@ -276,8 +285,17 @@ export class TerminalStreams {
    * `streamId` vai no `init` (ex.: "session:<conta>:<sessionId>"); `createParser` é o da ferramenta da sessão
    * (HistorySession.createParser; padrão: o do Claude Code). Mesmos erros de attach (429/500).
    */
-  attachSession(req: IncomingMessage, res: ServerResponse, streamId: string, path: string, createParser?: () => TerminalParser, cwd?: string, grok?: boolean): void {
-    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries, scope: this.scope(), cwd, grok };
+  attachSession(
+    req: IncomingMessage,
+    res: ServerResponse,
+    streamId: string,
+    path: string,
+    createParser?: () => TerminalParser,
+    cwd?: string,
+    grok?: boolean,
+    check?: (path: string) => boolean,
+  ): void {
+    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries, scope: this.scope(), cwd, grok, check };
     this.serve(req, res, streamId, new TranscriptSource(streamId, path, o, this.sessionPollMs));
   }
 
@@ -353,6 +371,7 @@ export class TerminalStreams {
         alive: office.scoped ? () => office.has(agentId) : undefined,
         cwd: this.agentCwd(agentId),
         grok: this.opts.office.get(agentId)?.provider === 'grok',
+        check: this.opts.checkerFor?.(agentId),
       };
       return new TranscriptSource(agentId, path, o, this.pollMs);
     }

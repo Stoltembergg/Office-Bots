@@ -455,3 +455,46 @@ describe('Grok: segunda rodada da verificação', () => {
     expect(isGrokExecutable('grokker')).toBe(false);
   });
 });
+
+describe('Grok: terceira rodada da verificação', () => {
+  it('grupo trocado por um link com só o summary.json: título e modelo de lá não aparecem', () => {
+    const ctx = setup();
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, CWD, [prompt('dentro', ctx.now())]);
+    ctx.source.start();
+    expect(ctx.agent()).toBeDefined();
+    const group = join(ctx.home.dir, 'sessions', encodeURIComponent(CWD));
+    const fake = join(ctx.home.dir, 'fora', S1);
+    mkdirSync(fake, { recursive: true });
+    writeFileSync(join(fake, 'summary.json'), JSON.stringify({ generated_title: 'TITULO_PRIVADO', current_model_id: 'MODELO_PRIVADO' }));
+    rmSync(group, { recursive: true });
+    symlinkSync(join(ctx.home.dir, 'fora'), group);
+    ctx.advance(4_000);
+    ctx.poll();
+    const snap = JSON.stringify(ctx.office.commit().snapshot);
+    expect(snap).not.toContain('TITULO_PRIVADO');
+    expect(snap).not.toContain('MODELO_PRIVADO');
+  });
+
+  it('summary.json com um array não vale como resumo (Docker não admite)', () => {
+    const ctx = setup({ inDocker: true });
+    const d = ctx.home.session(S1, CWD, [prompt('oi', ctx.now())]);
+    writeFileSync(join(d, 'summary.json'), '[]');
+    expect(readSummary(d).ok).toBeUndefined();
+    ctx.source.start();
+    expect(ctx.agent()).toBeUndefined();
+  });
+
+  it('transcriptOk: o terminal recusa a conversa trocada por link', () => {
+    const ctx = setup();
+    const d = ctx.home.session(S1, CWD, [prompt('oi', ctx.now())]);
+    const p = join(d, 'updates.jsonl');
+    expect(ctx.source.transcriptOk(p)).toBe(true);
+    const outside = join(ctx.home.dir, 'fora.jsonl');
+    writeFileSync(outside, 'x\n');
+    rmSync(p);
+    symlinkSync(outside, p);
+    expect(ctx.source.transcriptOk(p)).toBe(false);
+    expect(ctx.source.transcriptOk(outside)).toBe(false);
+  });
+});

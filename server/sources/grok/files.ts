@@ -161,6 +161,17 @@ export function findSessionDir(dir: string, sessionId: string, cwd?: string): st
   return found.length === 1 ? found[0] : undefined;
 }
 
+/** A pasta da sessão continua dentro de sessions/, sem link em nenhum componente (o grupo pode ter virado link). */
+export function sessionDirOk(dir: string, sessionDir: string): boolean {
+  const root = realRoot(dir);
+  return !!root && inside(root, join(dir, SESSIONS_DIR), sessionDir, 'dir');
+}
+
+/** `path` é o updates.jsonl de uma sessão, dentro de sessions/ e sem links: o terminal confere antes de cada leitura. */
+export function updatesPathOk(dir: string, path: string): boolean {
+  return basename(path) === UPDATES_FILE && updatesPathOf(dir, dirname(path)) === path;
+}
+
 /** updates.jsonl da sessão, se for um arquivo de verdade dentro de sessions/. */
 export function updatesPathOf(dir: string, sessionDir: string): string | undefined {
   const root = realRoot(dir);
@@ -252,7 +263,7 @@ export function readSummary(sessionDir: string): GrokSummary {
   } catch {
     return {};
   }
-  if (!raw || typeof raw !== 'object') return {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out: GrokSummary = { ok: true };
   const info = raw.info && typeof raw.info === 'object' ? (raw.info as Record<string, unknown>) : {};
   const title = str(raw.generated_title) ?? str(raw.session_summary);

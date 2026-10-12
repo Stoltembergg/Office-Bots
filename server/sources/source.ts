@@ -36,6 +36,11 @@ export interface AgentSource {
    * Ausente, ou undefined, = o do Claude Code (createTerminalParser).
    */
   terminalParser?(agentId: string): TerminalParser | undefined;
+  /**
+   * Conferência do arquivo antes de cada leitura do terminal (Grok: continua dentro de sessions/, sem links). Ausente =
+   * sem conferência.
+   */
+  transcriptOk?(path: string): boolean;
 }
 
 /** Todas as fontes de agentes ligadas, vistas como uma só. */
@@ -106,6 +111,12 @@ export class SourceSet {
    * Parser NOVO para o terminal de um agente: o da fonte que conhece o transcript dele (transcriptPathOf); sem
    * fonte, ou se ela não tiver um próprio, o do Claude Code.
    */
+  /** Conferência do arquivo do terminal de um agente (AgentSource.transcriptOk da fonte dele), se houver. */
+  checkerFor(agentId: string): ((path: string) => boolean) | undefined {
+    const owner = this.list.find((s) => s.transcriptPathOf(agentId) !== undefined);
+    return owner?.transcriptOk ? (path) => owner.transcriptOk!(path) : undefined;
+  }
+
   parserFor(agentId: string): TerminalParser {
     const owner = this.list.find((s) => s.transcriptPathOf(agentId) !== undefined);
     return owner?.terminalParser?.(agentId) ?? createTerminalParser();
@@ -123,6 +134,8 @@ export interface HistorySession {
   cwd?: string;
   /** Conversa no formato do Grok: o escopo conta também o `current_dir` (cwdsInText). */
   grok?: boolean;
+  /** Conferência do arquivo antes de cada leitura do terminal (Grok: dentro de sessions/, sem links). */
+  check?: (path: string) => boolean;
 }
 
 /** Resultado de resolve(): a sessão ou o erro HTTP. */
