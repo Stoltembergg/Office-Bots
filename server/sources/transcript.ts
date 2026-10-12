@@ -6,6 +6,7 @@ import { createReadStream } from 'node:fs';
 import type { Activity, AgentStats, TaskItem, TaskStatus } from '../../shared/types';
 import { describePrompt, describeShellJob, describeTool, maskSecrets, SPECIAL, truncate, type ActivityDescription } from '../../shared/activity';
 import type { GitHubEvent } from '../../shared/github';
+import { cwdOutOfScope } from '../model/rooms';
 import { detectGitHubNotification, detectGitHubResult, githubCallOf, type GitHubCall } from './github';
 import type { ShellStart } from './shells';
 
@@ -780,8 +781,8 @@ export async function scanPrefix(
   path: string,
   end: number,
   skipUsage: ReadonlySet<string>,
-  opts: { idPrefix?: string; keepActivities?: number } = {},
-): Promise<{ state: TranscriptState; signals: TranscriptSignal[]; activities: Activity[]; shellEvents: ShellEvent[] }> {
+  opts: { idPrefix?: string; keepActivities?: number; scope?: (cwd: string) => boolean } = {},
+): Promise<{ state: TranscriptState; signals: TranscriptSignal[]; activities: Activity[]; shellEvents: ShellEvent[]; outOfScope?: string }> {
   const state = createTranscriptState();
   const signals: TranscriptSignal[] = [];
   const shellEvents: ShellEvent[] = [];
@@ -790,7 +791,11 @@ export async function scanPrefix(
   if (end <= 0) return { state, signals, activities, shellEvents };
   const keep = Math.max(0, opts.keepActivities ?? 0);
   const ctx: ParseContext = { idPrefix: opts.idPrefix ?? '', now: Date.now(), activities: keep > 0 };
+  // Escopo por pasta: uma linha de outra pasta encerra a leitura (a conversa não é desta instância).
+  let outOfScope: string | undefined;
   const take = (line: string) => {
+    if (outOfScope !== undefined) return;
+    if (opts.scope && (outOfScope = cwdOutOfScope(line, opts.scope)) !== undefined) return;
     if (!keep && !prefixRelevant(state, line)) return;
     const r = parseLine(state, line, ctx);
     for (const sig of r.signals) {
@@ -816,6 +821,7 @@ export async function scanPrefix(
   }
   if (partial?.length) take(partial.toString('utf8'));
   state.skipUsage = undefined;
+  if (outOfScope !== undefined) return { state, signals: [], activities: [], shellEvents: [], outOfScope };
   return { state, signals, activities: activities.slice(-keep), shellEvents };
 }
 

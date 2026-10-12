@@ -15,6 +15,7 @@ import { demoTerminalEntries } from '../../shared/demo/terminal';
 import type { Activity, AgentInfo, TerminalEntry, TerminalInit } from '../../shared/types';
 import { errMsg, log } from '../log';
 import type { Office } from '../model/office';
+import { cwdOutOfScope } from '../model/rooms';
 import { FileTail } from '../sources/tail';
 import { createTerminalParser, type TerminalParser } from '../sources/terminal';
 import { sendJson } from './app';
@@ -76,22 +77,6 @@ interface ConversationSource {
   poll(): PollResult;
 }
 
-/** Todo `"cwd"` de uma linha crua (Claude Code: em cada linha; Codex: session_meta e turn_context). */
-const CWD_RE = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/g;
-
-/** A linha cita alguma pasta fora do escopo? */
-function outOfScope(line: string, scope: (cwd: string) => boolean): boolean {
-  for (const m of line.matchAll(CWD_RE)) {
-    try {
-      const cwd: unknown = JSON.parse(m[1]);
-      if (typeof cwd === 'string' && !scope(cwd)) return true;
-    } catch {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Passa as linhas pelo parser; uma linha que o faça falhar é pulada sem perder o resto do lote. Com `scope` (escopo
  * por pasta), para na primeira linha de outra pasta e devolve false: dali em diante a conversa não é mais desta
@@ -99,7 +84,7 @@ function outOfScope(line: string, scope: (cwd: string) => boolean): boolean {
  */
 function parseInto(parser: TerminalParser, lines: readonly string[], out: TerminalEntry[], scope?: (cwd: string) => boolean): boolean {
   for (const line of lines) {
-    if (scope && outOfScope(line, scope)) return false;
+    if (scope && cwdOutOfScope(line, scope) !== undefined) return false;
     let entries: TerminalEntry[];
     try {
       entries = parser.push(line);

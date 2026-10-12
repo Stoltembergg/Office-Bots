@@ -21,6 +21,27 @@ export function inRoots(cwd: string, roots: readonly string[]): boolean {
   });
 }
 
+/** Todo `"cwd"` de uma linha crua de JSONL (Claude Code: em cada linha; Codex: session_meta e turn_context). */
+const CWD_RE = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/g;
+
+/**
+ * A primeira pasta fora do escopo citada na linha, ou undefined. Busca no texto cru (sem parse da linha inteira):
+ * barato o bastante para rodar em toda linha. Um valor ilegível conta como fora.
+ */
+export function cwdOutOfScope(line: string, scope: (cwd: string) => boolean): string | undefined {
+  if (!line.includes('"cwd"')) return undefined;
+  for (const m of line.matchAll(CWD_RE)) {
+    let cwd: unknown;
+    try {
+      cwd = JSON.parse(m[1]);
+    } catch {
+      return '?';
+    }
+    if (typeof cwd !== 'string' || !scope(cwd)) return String(cwd);
+  }
+  return undefined;
+}
+
 function segments(path: string): string[] {
   return path.split(/[\\/]+/).filter(Boolean);
 }

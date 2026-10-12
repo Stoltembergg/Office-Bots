@@ -685,6 +685,46 @@ describe('ClaudeWatcher — shell lançado no começo de um transcript maior que
 describe('ClaudeWatcher: escopo por pasta', () => {
   const withCwd = (line: string, cwd: string) => JSON.stringify({ ...JSON.parse(line), cwd });
 
+  it('linha de outra pasta no meio do transcript (cd, /add-dir): o agente sai na hora e não volta', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      writeLines(c.transcript('sess-a'), [withCwd(L.prompt('dentro', { at: c.now() - 1000 }), CWD)]);
+      c.openSession(100, 'sess-a');
+      c.watcher.boot();
+      expect(c.office.has('.claude:100')).toBe(true);
+      appendLines(c.transcript('sess-a'), [withCwd(L.prompt('SEGREDO_B', { at: c.now() }), '/projetos/outra'), withCwd(L.prompt('depois', { at: c.now() }), CWD)]);
+      c.poll();
+      expect(c.office.has('.claude:100')).toBe(false);
+      c.poll();
+      expect(c.office.has('.claude:100')).toBe(false);
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_B');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('linha de outra pasta no começo de um transcript grande (lido em segundo plano): o agente sai', async () => {
+    const c = setup({ projectRoots: [CWD], tailBytes: 200 });
+    try {
+      const big = 'x'.repeat(400);
+      writeLines(c.transcript('sess-a'), [
+        withCwd(L.prompt('começo', { at: c.now() - 4000 }), CWD),
+        withCwd(L.prompt('SEGREDO_B', { at: c.now() - 3000 }), '/projetos/outra'),
+        withCwd(L.prompt(big, { at: c.now() - 2000 }), CWD),
+        withCwd(L.prompt('fim', { at: c.now() - 1000 }), CWD),
+      ]);
+      c.openSession(100, 'sess-a');
+      c.watcher.boot();
+      await c.watcher.idle();
+      expect(c.office.has('.claude:100')).toBe(false);
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_B');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
   it('/resume de uma conversa de outra pasta: o transcript de fora não é lido (só o de dentro)', () => {
     const c = setup({ projectRoots: [CWD] });
     try {

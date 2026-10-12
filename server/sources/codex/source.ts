@@ -31,6 +31,7 @@ import type { DetectedAccount } from '../../accounts/detect';
 import type { AccountEntry, AccountsService } from '../../accounts/service';
 import { errMsg, log } from '../../log';
 import type { Office, TranscriptSummary } from '../../model/office';
+import { cwdOutOfScope } from '../../model/rooms';
 import type { AgentSource } from '../source';
 import { FileTail } from '../tail';
 import type { TerminalParser } from '../terminal';
@@ -720,8 +721,10 @@ export class CodexSource implements AgentSource, CodexLive {
     this.prefixChain = this.prefixChain
       .then(async () => {
         if (this.stopped) return;
-        const prefix = await scanPrefix(path, end, t.key, PREFIX_HISTORY);
+        const office = this.opts.office;
+        const prefix = await scanPrefix(path, end, t.key, PREFIX_HISTORY, office.scoped ? (c) => office.inScope(c) : undefined);
         if (this.threads.get(t.key) !== t || t.state !== state) return;
+        if (prefix.outOfScope !== undefined) return this.noteCwd(t, prefix.outOfScope);
         state.stats.toolCalls += prefix.state.stats.toolCalls;
         state.stats.subagents += prefix.state.stats.subagents;
         state.title ??= prefix.state.title;
@@ -1000,12 +1003,22 @@ export class CodexSource implements AgentSource, CodexLive {
  * Lê em stream (sem travar o event loop) os bytes [0, end) de um rollout: os números, o título e as últimas
  * `keep` atividades anteriores à janela lida ao abrir a sessão.
  */
-export async function scanPrefix(path: string, end: number, idPrefix: string, keep: number): Promise<{ state: CodexState; activities: Activity[] }> {
+export async function scanPrefix(
+  path: string,
+  end: number,
+  idPrefix: string,
+  keep: number,
+  scope?: (cwd: string) => boolean,
+): Promise<{ state: CodexState; activities: Activity[]; outOfScope?: string }> {
   const state = createCodexState();
   let activities: Activity[] = [];
   if (end <= 0) return { state, activities };
   const ctx = { idPrefix, now: Date.now(), activities: keep > 0 };
+  // Escopo por pasta: uma linha de outra pasta (turn_context, session_meta) encerra a leitura.
+  let outOfScope: string | undefined;
   const take = (line: string) => {
+    if (outOfScope !== undefined) return;
+    if (scope && (outOfScope = cwdOutOfScope(line, scope)) !== undefined) return;
     const r = parseRolloutLine(state, line, ctx);
     for (const a of r.activities) activities.push(a.activity);
     if (activities.length > keep * 2) activities = activities.slice(-keep);
@@ -1023,5 +1036,6 @@ export async function scanPrefix(path: string, end: number, idPrefix: string, ke
     partial = start < data.length ? Buffer.from(data.subarray(start)) : null;
   }
   if (partial?.length) take(partial.toString('utf8'));
+  if (outOfScope !== undefined) return { state: createCodexState(), activities: [], outOfScope };
   return { state, activities: activities.slice(-keep) };
 }

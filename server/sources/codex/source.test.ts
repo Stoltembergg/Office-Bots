@@ -22,7 +22,7 @@ afterEach(() => {
   cleanups = [];
 });
 
-function setup(opts: { names?: string[]; noLocks?: boolean; env?: (dirs: string[]) => NodeJS.ProcessEnv; projectRoots?: string[] } = {}) {
+function setup(opts: { names?: string[]; noLocks?: boolean; env?: (dirs: string[]) => NodeJS.ProcessEnv; projectRoots?: string[]; tailBytes?: number } = {}) {
   const homes = (opts.names ?? ['.codex']).map((n) => codexHome(n));
   const home = homes[0];
   cleanups.push(...homes.map((h) => h.cleanup));
@@ -43,7 +43,7 @@ function setup(opts: { names?: string[]; noLocks?: boolean; env?: (dirs: string[
   });
   late.office = office;
   const dirs = homes.map((h) => h.dir);
-  const source = new CodexSource({ accounts, office, dirs, env: opts.env?.(dirs) ?? {}, home: home.home, now, watch: false });
+  const source = new CodexSource({ accounts, office, dirs, env: opts.env?.(dirs) ?? {}, home: home.home, now, watch: false, tailBytes: opts.tailBytes });
   // Para antes de apagar as pastas (nenhum ciclo agendado roda depois).
   cleanups.unshift(() => source.stop());
   const notices: Notice[] = [];
@@ -528,6 +528,25 @@ describe('fonte do Codex: escopo por pasta (HABBLAUD_PROJECT_ROOTS)', () => {
     expect(ctx.agent()).toBeDefined();
     appendFileSync(path, `${R.turnContext({ cwd: '/projetos/outra' })}\n${R.user(T, 't2', 'u2', 'SEGREDO_B')}\n`);
     ctx.advance(2_000);
+    ctx.poll();
+    expect(ctx.office.has(KEY)).toBe(false);
+    expect(texts(ctx)).not.toContain('SEGREDO_B');
+  });
+
+  it('turn_context de outra pasta no começo de um rollout grande (lido em segundo plano): o agente sai', async () => {
+    const ctx = setup({ projectRoots: ['/projetos/api'], tailBytes: 300 });
+    const at = ctx.now() - 10_000;
+    ctx.home.rollout(T, [
+      R.meta(T, { at, cwd: '/projetos/api' }),
+      R.turnContext({ at: at + 1, cwd: '/projetos/outra' }),
+      R.user(T, 't0', 'u0', 'SEGREDO_B', at + 2),
+      R.user(T, 't1', 'u1', 'x'.repeat(600), at + 3),
+      R.taskStarted('t2', at + 4),
+      R.user(T, 't2', 'u2', 'fim', at + 5),
+    ]);
+    ctx.home.lock(T, at);
+    ctx.source.boot();
+    await ctx.source.idle();
     ctx.poll();
     expect(ctx.office.has(KEY)).toBe(false);
     expect(texts(ctx)).not.toContain('SEGREDO_B');
