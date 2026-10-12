@@ -738,6 +738,27 @@ Everything works without configuring anything. If you need to adjust something, 
 `HABBLAUD_ACCOUNTS` (read by `docker:up` on the host); the rest are fixed inside the container. Options: `npm run docker:up -- --no-build` (starts without rebuilding),
 `npm run docker:down` (stops) and `npm run docker:logs` (follows the logs).
 
+### Your company logo
+
+Put a PNG in the `brand/` folder inside the data folder (`~/.habblaud/brand/`, or the one in `HABBLAUD_DATA_DIR`):
+
+| File | Where it shows |
+| --- | --- |
+| `logo.png` | Top bar and splash screen icon, favicon and app icons. Use a square image of 256×256 or larger, ideally with a transparent background. |
+| `signage.png` (optional) | Sign on the reception wall. Wide format (e.g. 64×16 in pixel art or 256×64). Without it, the sign shows `logo.png`. |
+
+Just reload the page, no restart needed. To go back to the Habblaud brand, delete the files. The browser caches the
+favicon on its own: if the tab keeps the old icon, open the address in a private window to check.
+
+**On Docker**, the data folder is the `/data` volume:
+
+```bash
+docker compose exec habblaud mkdir -p /data/brand
+docker compose cp ./logo.png habblaud:/data/brand/logo.png
+```
+
+The "Habblaud" name next to the icon and the link preview image stay the project's.
+
 ## How it works
 
 ```

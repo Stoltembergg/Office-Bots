@@ -39,7 +39,7 @@ export const HASHED_DIR = '/bundle/';
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
 export const REVALIDATE = 'no-cache';
 
-function fileStat(p: string): Stats | undefined {
+export function fileStat(p: string): Stats | undefined {
   try {
     const st = statSync(p);
     return st.isFile() ? st : undefined;
@@ -70,35 +70,36 @@ export function isNotModified(req: IncomingMessage, etag: string, mtimeMs: numbe
   return false;
 }
 
+/** Envia um arquivo com cache revalidável (ETag/Last-Modified) e os cabeçalhos de segurança. */
+export function sendFile(req: IncomingMessage, res: ServerResponse, file: string, st: Stats, cache: string): void {
+  const etag = etagOf(st);
+  const headers: Record<string, string | number> = {
+    'Cache-Control': cache,
+    ETag: etag,
+    'Last-Modified': new Date(st.mtimeMs).toUTCString(),
+    'X-Content-Type-Options': 'nosniff',
+    // A página não deve ser embutida em sites de terceiros (clickjacking nas configurações).
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+  };
+  if (isNotModified(req, etag, st.mtimeMs)) {
+    res.writeHead(304, headers);
+    return void res.end();
+  }
+  res.writeHead(200, {
+    ...headers,
+    'Content-Type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+    'Content-Length': st.size,
+  });
+  if (req.method === 'HEAD') return void res.end();
+  createReadStream(file)
+    .on('error', () => res.destroy())
+    .pipe(res);
+}
+
 export function createStaticHandler(distDir: string): (req: IncomingMessage, res: ServerResponse, pathname: string) => void {
   const root = resolve(distDir);
   const index = join(root, 'index.html');
-
-  const send = (req: IncomingMessage, res: ServerResponse, file: string, st: Stats, cache: string) => {
-    const etag = etagOf(st);
-    const headers: Record<string, string | number> = {
-      'Cache-Control': cache,
-      ETag: etag,
-      'Last-Modified': new Date(st.mtimeMs).toUTCString(),
-      'X-Content-Type-Options': 'nosniff',
-      // A página não deve ser embutida em sites de terceiros (clickjacking nas configurações).
-      'X-Frame-Options': 'DENY',
-      'Referrer-Policy': 'no-referrer',
-    };
-    if (isNotModified(req, etag, st.mtimeMs)) {
-      res.writeHead(304, headers);
-      return void res.end();
-    }
-    res.writeHead(200, {
-      ...headers,
-      'Content-Type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
-      'Content-Length': st.size,
-    });
-    if (req.method === 'HEAD') return void res.end();
-    createReadStream(file)
-      .on('error', () => res.destroy())
-      .pipe(res);
-  };
 
   return (req, res, pathname) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -120,12 +121,12 @@ export function createStaticHandler(distDir: string): (req: IncomingMessage, res
     const file = resolve(root, `.${rel}`);
     const inside = file === root || file.startsWith(root + sep);
     const st = inside && file !== root ? fileStat(file) : undefined;
-    if (st) return send(req, res, file, st, rel.startsWith(HASHED_DIR) ? IMMUTABLE : REVALIDATE);
+    if (st) return sendFile(req, res, file, st, rel.startsWith(HASHED_DIR) ? IMMUTABLE : REVALIDATE);
     if (rel.startsWith('/assets/') || rel.startsWith(HASHED_DIR)) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
       return void res.end(tr('Não encontrado'));
     }
     // SPA: qualquer outra rota cai no index.html.
-    send(req, res, index, indexStat, REVALIDATE);
+    sendFile(req, res, index, indexStat, REVALIDATE);
   };
 }

@@ -636,6 +636,11 @@
   image-rendering: pixelated;
 }
 
+.ui-brand__mark img.is-smooth {
+  image-rendering: auto;
+  object-fit: contain;
+}
+
 .ui-brand__mark .ui-mark {
   width: 32px;
   height: auto;

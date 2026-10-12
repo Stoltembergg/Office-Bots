@@ -12,6 +12,9 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
+- **Logo da sua empresa:** um `logo.png` em `~/.habblaud/brand/` (no Docker, `/data/brand/`) substitui o ícone da barra
+  superior, da tela de abertura, o favicon e a placa da recepção; um `signage.png` opcional vale só para a placa. Vale
+  ao recarregar a página, sem recompilar nem reiniciar.
 - **Celular com login e HTTPS (opcional, desligado até configurar):** `npm run remote:setup` pergunta usuário, senha
   (guardada só como hash scrypt no `.env`), um nome para o endereço (`https://<nome>.local`) e, se quiser, um endereço
   próprio (ex.: `meuclaude.home`). Ele cria uma CA local e o certificado do servidor e deixa o anúncio do
