@@ -475,6 +475,17 @@ export class ClaudeWatcher implements AgentSource {
 
   /** Lê o fim do transcript (≈1 MB) e agenda a leitura do começo em segundo plano. */
   private loadMain(t: SessionTracker, path: string): void {
+    // Escopo por pasta: na carga e em cada reset (arquivo truncado ou substituído), o arquivo inteiro precisa ser de
+    // dentro antes de qualquer linha ir ao escritório. Sem cwd ainda: procura de novo no próximo ciclo.
+    const office = this.opts.office;
+    if (office.scoped) {
+      const scan = fileScope(path, office.inScope);
+      if (scan.status === 'out') return this.dropOutOfScope(t);
+      if (scan.status === 'unknown') {
+        t.tail = undefined;
+        return;
+      }
+    }
     const tail = new FileTail(path);
     const start = tail.seekTail(this.tailBytes);
     t.tail = tail;

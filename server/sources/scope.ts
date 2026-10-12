@@ -1,5 +1,6 @@
 // Escopo por pasta (HABBLAUD_PROJECT_ROOTS) de um arquivo inteiro: transcript do Claude Code ou rollout do Codex.
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
 import { cwdsInText } from '../model/rooms';
 
 /** O que o arquivo inteiro diz sobre o escopo por pasta (fileScope). */
@@ -34,12 +35,14 @@ export function fileScope(path: string, scope: (cwd: string) => boolean): FileSc
     const fd = openSync(path, 'r');
     try {
       const buf = Buffer.alloc(SCAN_CHUNK);
+      // StringDecoder: um caractere de vários bytes cortado na divisa dos blocos sai inteiro no bloco seguinte.
+      const decoder = new StringDecoder('utf8');
       let carry = '';
       for (let pos = 0; pos < size; ) {
         const n = readSync(fd, buf, 0, buf.length, pos);
         if (n <= 0) break;
         pos += n;
-        const text = carry + buf.toString('utf8', 0, n);
+        const text = carry + decoder.write(buf.subarray(0, n));
         for (const cwd of cwdsInText(text)) {
           if (!scope(cwd)) {
             result = { status: 'out', cwd };

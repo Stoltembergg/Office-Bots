@@ -726,6 +726,27 @@ describe('ClaudeWatcher: escopo por pasta', () => {
     }
   });
 
+  it('transcript trocado por outro (truncado ou substituído) que passou por outra pasta: nada dele é lido', () => {
+    const c = setup({ projectRoots: [CWD], tailBytes: 1000 });
+    try {
+      writeLines(c.transcript('s1'), [withCwd(L.prompt('dentro '.repeat(2000), { at: c.now() - 1000 }), CWD)]);
+      c.openSession(100, 's1');
+      c.watcher.boot();
+      expect(c.office.has('.claude:100')).toBe(true);
+      // Arquivo novo e menor (reset): B no começo, fora da janela do fim; o fim só com A.
+      writeLines(c.transcript('s1'), [
+        withCwd(L.prompt('B', { at: c.now() }), '/projetos/outra'),
+        withCwd(L.prompt('x'.repeat(3000), { at: c.now() }), CWD),
+        withCwd(L.prompt('SEGREDO_RESET', { at: c.now() }), CWD),
+      ]);
+      c.poll();
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_RESET');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
   it('/clear depois de sair do escopo: a conversa nova, toda de dentro, traz o agente de volta', () => {
     const c = setup({ projectRoots: [CWD] });
     try {

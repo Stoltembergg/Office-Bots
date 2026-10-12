@@ -205,7 +205,8 @@ Estáticos (`http/static.ts`): `/bundle/*` (saída do Vite com hash, `build.asse
 cada conta (nome com formato de UUID; subagentes ficam de fora) modificados nos últimos 7 dias, os 150 mais recentes.
 De cada arquivo lê só os primeiros 64 KB (projeto = `cwd` da primeira linha que o traz, primeira atividade, o primeiro
 prompt) e os últimos 64 KB (título e última atividade; sem nenhuma linha de título ali, procura nos últimos 512 KB),
-com leitura assíncrona e um cache por caminho válido enquanto mtime e tamanho não mudam. O título segue o do agente
+com leitura assíncrona e um cache por caminho válido enquanto mtime e tamanho não mudam (com `HABBLAUD_PROJECT_ROOTS`, o
+arquivo inteiro também passa por `fileScope`, que só deixa entrar a sessão cujos cwds são todos de dentro). O título segue o do agente
 (`custom-title`/`custom-title.json` > `agent-name` > `ai-title` > `last-prompt`) e, sem nenhum, é o primeiro prompt.
 Sessão aberta (agente principal da conta e do `sessionId` no escritório) sai com `open: true` e `agentId`; uma
 encerrada sem nenhuma linha com horário é omitida. A lista sai da atividade mais recente para a mais antiga.

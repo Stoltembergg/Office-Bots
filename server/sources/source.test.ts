@@ -252,6 +252,23 @@ describe('fileScope', () => {
     }
   });
 
+  it('pasta com acento cortada na divisa dos blocos: o caminho continua o mesmo', () => {
+    const tmp = tempDir();
+    try {
+      const path = join(tmp.dir, 'c.jsonl');
+      const root = '/p/empresa-á';
+      // O primeiro byte do "á" do segundo cwd cai no último byte do primeiro bloco (4 MiB).
+      const second = `{"cwd":"${root}"}\n`;
+      const offsetOfA = Buffer.byteLength('{"cwd":"/p/empresa-');
+      const head = `${JSON.stringify({ cwd: root, pad: '' })}\n`;
+      const pad = 'x'.repeat(4 * 1024 * 1024 - 1 - offsetOfA - Buffer.byteLength(head));
+      writeFileSync(path, `${JSON.stringify({ cwd: root, pad })}\n${second}`);
+      expect(fileScope(path, (c) => c.startsWith(root)).status).toBe('in');
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
   it('um "cwd" cortado na divisa dos blocos de leitura (mesmo com muito espaço antes do valor) ainda é achado', () => {
     const tmp = tempDir();
     try {
