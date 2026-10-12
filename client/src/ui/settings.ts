@@ -3,6 +3,7 @@ import type { UiComponent, UiContext } from './context';
 import { h, iconButton, setAttr, setHidden, setText } from './dom';
 import { ICONS } from './icons';
 import { notificationState, type Notifier } from './notify';
+import { DEMO_SESSIONS_DEFAULT, DEMO_SESSIONS_MAX, DEMO_SESSIONS_MIN, demoSessionsFrom } from './overlays';
 import type { UiPrefs } from './prefs';
 import { SoundSettingsGroup } from './settings-sound';
 import type { SoundControl } from './sound';
@@ -63,6 +64,7 @@ export class SettingsPopover implements UiComponent {
   private daylight: ReturnType<typeof segmented<UiPrefs['daylight']>>;
   private soundGroup: SoundSettingsGroup;
   private demoGroup: HTMLElement;
+  private demoSessions: HTMLInputElement;
   private about: AboutGroup;
   private demoBusy = false;
   private anchor: HTMLElement | null = null;
@@ -109,11 +111,22 @@ export class SettingsPopover implements UiComponent {
     this.daylight.row.append(h('span', { class: 'ui-set__hint', text: 'Automático: céu, luzes e sol nas janelas seguem a hora local.' }));
     this.soundGroup = new SoundSettingsGroup(ctx, sound);
 
+    this.demoSessions = h('input', {
+      class: 'ui-set__num',
+      attrs: { type: 'number', min: String(DEMO_SESSIONS_MIN), max: String(DEMO_SESSIONS_MAX), step: '1', value: String(DEMO_SESSIONS_DEFAULT), inputmode: 'numeric', id: 'ui-set-demo-sessions' },
+      on: { change: () => void this.applyDemoSessions() },
+    }) as HTMLInputElement;
     this.demoGroup = h(
       'div',
       { class: 'ui-set-group' },
       h('h3', { text: 'Dados' }),
       sw('demo', 'Modo demonstração', 'Coloca agentes fictícios no escritório, junto com os reais.', () => void this.toggleDemo()),
+      h(
+        'div',
+        { class: 'ui-set' },
+        h('div', { class: 'ui-set__text' }, h('label', { class: 'ui-set__label', text: 'Sessões da demonstração', attrs: { for: 'ui-set-demo-sessions' } }), h('span', { class: 'ui-set__hint', text: `Quantas sessões fictícias manter abertas (${DEMO_SESSIONS_MIN} a ${DEMO_SESSIONS_MAX}). Vale ao ligar e, já ligado, ao mudar o número.` })),
+        this.demoSessions,
+      ),
     );
 
     this.about = new AboutGroup(ctx);
@@ -197,6 +210,7 @@ export class SettingsPopover implements UiComponent {
       setAttr(r.btn, 'aria-checked', String(on));
       r.btn.disabled = key === 'demo' && this.demoBusy;
     }
+    this.demoSessions.disabled = this.demoBusy;
     this.bubbles.set(p.bubbles);
     this.liveliness.set(p.liveliness);
     this.daylight.set(p.daylight);
@@ -232,8 +246,32 @@ export class SettingsPopover implements UiComponent {
     this.render();
     const enable = !this.ctx.store.snapshot?.meta.demo;
     try {
-      const ok = await this.ctx.store.setDemo(enable);
+      const ok = await this.ctx.store.setDemo(enable, enable ? this.sessionsValue() : undefined);
       this.ctx.announce(ok ? (enable ? 'Modo demonstração ligado.' : 'Modo demonstração desligado.') : 'Não foi possível mudar o modo demonstração.');
+    } catch {
+      this.ctx.announce('Não foi possível falar com o servidor.');
+    } finally {
+      this.demoBusy = false;
+      this.ctx.invalidate();
+    }
+  }
+
+  /** Número do campo, normalizado (1..40; vazio ou inválido vira o padrão) e devolvido ao campo. */
+  private sessionsValue(): number {
+    const n = demoSessionsFrom(this.demoSessions.value);
+    this.demoSessions.value = String(n);
+    return n;
+  }
+
+  /** Mudou o número com a demonstração ligada: ajusta o alvo no servidor na hora. */
+  private async applyDemoSessions(): Promise<void> {
+    const n = this.sessionsValue();
+    if (!this.ctx.store.snapshot?.meta.demo || this.demoBusy) return;
+    this.demoBusy = true;
+    this.render();
+    try {
+      const ok = await this.ctx.store.setDemo(true, n);
+      this.ctx.announce(ok ? `Demonstração com ${n} ${n === 1 ? 'sessão' : 'sessões'}.` : 'Não foi possível mudar o número de sessões.');
     } catch {
       this.ctx.announce('Não foi possível falar com o servidor.');
     } finally {

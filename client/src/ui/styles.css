@@ -3305,6 +3305,29 @@
   opacity: 0.6;
 }
 
+/* Campo numérico das configurações (sessões da demonstração), no mesmo estilo do cartão de vazio. */
+.ui-set__num {
+  flex: none;
+  width: 64px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ui-text);
+  font: 600 13px var(--font-ui);
+  text-align: center;
+}
+
+.ui-root .ui-set__num:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.ui-set__num:disabled {
+  opacity: 0.6;
+}
+
 .ui-splash {
   position: fixed;
   inset: 0;

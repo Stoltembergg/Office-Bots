@@ -34,7 +34,8 @@ do meio (0.**3**.0).
 - **Terreno sem fim.** Além da área externa calculada, o gramado, as ruas (com calçadas, asfalto e faixa tracejada)
   e as árvores continuam até onde a câmera for, em qualquer zoom; os carros nunca andam fora do asfalto.
 - **Demonstração com número de sessões.** O cartão "O escritório está vazio" pergunta quantas sessões a
-  demonstração deve manter abertas (1 a 40, padrão 4) ao lado de "Ver demonstração". `POST /api/demo` aceita
+  demonstração deve manter abertas (1 a 40, padrão 4) ao lado de "Ver demonstração", e Configurações › Dados tem o
+  mesmo campo ("Sessões da demonstração"): vale ao ligar e, já ligada, ao mudar o número. `POST /api/demo` aceita
   `sessions` (inteiro de 0 a 40): ligando, o simulador nasce com esse alvo; já ligado, só ajusta.
 
 ### Alterado
