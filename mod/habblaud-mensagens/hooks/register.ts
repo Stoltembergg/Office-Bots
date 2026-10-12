@@ -284,10 +284,13 @@ async function round($: EngineInterface): Promise<void> {
     if (!surfaces.length) return
     const e = await readEnv($)
     const session = await $.session.id()
+    // As portas são perguntadas juntas (uma travada não atrasa as outras); a entrega segue em ordem, uma por vez.
     // Uma instância no ar basta para seguir no ritmo de 2 s; todas fora do ar, recua para 30 s.
+    const body = inboxBody(session, e.accountId)
+    const answers = await Promise.all(e.ports.map((port) => postJson($, port, '/api/mod/inbox', body)))
     let online = false
-    for (const port of e.ports) {
-      const res = await postJson($, port, '/api/mod/inbox', inboxBody(session, e.accountId))
+    for (const [i, port] of e.ports.entries()) {
+      const res = answers[i]
       const messages = res?.ok ? parseInbox(res.text) : undefined
       if (!messages) continue
       online = true

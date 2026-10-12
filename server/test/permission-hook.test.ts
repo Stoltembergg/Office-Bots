@@ -211,6 +211,20 @@ describe('permission-hook.mjs: uma instância por pasta (~/.habblaud/instances.j
     }
   });
 
+  it('instância da pasta fora do ar (registro velho): tenta a porta padrão antes de desistir', async () => {
+    srv = await servePermissions();
+    const tmp = tempDir();
+    try {
+      mkdirSync(join(tmp.dir, '.habblaud'));
+      writeFileSync(join(tmp.dir, '.habblaud', 'instances.json'), JSON.stringify({ instances: [{ name: 'p', port: 1, roots: ['/p'] }] }));
+      const run = runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: tmp.dir });
+      expect(srv.registry!.decide(await pendingId(srv), { behavior: 'allow' })).toBe('ok');
+      expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'allow' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
   it('portForCwd: a pasta mais específica vence; fora de todas (ou arquivo estranho) = a porta padrão', () => {
     const instances = { instances: [{ name: 'a', port: 4801, roots: ['/Users/eu/Claude/empresa-a/'] }, { name: 'app', port: 4802, roots: ['/Users/eu/Claude/empresa-a/app'] }] };
     expect(portForCwd('/Users/eu/Claude/empresa-a/site', instances, 4747)).toBe(4801);
@@ -219,6 +233,8 @@ describe('permission-hook.mjs: uma instância por pasta (~/.habblaud/instances.j
     expect(portForCwd(undefined, instances, 4747)).toBe(4747);
     expect(portForCwd('/x', { instances: [{ port: 'x', roots: ['/x'] }, null] }, 4747)).toBe(4747);
     expect(portForCwd('/x', 'lixo', 4747)).toBe(4747);
+    // `..` conta pelo destino.
+    expect(portForCwd('/Users/eu/Claude/empresa-a/../empresa-b', instances, 4747)).toBe(4747);
   });
 });
 

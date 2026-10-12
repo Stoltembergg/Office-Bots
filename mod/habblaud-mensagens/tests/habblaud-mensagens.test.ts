@@ -119,6 +119,17 @@ describe('rodadas', () => {
     expect(w.texts()).toEqual(['oi'])
   })
 
+  test('várias portas: uma travada não atrasa a pergunta às outras', async ($, on) => {
+    const other = 'http://127.0.0.1:4851/api/mod/inbox'
+    const w = world(on, {
+      env: { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude-conta2', HABBLAUD_PORT: PORT, HABBLAUD_PORTS: '4851' },
+      inbox: (url) => (url === INBOX_URL ? 'hang' : []),
+    })
+    await $.session.start(START)
+    await w.clock.advance(2_000)
+    expect(w.sent.map((s) => s.url)).toEqual([INBOX_URL, other])
+  })
+
   test('entrega na ordem, como se você tivesse digitado (texto intacto), e confirma tudo num POST só', async ($, on) => {
     const typed = '  e depois:\n- abre o PR\n\n(sem pressa)  '
     const w = world(on, { inbox: batches([{ id: 'm1', text: 'roda os testes' }, { id: 'm2', text: typed }]) })

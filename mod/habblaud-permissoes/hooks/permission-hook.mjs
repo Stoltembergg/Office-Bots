@@ -29,7 +29,7 @@
 // decidir). Só fala com 127.0.0.1. HABBLAUD_HOOK_DEBUG=1 escreve o que acontece no stderr.
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 4747;
@@ -72,7 +72,8 @@ export function parseOptions(argv, env = process.env) {
  */
 export function portForCwd(cwd, instances, fallback) {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) return fallback;
-  const norm = (p) => p.replace(/\/{2,}/g, '/').replace(/(.)\/+$/, '$1');
+  // `..` e `.` contam pelo destino (posix.normalize), como no servidor (inRoots).
+  const norm = (p) => posix.normalize(p).replace(/(.)\/+$/, '$1');
   const c = norm(cwd);
   const list = instances && typeof instances === 'object' && Array.isArray(instances.instances) ? instances.instances : [];
   let port = fallback;
@@ -249,9 +250,15 @@ export async function run(argv = process.argv.slice(2), env = process.env, stdin
     if (input.hook_event_name !== undefined && input.hook_event_name !== 'PermissionRequest') return undefined;
 
     const port = portForCwd(input.cwd, readInstances(env.HOME || homedir()), opts.port);
-    const base = `http://127.0.0.1:${port}`;
+    let base = `http://127.0.0.1:${port}`;
     const deadline = Date.now() + opts.timeoutMs;
-    const reg = await call(base, 'POST', '/api/permissions', requestBody(input, opts.timeoutMs), REGISTER_TIMEOUT_MS);
+    const body = requestBody(input, opts.timeoutMs);
+    let reg = await call(base, 'POST', '/api/permissions', body, REGISTER_TIMEOUT_MS);
+    // A instância da pasta não respondeu (registro velho de um container parado): vale a porta de sempre.
+    if (!reg && port !== opts.port) {
+      base = `http://127.0.0.1:${opts.port}`;
+      reg = await call(base, 'POST', '/api/permissions', body, REGISTER_TIMEOUT_MS);
+    }
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {
       debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Habblaud fora do ar'})`);
       return undefined;

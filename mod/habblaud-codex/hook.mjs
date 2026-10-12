@@ -28,7 +28,7 @@
 // HABBLAUD_HOOK_DEBUG=1 escreve o que acontece no stderr.
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 4747;
@@ -73,7 +73,8 @@ function expandHome(p, home) {
  */
 export function portForCwd(cwd, instances, fallback) {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) return fallback;
-  const norm = (p) => p.replace(/\/{2,}/g, '/').replace(/(.)\/+$/, '$1');
+  // `..` e `.` contam pelo destino (posix.normalize), como no servidor (inRoots).
+  const norm = (p) => posix.normalize(p).replace(/(.)\/+$/, '$1');
   const c = norm(cwd);
   const list = instances && typeof instances === 'object' && Array.isArray(instances.instances) ? instances.instances : [];
   let port = fallback;
@@ -250,8 +251,16 @@ export async function run(env = process.env, stdinText) {
     const cfg = readConfig(env);
     const codexHome = codexHomeOf(env, input);
     const account = accountOf(codexHome);
-    const base = `http://127.0.0.1:${portForCwd(input.cwd, readInstances(env.HOME || homedir()), cfg.port)}`;
-    const sent = await call(base, 'POST', '/api/codex/events', eventBody(input, account, codexHome), event === 'SessionEnd' ? SESSION_END_TIMEOUT_MS : EVENT_TIMEOUT_MS);
+    const port = portForCwd(input.cwd, readInstances(env.HOME || homedir()), cfg.port);
+    let base = `http://127.0.0.1:${port}`;
+    const body = eventBody(input, account, codexHome);
+    const timeout = event === 'SessionEnd' ? SESSION_END_TIMEOUT_MS : EVENT_TIMEOUT_MS;
+    let sent = await call(base, 'POST', '/api/codex/events', body, timeout);
+    // A instância da pasta não respondeu (registro velho de um container parado): vale a porta de sempre.
+    if (!sent && port !== cfg.port) {
+      base = `http://127.0.0.1:${cfg.port}`;
+      sent = await call(base, 'POST', '/api/codex/events', body, timeout);
+    }
     debug(`${event}: ${sent ? `${sent.status} ${JSON.stringify(sent.json ?? null)}` : 'Habblaud fora do ar'}`);
     if (event !== 'PermissionRequest' || typeof input.tool_name !== 'string' || !input.tool_name) return undefined;
     // Sem resposta nem ao evento: o Habblaud está fora do ar (ou travado); a aprovação segue no terminal.

@@ -241,6 +241,14 @@ instância da pasta da sessão. As mensagens pelo escritório precisam saber as 
 `"HABBLAUD_PORTS": "4801,4802"` ao `env` do `settings.json` de cada conta. Com o Codex no Docker, rode um
 `npm run codex:bridge -- --port <porta>` por instância. Sem `HABBLAUD_INSTANCE`, tudo segue como antes.
 
+Cada instância precisa de `HABBLAUD_PROJECT_ROOTS` e de uma porta só dela (o `docker:up` recusa o contrário). Se a
+instância de sempre (sem `HABBLAUD_INSTANCE`) também estiver no ar, dê a ela as pastas que sobram: sem filtro ela mostra
+as sessões das outras pastas também, mas os pedidos de permissão delas vão só para a instância da pasta. Uma instância
+fora do ar faz o hook tentar a porta de sempre antes de deixar o pedido no terminal. O `~/.habblaud/instances.json`
+decide para onde vão os pedidos: quem pode mudá-lo é quem já pode abrir o Habblaud nesta máquina (veja
+[Segurança](#privacidade-e-segurança)). O roteamento por pasta usa caminhos com `/` (macOS e Linux); no Windows os pedidos vão para a
+porta de sempre.
+
 ### Abrir no celular (opcional)
 
 Por padrão o Habblaud só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:

@@ -13,6 +13,7 @@ import {
   envFileKeys,
   hostTimeZone,
   instanceNames,
+  instanceProblem,
   instancesWith,
   parseArgs,
   planCodexMounts,
@@ -245,6 +246,26 @@ describe('docker-up: uma instância por pasta (HABBLAUD_INSTANCE)', () => {
 
   it('nome inválido (vira nome de container, de arquivo e de domínio .localhost): erro', () => {
     for (const bad of ['Empresa A', '../x', '-a', 'a_b', 'x'.repeat(41)]) expect(() => instanceNames({ HABBLAUD_INSTANCE: bad })).toThrow(/HABBLAUD_INSTANCE/);
+  });
+
+  it('docker:down só precisa do projeto (o override pode ter sumido)', () => {
+    const names = instanceNames({ HABBLAUD_INSTANCE: 'empresa-a' });
+    expect(composeArgs(names, ['down'], false)).toEqual(['-p', 'habblaud-empresa-a', '-f', 'docker-compose.yml', 'down']);
+  });
+
+  it('antes de subir: instância sem pasta, porta de outra instância ou porta já ocupada por outro Habblaud = erro', () => {
+    const a = instanceNames({ HABBLAUD_INSTANCE: 'empresa-a' });
+    const plain = instanceNames({});
+    const reg = { instances: [{ name: 'empresa-b', port: 4802, roots: ['/b'] }, { name: 'empresa-a', port: 4801, roots: ['/a'] }] };
+    expect(instanceProblem(a, 4801, [], reg, false)).toMatch(/HABBLAUD_PROJECT_ROOTS/);
+    expect(instanceProblem(a, 4802, ['/a'], reg, true)).toMatch(/empresa-b/);
+    expect(instanceProblem(plain, 4802, [], reg, false)).toMatch(/empresa-b/);
+    // Subir de novo a mesma instância na mesma porta (já no ar): ok.
+    expect(instanceProblem(a, 4801, ['/a'], reg, true)).toBeUndefined();
+    // Porta respondendo e sem ser desta instância: outro Habblaud (a padrão, por exemplo).
+    expect(instanceProblem(a, 4747, ['/a'], reg, true)).toMatch(/4747/);
+    expect(instanceProblem(a, 4811, ['/a'], reg, false)).toBeUndefined();
+    expect(instanceProblem(plain, 4747, [], reg, true)).toBeUndefined();
   });
 
   it('registro das instâncias (~/.habblaud/instances.json): entra ou troca pelo nome; sem porta, sai', () => {
