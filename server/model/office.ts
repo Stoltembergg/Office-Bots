@@ -793,7 +793,7 @@ export class Office {
   setDemo(enabled: boolean, sessions?: number): void {
     if (enabled === this.isDemo()) {
       if (enabled && this.demo && sessions !== undefined && sessions !== this.demo.sessions()) {
-        this.demo.setSessions(sessions);
+        this.demo.setSessions(sessions, this.now());
         this.demoSnap = this.demo.snapshot(this.now());
         this.markDirty();
       }

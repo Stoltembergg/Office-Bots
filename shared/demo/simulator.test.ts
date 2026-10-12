@@ -193,4 +193,16 @@ describe('DemoSimulator: Codex', () => {
     // Entrou depois do fim de um turno (o Codex só usa a fila com a sessão ociosa).
     expect(['done', 'communicate']).toContain(statusAtDelivery);
   });
+
+  it('setSessions com now abre de uma vez as sess�es que faltam', () => {
+    const sim = new DemoSimulator({ seed: 3, idPrefix: 'demo:', sessions: 4 }, 1_000);
+    const mains = () => sim.snapshot(1_000).agents.filter((a) => a.kind === 'main').length;
+    const antes = mains();
+    sim.setSessions(12, 1_000);
+    expect(sim.sessions()).toBe(12);
+    expect(mains()).toBe(12);
+    expect(antes).toBeLessThan(12);
+    sim.setSessions(5, 1_000);
+    expect(mains()).toBe(12);
+  });
 });

@@ -304,8 +304,12 @@ export class DemoSimulator {
   }
 
   /** Muda quantas sessões principais manter abertas (o gerador de timelapse varia isso ao longo do dia). */
-  setSessions(n: number): void {
+  setSessions(n: number, now?: number): void {
     this.target = Math.max(0, Math.floor(n));
+    if (now === undefined) return;
+    // Com `now`, as que faltam abrem de uma vez (senão o tick abriria uma a cada 25-70 s).
+    const open = [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.phase !== 'leaving').length;
+    for (let i = open; i < this.target; i++) this.spawnSession(now, false);
   }
 
   /**
