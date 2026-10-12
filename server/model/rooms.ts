@@ -22,8 +22,11 @@ export function inRoots(cwd: string, roots: readonly string[]): boolean {
   });
 }
 
-/** Todo `"cwd"` de um texto de JSONL (Claude Code: em cada linha; Codex: session_meta, turn_context e comandos). */
-const CWD_RE = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/g;
+/**
+ * Todo `"cwd"` de um texto de JSONL (Claude Code: em cada linha; Codex: session_meta, turn_context e comandos) e todo
+ * `"current_dir"` (Grok: a pasta onde um comando rodou, no resultado dele).
+ */
+const CWD_RE = /"(?:cwd|current_dir)"\s*:\s*("(?:[^"\\]|\\.)*")/g;
 
 /**
  * Os cwds citados no texto, já como caminho (uma URI file:// do Codex vira o caminho dela). Busca no texto cru, sem
@@ -32,7 +35,7 @@ const CWD_RE = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/g;
  * ("cwd", sem escapes); é o que o Claude Code e o Codex gravam.
  */
 export function cwdsInText(text: string): string[] {
-  if (!text.includes('"cwd"')) return [];
+  if (!text.includes('"cwd"') && !text.includes('"current_dir"')) return [];
   const out: string[] = [];
   for (const m of text.matchAll(CWD_RE)) {
     let v: unknown;

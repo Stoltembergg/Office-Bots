@@ -323,10 +323,15 @@ export class TerminalStreams {
     return office.scoped ? office.inScope : undefined;
   }
 
-  /** Pasta da sala do agente (o cwd com que ele entrou no escritório). */
+  /**
+   * Pasta da sala de um agente do Grok, a única ferramenta cuja conversa pode não ter nenhum `cwd` (a fonte dele
+   * confere a pasta pela lista de sessões abertas e pelo summary.json). Claude Code e Codex sempre gravam a pasta: um
+   * arquivo deles sem nenhuma continua recusado (pode ser outro arquivo no lugar do transcript).
+   */
   private agentCwd(agentId: string): string | undefined {
-    const room = this.opts.office.get(agentId)?.roomId;
-    return room === undefined ? undefined : this.opts.office.roomPath(room);
+    const agent = this.opts.office.get(agentId);
+    if (!agent || agent.provider !== 'grok') return undefined;
+    return this.opts.office.roomPath(agent.roomId);
   }
 
   /** Fonte da conversa do agente, ou a mensagem do 404. */

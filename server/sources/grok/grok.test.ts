@@ -1,6 +1,6 @@
 // Fonte do Grok: um GROK_HOME temporário (active_sessions.json, sessions/<cwd>/<id>/updates.jsonl e summary.json
 // sintéticos), o AccountsService e o Office; mais o parser das linhas, o terminal e o histórico.
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -12,7 +12,7 @@ import { Office } from '../../model/office';
 import { HistorySet } from '../source';
 import { discoverGrokDir, findSessionDir, readActiveSessions, readSummary } from './files';
 import { GrokHistory } from './history';
-import { GrokSource } from './source';
+import { grokPidAlive, GrokSource } from './source';
 import { createGrokState, createGrokTerminalParser, parseGrokLine } from './updates';
 
 setQuiet(true);
@@ -255,5 +255,131 @@ describe('Grok: histórico do terminal', () => {
     expect('path' in set.resolve('.grok', S1)).toBe(true);
     expect(set.resolve('.grok', S2)).toEqual({ status: 404, error: 'sessão não encontrada' });
     expect(set.resolve('.grok', '../x')).toMatchObject({ status: 400 });
+  });
+});
+
+describe('Grok: verificação cruzada (achados do Codex)', () => {
+  it('mesmo id em outra pasta nunca serve; id ambíguo sem cwd = nada; cwd relativo recusado', () => {
+    const home = grokHome();
+    home.session(S1, OTHER, [prompt('PRIVADO', Date.now())]);
+    expect(findSessionDir(home.dir, S1, CWD)).toBeUndefined();
+    expect(findSessionDir(home.dir, S1)).toBeDefined();
+    home.session(S1, CWD, [prompt('dentro', Date.now())]);
+    expect(findSessionDir(home.dir, S1)).toBeUndefined();
+    expect(findSessionDir(home.dir, S1, '..')).toBeUndefined();
+    writeFileSync(join(home.dir, 'active_sessions.json'), JSON.stringify([{ session_id: S2, pid: 1, cwd: '..' }, { session_id: S1, pid: 1, cwd: '/a/../b' }]));
+    expect(readActiveSessions(home.dir)).toEqual([]);
+  });
+
+  it('sessão registrada numa pasta com a conversa só em outra não entra (nem o título)', () => {
+    const ctx = setup({ projectRoots: ['/work/acme'] });
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, OTHER, [prompt('PRIVADO', ctx.now())]);
+    ctx.source.start();
+    const a = ctx.agent();
+    expect(a?.title).toBeUndefined();
+    expect(JSON.stringify(ctx.office.commit().snapshot)).not.toContain('PRIVADO');
+    expect(ctx.source.transcriptPathOf(KEY)).toBeUndefined();
+  });
+
+  it('a mesma sessão mudando de pasta no registro: sai na hora se a nova for de fora', () => {
+    const ctx = setup({ projectRoots: ['/work/acme'] });
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, CWD, [prompt('dentro', ctx.now())]);
+    ctx.source.start();
+    expect(ctx.agent()).toBeDefined();
+    ctx.home.active([{ id: S1, cwd: OTHER }]);
+    ctx.poll();
+    expect(ctx.agent()).toBeUndefined();
+  });
+
+  it('updates.jsonl como link para fora de sessions/ é ignorado (fonte e histórico)', () => {
+    const ctx = setup();
+    const d = ctx.home.session(S1, CWD, []);
+    const outside = join(ctx.home.dir, 'fora.jsonl');
+    writeFileSync(outside, `${prompt('SEGREDO_FORA', ctx.now())}\n`);
+    rmSync(join(d, 'updates.jsonl'));
+    symlinkSync(outside, join(d, 'updates.jsonl'));
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.source.start();
+    expect(ctx.source.transcriptPathOf(KEY)).toBeUndefined();
+    const hist = new GrokHistory({ account: () => ({ id: '.grok', dir: ctx.home.dir }), openAgentOf: () => undefined });
+    expect(hist.resolve('.grok', S1)).toMatchObject({ status: 404 });
+  });
+
+  it('segredos: título do resumo, nome de ferramenta sem metadado e chave xai- solta saem mascarados', () => {
+    const home = grokHome();
+    const d = home.session(S1, CWD, [], { generated_title: 'deploy com ghp_abcdefghijklmnopqrstuvwxyz0123456789' });
+    expect(readSummary(d).title).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+    const key = `xai-${'a1B2'.repeat(20)}`;
+    const t = createGrokTerminalParser(() => 0);
+    const noName = line({ sessionUpdate: 'tool_call', toolCallId: 'c9', title: `curl -H 'X: ${key}' https://x`, rawInput: { command: `curl ${key}` } }, 1_000);
+    const out = JSON.stringify([...t.push(noName), ...t.push(prompt(`minha chave é ${key}`, 2_000))]);
+    expect(out).not.toContain(key);
+    const s = createGrokState();
+    const r = parseGrokLine(s, noName, { idPrefix: 'k', now: 0 });
+    expect(r.activities[0].activity.tool).toBe('ferramenta');
+    expect(JSON.stringify(r)).not.toContain(key);
+  });
+
+  it('histórico: conversa que passou por outra pasta fica fora da lista; sem cwd no resumo vale a do grupo', async () => {
+    const home = grokHome();
+    const t0 = Date.now();
+    home.session(S1, CWD, [line({ sessionUpdate: 'task_backgrounded', cwd: OTHER }, t0), prompt('x', t0)]);
+    home.session(S2, CWD, [prompt('ok', t0)], { info: { id: S2 } });
+    const inScope = (p: string) => p.startsWith('/work/acme/');
+    const set = new HistorySet([new GrokHistory({ account: () => ({ id: '.grok', dir: home.dir }), openAgentOf: () => undefined, inScope })], undefined, inScope);
+    expect((await set.list()).map((x) => x.sessionId)).toEqual([S2]);
+    expect('path' in set.resolve('.grok', S2)).toBe(true);
+  });
+
+  it('Docker: sem summary.json ainda (pode ser um grok -p) a sessão espera', () => {
+    const ctx = setup({ inDocker: true });
+    const d = ctx.home.session(S1, CWD, [prompt('oi', ctx.now())]);
+    rmSync(join(d, 'summary.json'));
+    ctx.source.start();
+    expect(ctx.agent()).toBeUndefined();
+  });
+
+  it('resultados reais: rawOutput (ListDir) e diff do search_replace; o terminal mantém as quebras de linha', () => {
+    const t = createGrokTerminalParser(() => 0);
+    const listDir = line({ sessionUpdate: 'tool_call_update', toolCallId: 'l1', status: 'completed', rawOutput: { type: 'ListDir', Content: { content: 'a.ts\nb.ts' } } }, 1_000);
+    expect(t.push(listDir)).toMatchObject([{ kind: 'result', text: 'a.ts\nb.ts' }]);
+    const diff = line({ sessionUpdate: 'tool_call_update', toolCallId: 'e1', status: 'completed', content: [{ type: 'diff', path: '/w/a.ts', oldText: 'x', newText: 'y' }] }, 2_000);
+    expect(t.push(diff)).toMatchObject([{ kind: 'result', text: '/w/a.ts\n- x\n+ y' }]);
+    expect(t.push(prompt('linha 1\n  linha 2', 3_000))).toMatchObject([{ kind: 'user', text: 'linha 1\n  linha 2' }]);
+  });
+
+  it('janela sem a instrução, mas com ferramenta recente: trabalhando', () => {
+    const ctx = setup();
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, CWD, [tool('c1', 'read_file', { target_file: `${CWD}/a.ts` }, ctx.now() - 1_000)]);
+    ctx.source.start();
+    expect(ctx.agent()?.status).toBe('working');
+  });
+
+  it('pid vivo de outro programa não conta como sessão do Grok', () => {
+    expect(grokPidAlive(process.pid)).toBe(false);
+  });
+
+  it('current_dir de outra pasta num resultado do Bash tira a sessão', () => {
+    const ctx = setup({ projectRoots: ['/work/acme'] });
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, CWD, [prompt('dentro', ctx.now())]);
+    ctx.source.start();
+    expect(ctx.agent()).toBeDefined();
+    ctx.home.append(S1, CWD, [line({ sessionUpdate: 'tool_call_update', toolCallId: 'b1', status: 'completed', rawOutput: { type: 'Bash', current_dir: OTHER, output: 'PRIVADO' } }, ctx.now() + 1)]);
+    ctx.advance(1_000);
+    ctx.poll();
+    expect(ctx.agent()).toBeUndefined();
+  });
+
+  it('linha repetida (mesmo eventId) não conta duas vezes nos números', () => {
+    const s = createGrokState();
+    const ctx = { idPrefix: 'k', now: 0 };
+    const tc = tool('c1', 'grep', { pattern: 'x' }, 1_000);
+    const done = turnDone(2_000);
+    for (const l of [tc, tc, done, done]) parseGrokLine(s, l, ctx);
+    expect(s.stats).toMatchObject({ toolCalls: 1, tokensIn: 100, tokensOut: 20 });
   });
 });

@@ -145,6 +145,9 @@ describe('docker-up', () => {
     expect(planGrokMount({ HABBLAUD_GROK: '0' }, '/Users/fulano', (p) => p)).toBeUndefined();
     expect(planGrokMount({ GROK_HOME: '~/g' }, '/Users/fulano', (p) => p)?.hostDir).toBe('/Users/fulano/g');
     expect(planGrokMount({}, '/Users/fulano', () => undefined)).toBeUndefined();
+    // sessions -> . (ou uma pasta acima): montaria a pasta inteira do Grok, com auth.json.
+    expect(planGrokMount({}, '/Users/fulano', (p) => (p.endsWith('/sessions') ? '/Users/fulano/.grok' : p))).toBeUndefined();
+    expect(planGrokMount({}, '/Users/fulano', (p) => (p.endsWith('/sessions') ? '/Users' : p))).toBeUndefined();
     const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
     const yml = renderOverride(mounts, new Date(0), undefined, undefined, [], [], grok);
     expect(yml).toContain('HABBLAUD_GROK_DIR: "/grok"');

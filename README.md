@@ -511,7 +511,7 @@ título, modelo, tokens, terminal e histórico. O chip da conta é vazado e leva
   conta dele fica fora do painel de uso). Um pedido de aprovação aberto não levanta a mão do personagem: ele fica
   "trabalhando" até o turno terminar.
 - Sessões do `grok -p` (sem o TUI) e de subagentes não entram no escritório; as de subagente também ficam fora do
-  histórico.
+  histórico. Uma sessão só conta como aberta enquanto o processo dela é mesmo o `grok`.
 - **No Docker** o `docker:up` monta só `~/.grok/sessions`, somente leitura. Lá dentro a lista das sessões abertas não
   serve (o Grok a troca por outro arquivo a cada mudança), então vale a conversa modificada nos últimos 30 minutos:
   uma sessão fechada leva até 30 minutos para sair, e uma aberta e parada há mais que isso some até a próxima escrita.
@@ -637,7 +637,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH (no Windows, `codex.exe`) | O binário do Codex que entrega as mensagens (`codex queue`), no modo Node ou no `npm run codex:bridge`. |
 | `HABBLAUD_GROK` | ligado | `0` desliga o Grok no escritório. A pasta vem de `GROK_HOME` (padrão `~/.grok`). |
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
-| `HABBLAUD_PROJECT_ROOTS` | todas as pastas | Só mostra as sessões abertas nessas pastas (ou dentro delas), separadas por vírgula; `~` vale. Ex.: `~/Claude/empresa-a`. O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. A comparação é pelo caminho como a ferramenta o grava (com `..` resolvido, sem seguir links, diferenciando maiúsculas), e qualquer campo `cwd` da conversa conta: um argumento de ferramenta com esse nome apontando para outra pasta também tira a sessão. As contas (nome e pasta de configuração) continuam aparecendo. |
+| `HABBLAUD_PROJECT_ROOTS` | todas as pastas | Só mostra as sessões abertas nessas pastas (ou dentro delas), separadas por vírgula; `~` vale. Ex.: `~/Claude/empresa-a`. O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. A comparação é pelo caminho como a ferramenta o grava (com `..` resolvido, sem seguir links, diferenciando maiúsculas), e qualquer campo `cwd` (ou `current_dir`, do Grok) da conversa conta: um argumento de ferramenta com esse nome apontando para outra pasta também tira a sessão. As contas (nome e pasta de configuração) continuam aparecendo. |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,

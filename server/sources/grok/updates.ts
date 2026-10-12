@@ -9,7 +9,7 @@
 // Daqui saem as atividades do agente (parseGrokLine) e o terminal (createGrokTerminalParser).
 import { describePrompt, describeTool, maskSecrets, SPECIAL, truncate, type ActivityDescription } from '../../../shared/activity';
 import type { Activity, AgentStats, TaskItem, TaskStatus, TerminalEntry } from '../../../shared/types';
-import { INPUT_MAX, RESULT_MAX, RESULT_MAX_LINES, TEXT_MAX, THINKING_MAX, TITLE_ARG_MAX, type TerminalParser } from '../terminal';
+import { INPUT_MAX, marked, oneLine, prepare, RESULT_MAX, RESULT_MAX_LINES, TEXT_MAX, THINKING_MAX, TITLE_ARG_MAX, type TerminalParser } from '../terminal';
 
 type Rec = Record<string, unknown>;
 
@@ -30,7 +30,15 @@ export interface GrokUpdate {
   type: string;
   update: Rec;
   at: number;
-  eventId?: string;
+  /** `_meta.eventId`; sem ele, um hash da linha inteira (duas linhas iguais = o mesmo evento). */
+  eventId: string;
+}
+
+/** Hash curto (FNV-1a) de uma linha, para o id de um evento sem `eventId`. */
+function lineHash(line: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < line.length; i++) h = Math.imul(h ^ line.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
 }
 
 export function readUpdate(line: string, now: number): GrokUpdate | undefined {
@@ -49,14 +57,16 @@ export function readUpdate(line: string, now: number): GrokUpdate | undefined {
   const ms = num(meta?.agentTimestampMs);
   const secs = num(o.timestamp);
   const at = ms ?? (secs !== undefined ? (secs < 1e12 ? secs * 1000 : secs) : now);
-  const eventId = str(meta?.eventId);
-  return eventId ? { type, update, at, eventId } : { type, update, at };
+  return { type, update, at, eventId: str(meta?.eventId) ?? `${type}:${at}:${line.length}:${lineHash(line)}` };
 }
 
-/** Nome da ferramenta do Grok (`_meta["x.ai/tool"].name`; senão o título). */
+/**
+ * Nome da ferramenta do Grok (`_meta["x.ai/tool"].name`, que é um identificador). Sem ele, um rótulo fixo: o título
+ * pode ser o próprio comando (com um token no meio) e não serve de nome.
+ */
 export function toolName(u: Rec): string {
-  const meta = rec(rec(u._meta)?.['x.ai/tool']);
-  return str(meta?.name) ?? str(u.title) ?? 'ferramenta';
+  const name = str(rec(rec(u._meta)?.['x.ai/tool'])?.name);
+  return name && /^[A-Za-z0-9_.:-]{1,64}$/.test(name) ? name : 'ferramenta';
 }
 
 /** Ferramentas do Grok no vocabulário do Claude Code (o que describeTool e o terminal já sabem descrever). */
@@ -130,10 +140,12 @@ export interface GrokState {
   stats: AgentStats;
   /** Ferramentas abertas (toolCallId → id da atividade), para marcar erro no resultado. */
   open: Map<string, string>;
+  /** Eventos já aplicados: uma linha repetida não conta duas vezes nos números. */
+  seen: Set<string>;
 }
 
 export function createGrokState(): GrokState {
-  return { tasks: [], stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 }, open: new Map() };
+  return { tasks: [], stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 }, open: new Map(), seen: new Set() };
 }
 
 export type GrokSignal = { type: 'turnStart' } | { type: 'turnEnd' } | { type: 'progress' };
@@ -153,13 +165,17 @@ function describeGrokPrompt(text: string): ActivityDescription {
 }
 
 const OPEN_MAX = 256;
+const SEEN_MAX = 20_000;
 
 export function parseGrokLine(s: GrokState, line: string, ctx: { idPrefix: string; now: number }): GrokLineResult {
   const out: GrokLineResult = { activities: [], signals: [], changed: false, at: ctx.now };
   const u = readUpdate(line, ctx.now);
   if (!u) return out;
   out.at = u.at;
-  const key = u.eventId ?? `${u.type}:${u.at}`;
+  const key = u.eventId;
+  if (s.seen.has(key)) return out;
+  s.seen.add(key);
+  if (s.seen.size > SEEN_MAX) s.seen.delete(s.seen.values().next().value as string);
   const push = (desc: ActivityDescription & { tool?: string; error?: boolean }, id = key, current = true) =>
     out.activities.push({ activity: { id: `${ctx.idPrefix}#${id}`, at: u.at, ...desc }, current });
   const seen = () => {
@@ -212,7 +228,7 @@ export function parseGrokLine(s: GrokState, line: string, ctx: { idPrefix: strin
       seen();
       s.open.delete(callId);
       out.signals.push({ type: 'progress' });
-      if (status === 'failed') push({ ...SPECIAL.error(toolName(u.update), resultText(u.update).split('\n')[0] ?? ''), tool: toolName(u.update), error: true }, `${callId}:e`, false);
+      if (status === 'failed') push({ ...SPECIAL.error(toolName(u.update), oneLine(resultText(u.update), 200)), tool: toolName(u.update), error: true }, `${callId}:e`, false);
       return out;
     }
     case 'plan': {
@@ -244,18 +260,43 @@ export function parseGrokLine(s: GrokState, line: string, ctx: { idPrefix: strin
   }
 }
 
-/** Texto do resultado de uma ferramenta (`content[].content.text`). */
+/** Campos de texto do `rawOutput` do Grok, por ordem de preferência (ListDir, TaskOutput, SearchReplace, MCP...). */
+const RAW_TEXT_KEYS = ['tool_output_for_prompt', 'output_for_prompt', 'output', 'content', 'summary', 'message', 'stdout'];
+
+/** Primeiro texto achado no `rawOutput` (até 3 níveis), pelos nomes de RAW_TEXT_KEYS. */
+function rawText(v: unknown, depth = 0): string | undefined {
+  const o = rec(v);
+  if (!o || depth > 3) return undefined;
+  for (const k of RAW_TEXT_KEYS) {
+    const t = str(o[k]);
+    if (t) return t;
+  }
+  for (const [k, inner] of Object.entries(o)) {
+    if (k === 'type') continue;
+    const t = rawText(inner, depth + 1);
+    if (t) return t;
+  }
+  return undefined;
+}
+
+/**
+ * Texto do resultado de uma ferramenta: `content[].content.text`; senão o diff de um search_replace
+ * (`content[{type:'diff', path, oldText, newText}]`); senão o `rawOutput`.
+ */
 export function resultText(u: Rec): string {
   const parts: string[] = [];
-  const content = u.content;
-  if (Array.isArray(content)) {
-    for (const c of content) {
-      const inner = rec(rec(c)?.content);
-      const t = str(inner?.text) ?? str(rec(c)?.text);
-      if (t) parts.push(t);
+  const content = Array.isArray(u.content) ? u.content : [];
+  for (const raw of content) {
+    const c = rec(raw);
+    const t = str(rec(c?.content)?.text) ?? str(c?.text);
+    if (t) parts.push(t);
+    else if (c?.type === 'diff') {
+      const lines = (v: unknown, mark: string) => (typeof v === 'string' && v ? v.split('\n').map((l) => `${mark} ${l}`) : []);
+      parts.push([str(c.path) ?? '', ...lines(c.oldText, '-'), ...lines(c.newText, '+')].filter(Boolean).join('\n'));
     }
   }
-  return parts.join('\n');
+  if (parts.length) return parts.join('\n');
+  return rawText(u.rawOutput) ?? '';
 }
 
 // ------------------------------------------------------------------ terminal
@@ -301,17 +342,9 @@ function toolInput(tool: string, input: Rec): string | undefined {
   return Object.keys(rest).length ? JSON.stringify(rest, null, 2) : undefined;
 }
 
+/** Texto de várias linhas (mantém quebras e indentação), mascarado; o corte vira uma última linha "…". */
 function clip(text: string, max: number): string {
-  return truncate(maskSecrets(text.slice(0, max + 256)), max);
-}
-
-function clipLines(text: string): { text: string; truncated: boolean } {
-  const lines = text.split('\n');
-  let truncated = lines.length > RESULT_MAX_LINES || text.length > RESULT_MAX;
-  const kept = lines.slice(0, RESULT_MAX_LINES).join('\n');
-  const shown = maskSecrets(kept.slice(0, RESULT_MAX + 256)).slice(0, RESULT_MAX);
-  if (shown.length < kept.length) truncated = true;
-  return { text: shown, truncated };
+  return marked(prepare(text, max));
 }
 
 /** Terminal de uma sessão do Grok: instruções, respostas, raciocínio, ferramentas e resultados. */
@@ -340,7 +373,7 @@ export function createGrokTerminalParser(now: () => number = Date.now): Terminal
           const input = rec(u.update.rawInput) ?? {};
           const { tool } = describeGrokTool(name, input);
           const arg = titleArg(name, input);
-          const entry: TerminalEntry = { kind: 'tool', id: callId, at: u.at, tool, title: arg ? `${tool}(${clip(arg.split('\n')[0], TITLE_ARG_MAX)})` : tool };
+          const entry: TerminalEntry = { kind: 'tool', id: callId, at: u.at, tool, title: arg ? `${tool}(${oneLine(arg, TITLE_ARG_MAX)})` : tool };
           const shown = toolInput(name, input);
           if (shown) entry.input = clip(shown, INPUT_MAX);
           return [entry];
@@ -349,7 +382,7 @@ export function createGrokTerminalParser(now: () => number = Date.now): Terminal
           const callId = str(u.update.toolCallId);
           const status = str(u.update.status);
           if (!callId || (status !== 'completed' && status !== 'failed')) return [];
-          const r = clipLines(resultText(u.update));
+          const r = prepare(resultText(u.update), RESULT_MAX, RESULT_MAX_LINES);
           const entry: TerminalEntry = { kind: 'result', id, at: u.at, toolUseId: callId, text: r.text };
           if (status === 'failed') entry.error = true;
           if (r.truncated) entry.truncated = true;

@@ -15,8 +15,9 @@
 //
 // Escopo por pasta (HABBLAUD_PROJECT_ROOTS): o cwd da sessão precisa ser de dentro, o arquivo inteiro também
 // (fileScope; uma tarefa em segundo plano grava o próprio cwd) e uma linha nova de outra pasta tira a sessão.
+import { execFileSync } from 'node:child_process';
 import { statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { AgentStatus, SourceInfo } from '../../../shared/types';
 import type { AccountsService } from '../../accounts/service';
 import { ACCOUNT_COLORS } from '../../accounts/detect';
@@ -28,7 +29,7 @@ import { fileScope } from '../scope';
 import type { AgentSource } from '../source';
 import { FileTail } from '../tail';
 import type { TerminalParser } from '../terminal';
-import { findSessionDir, readActiveSessions, readSummary, recentSessions, UPDATES_FILE, type ActiveSession, type GrokSummary } from './files';
+import { findSessionDir, readActiveSessions, readSummary, recentSessions, updatesPathOf, type ActiveSession, type GrokSummary } from './files';
 import { createGrokState, createGrokTerminalParser, parseGrokLine, type GrokLineResult, type GrokState } from './updates';
 
 /** Docker: presença = conversa modificada nos últimos 30 min (revista a cada 10 s). */
@@ -43,6 +44,33 @@ const RESOLVE_MS = 3_000;
 /** Resultados guardados ao ler a conversa antes de o agente entrar no escritório. */
 const BACKLOG_MAX = 400;
 const ROLE = 'Agente principal (Grok)';
+/** Sem instrução vista (ficou antes da janela lida): escreveu há pouco = trabalhando. */
+const UNKNOWN_TURN_WORKING_MS = 90_000;
+/** Quanto tempo vale a conferência de que um pid é mesmo um processo do Grok. */
+const PID_CHECK_MS = 60_000;
+
+const grokPids = new Map<number, { ok: boolean; at: number }>();
+
+/**
+ * O pid está vivo e é um processo do Grok? Um pid de uma sessão que caiu pode ter sido reaproveitado por outro
+ * programa. Confere o nome do executável (`ps -o comm=`), com cache de PID_CHECK_MS. Sem `ps` (Windows), só a
+ * existência do pid.
+ */
+export function grokPidAlive(pid: number, now = Date.now()): boolean {
+  if (!pidAlive(pid)) return false;
+  if (process.platform === 'win32') return true;
+  const hit = grokPids.get(pid);
+  if (hit && now - hit.at < PID_CHECK_MS) return hit.ok;
+  let ok: boolean;
+  try {
+    ok = /grok/i.test(basename(execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: 2_000 }).trim()));
+  } catch {
+    ok = false;
+  }
+  if (grokPids.size > 1_000) grokPids.clear();
+  grokPids.set(pid, { ok, at: now });
+  return ok;
+}
 
 export interface GrokSourceOptions {
   accounts: AccountsService;
@@ -99,7 +127,7 @@ export class GrokSource implements AgentSource {
   constructor(private readonly opts: GrokSourceOptions) {
     this.now = opts.now ?? Date.now;
     this.tailBytes = opts.tailBytes ?? 1024 * 1024;
-    this.isAlive = opts.isAlive ?? pidAlive;
+    this.isAlive = opts.isAlive ?? ((pid) => grokPidAlive(pid, this.now()));
     this.hostDir = opts.hostDir ?? opts.dir;
     const others = [...opts.accounts.entries(), ...opts.accounts.entriesOf('codex')];
     const usedColors = new Set(others.map((e) => e.detected.color));
@@ -171,6 +199,15 @@ export class GrokSource implements AgentSource {
       if (!this.present(a, now)) continue;
       const key = `${this.accountId}:${a.sessionId}`;
       let t = this.trackers.get(key);
+      // A mesma sessão numa pasta nova: começa do zero (pasta, conversa e escopo); fora do escopo, sai já.
+      if (t && t.cwd !== a.cwd) {
+        if (t.inOffice) {
+          if (this.opts.office.scoped && !this.opts.office.inScope(a.cwd)) this.opts.office.leaveScope(key);
+          else this.opts.office.closeMain(key);
+        }
+        this.trackers.delete(key);
+        t = undefined;
+      }
       if (!t) {
         t = this.newTracker(key, a);
         this.trackers.set(key, t);
@@ -230,6 +267,8 @@ export class GrokSource implements AgentSource {
     }
     this.pump(t);
     if (t.outOfScope) return;
+    // No Docker a presença vem só da conversa: sem o summary.json não dá para saber se é um `grok -p` (fica de fora).
+    if (this.opts.inDocker && t.summaryMtime === undefined) return;
     if (!t.inOffice) this.enter(t, now);
     if (!t.inOffice) return;
     this.quietCheck(t, now);
@@ -257,9 +296,12 @@ export class GrokSource implements AgentSource {
         t.inOffice = false;
         return;
       }
+      // O resumo diz outra pasta: a do resumo também precisa ser de dentro.
+      const office = this.opts.office;
+      if (t.summary.cwd && t.summary.cwd !== t.cwd && office.scoped && !office.inScope(t.summary.cwd)) return this.outOfScope(t);
     }
-    const path = join(t.sessionDir, UPDATES_FILE);
-    if (!t.tail && exists(path)) this.load(t, path);
+    const path = updatesPathOf(this.opts.dir, t.sessionDir);
+    if (!t.tail && path) this.load(t, path);
   }
 
   /** Lê a janela do fim da conversa (como histórico, sem feed) depois de conferir o arquivo inteiro no escopo. */
@@ -338,7 +380,8 @@ export class GrokSource implements AgentSource {
     for (const sig of r.signals) {
       if (sig.type === 'turnStart') this.decide(t, 'working', r.at, live);
       else if (sig.type === 'turnEnd') this.decide(t, 'idle', r.at, live);
-      else if (t.status !== 'working' && t.state.turnOpen) this.decide(t, 'working', r.at, live);
+      // Progresso com o turno aberto, ou sem saber (a instrução ficou antes da janela lida): trabalhando.
+      else if (t.status !== 'working' && t.state.turnOpen !== false) this.decide(t, 'working', r.at, live);
     }
     if (!live || !t.inOffice) {
       if (r.activities.length) {
@@ -360,8 +403,9 @@ export class GrokSource implements AgentSource {
 
   /** Status depois de ler a janela: turno aberto = trabalhando, a não ser que a conversa esteja parada há muito. */
   private settleStatus(t: Tracker): void {
-    const quiet = this.now() - (t.lastWriteAt ?? 0) > WORKING_QUIET_MS;
-    t.status = t.state.turnOpen && !quiet ? 'working' : 'idle';
+    const since = this.now() - (t.lastWriteAt ?? 0);
+    const open = t.state.turnOpen ?? (t.state.lastAt !== undefined && since < UNKNOWN_TURN_WORKING_MS);
+    t.status = open && since <= WORKING_QUIET_MS ? 'working' : 'idle';
     t.statusAt = t.state.lastAt ?? 0;
   }
 
@@ -408,13 +452,5 @@ export class GrokSource implements AgentSource {
       firstAt: s.firstAt,
       lastAt: s.lastAt,
     });
-  }
-}
-
-function exists(path: string): boolean {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
   }
 }

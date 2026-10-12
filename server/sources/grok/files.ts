@@ -7,9 +7,10 @@
 //   lê só `updates.jsonl` (a conversa, no formato de updates do ACP) e `summary.json` (título, cwd, horários).
 //
 // Privacidade: NUNCA lê auth.json, config.toml nem nada fora de active_sessions.json e sessions/.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
+import { maskSecrets, truncate } from '../../../shared/activity';
 import { expandHome } from '../../accounts/detect';
 
 export const ACTIVE_FILE = 'active_sessions.json';
@@ -72,7 +73,7 @@ export function readActiveSessions(dir: string): ActiveSession[] | null {
     const r = e as Record<string, unknown>;
     const sessionId = str(r.session_id);
     const cwd = str(r.cwd);
-    if (!sessionId || !cwd || !isGrokSessionId(sessionId)) continue;
+    if (!sessionId || !isAbsCwd(cwd) || !isGrokSessionId(sessionId)) continue;
     const s: ActiveSession = { sessionId, cwd };
     if (typeof r.pid === 'number' && Number.isInteger(r.pid) && r.pid > 0) s.pid = r.pid;
     const opened = str(r.opened_at) ? Date.parse(r.opened_at as string) : NaN;
@@ -82,62 +83,117 @@ export function readActiveSessions(dir: string): ActiveSession[] | null {
   return out;
 }
 
-/**
- * Pasta da sessão: primeiro o grupo do cwd (encodeURIComponent, o caso comum), depois os outros grupos (cwd longo
- * demais, que vira slug + hash). undefined = ainda não existe.
- */
-export function findSessionDir(dir: string, sessionId: string, cwd?: string): string | undefined {
-  if (!isGrokSessionId(sessionId)) return undefined;
-  const root = join(dir, SESSIONS_DIR);
-  if (cwd) {
-    const direct = join(root, encodeURIComponent(cwd), sessionId);
-    if (isDir(direct)) return direct;
-  }
-  let groups: string[];
+/** Caminho absoluto, sem `.` nem `..` (o cwd de active_sessions.json, do summary.json ou de um `.cwd`). */
+export function isAbsCwd(p: string | undefined): p is string {
+  return !!p && p.startsWith('/') && !p.includes('\0') && !p.split('/').some((seg) => seg === '.' || seg === '..');
+}
+
+/** Raiz real de sessions/ (realpath), ou undefined. */
+function realRoot(dir: string): string | undefined {
   try {
-    groups = readdirSync(root);
+    return realpathSync(join(dir, SESSIONS_DIR));
   } catch {
     return undefined;
   }
-  for (const g of groups) {
-    const p = join(root, g, sessionId);
-    if (isDir(p)) return p;
-  }
-  return undefined;
 }
 
-/** Pasta de trabalho de um grupo de sessions/: o nome decodificado, ou o `.cwd` de um nome longo demais. */
+/**
+ * `p` existe, é do tipo pedido, não é link simbólico e o caminho real fica dentro de `root` (a raiz real de sessions/):
+ * um link ou um `..` nunca leva a leitura para fora das conversas.
+ */
+function inside(root: string, p: string, kind: 'dir' | 'file'): boolean {
+  try {
+    const st = lstatSync(p);
+    if (st.isSymbolicLink() || (kind === 'dir' ? !st.isDirectory() : !st.isFile())) return false;
+    return realpathSync(p).startsWith(`${root}${sep}`);
+  } catch {
+    return false;
+  }
+}
+
+/** Pasta de trabalho de uma sessão: a do summary.json ou, sem ela, a do grupo. */
+export function sessionCwd(sessionDir: string): string | undefined {
+  const fromSummary = readSummary(sessionDir).cwd;
+  if (fromSummary) return fromSummary;
+  const groupDir = dirname(sessionDir);
+  return groupCwd(groupDir, basename(groupDir));
+}
+
+/**
+ * Pasta da sessão, sempre dentro de sessions/. Com `cwd`: o grupo dele (encodeURIComponent, o caso comum) ou outro
+ * grupo cujo cwd (`.cwd` ou summary.json) seja exatamente esse (nome longo demais vira slug + hash): o mesmo id em
+ * outra pasta nunca serve. Sem `cwd` (histórico): o único grupo com esse id; mais de um = ambíguo, undefined.
+ */
+export function findSessionDir(dir: string, sessionId: string, cwd?: string): string | undefined {
+  if (!isGrokSessionId(sessionId)) return undefined;
+  if (cwd !== undefined && !isAbsCwd(cwd)) return undefined;
+  const root = realRoot(dir);
+  if (!root) return undefined;
+  const base = join(dir, SESSIONS_DIR);
+  if (cwd) {
+    const direct = join(base, encodeURIComponent(cwd), sessionId);
+    if (inside(root, direct, 'dir')) return direct;
+  }
+  let groups: string[];
+  try {
+    groups = readdirSync(base);
+  } catch {
+    return undefined;
+  }
+  const found: string[] = [];
+  for (const g of groups) {
+    const p = join(base, g, sessionId);
+    if (!inside(root, p, 'dir')) continue;
+    if (cwd && sessionCwd(p) !== cwd) continue;
+    found.push(p);
+  }
+  return found.length === 1 ? found[0] : undefined;
+}
+
+/** updates.jsonl da sessão, se for um arquivo de verdade dentro de sessions/. */
+export function updatesPathOf(dir: string, sessionDir: string): string | undefined {
+  const root = realRoot(dir);
+  const p = join(sessionDir, UPDATES_FILE);
+  return root && inside(root, p, 'file') ? p : undefined;
+}
+
+/** Pasta de trabalho de um grupo de sessions/: o `.cwd` de um nome longo demais, ou o nome decodificado. */
 export function groupCwd(groupDir: string, name: string): string | undefined {
   try {
-    const cwd = readFileSync(join(groupDir, '.cwd'), 'utf8').trim();
-    if (cwd) return cwd;
+    const file = join(groupDir, '.cwd');
+    if (lstatSync(file).isFile()) {
+      const cwd = readFileSync(file, 'utf8').trim();
+      return isAbsCwd(cwd) ? cwd : undefined;
+    }
   } catch {
     // sem .cwd: o nome é o cwd codificado
   }
   try {
     const decoded = decodeURIComponent(name);
-    return decoded.startsWith('/') ? decoded : undefined;
+    return isAbsCwd(decoded) ? decoded : undefined;
   } catch {
     return undefined;
   }
 }
 
 /**
- * Sessões com a conversa modificada desde `since` (epoch ms), com o cwd do summary.json (ou do nome do grupo). É a
- * presença no Docker: active_sessions.json é trocado por rename (active_sessions.json.tmp), e um bind de arquivo
- * único ficaria preso à versão antiga.
+ * Sessões com a conversa modificada desde `since` (epoch ms), com o cwd do summary.json (ou do grupo). É a presença
+ * no Docker: active_sessions.json é trocado por rename (active_sessions.json.tmp), e um bind de arquivo único ficaria
+ * preso à versão antiga.
  */
 export function recentSessions(dir: string, since: number): ActiveSession[] {
-  const root = join(dir, SESSIONS_DIR);
+  const root = realRoot(dir);
+  if (!root) return [];
+  const base = join(dir, SESSIONS_DIR);
   const out: ActiveSession[] = [];
   let groups: string[];
   try {
-    groups = readdirSync(root);
+    groups = readdirSync(base);
   } catch {
     return [];
   }
   for (const g of groups) {
-    const groupDir = join(root, g);
+    const groupDir = join(base, g);
     let ids: string[];
     try {
       ids = readdirSync(groupDir);
@@ -146,14 +202,17 @@ export function recentSessions(dir: string, since: number): ActiveSession[] {
     }
     for (const id of ids) {
       if (!isGrokSessionId(id)) continue;
+      const sessionDir = join(groupDir, id);
+      const updates = updatesPathOf(dir, sessionDir);
+      if (!updates) continue;
       let mtime: number;
       try {
-        mtime = statSync(join(groupDir, id, UPDATES_FILE)).mtimeMs;
+        mtime = statSync(updates).mtimeMs;
       } catch {
         continue;
       }
       if (mtime < since) continue;
-      const cwd = readSummary(join(groupDir, id)).cwd ?? groupCwd(groupDir, g);
+      const cwd = sessionCwd(sessionDir);
       if (cwd) out.push({ sessionId: id, cwd, openedAt: mtime });
     }
   }
@@ -174,7 +233,9 @@ export interface GrokSummary {
 export function readSummary(sessionDir: string): GrokSummary {
   let raw: Record<string, unknown>;
   try {
-    raw = JSON.parse(readFileSync(join(sessionDir, SUMMARY_FILE), 'utf8')) as Record<string, unknown>;
+    const file = join(sessionDir, SUMMARY_FILE);
+    if (!lstatSync(file).isFile()) return {};
+    raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -182,9 +243,9 @@ export function readSummary(sessionDir: string): GrokSummary {
   const out: GrokSummary = {};
   const info = raw.info && typeof raw.info === 'object' ? (raw.info as Record<string, unknown>) : {};
   const title = str(raw.generated_title) ?? str(raw.session_summary);
-  if (title) out.title = title;
+  if (title) out.title = truncate(maskSecrets(title.slice(0, 1_000)), 120);
   const cwd = str(info.cwd);
-  if (cwd) out.cwd = cwd;
+  if (isAbsCwd(cwd)) out.cwd = cwd;
   const model = str(raw.current_model_id);
   if (model) out.model = model;
   const created = str(raw.created_at) ? Date.parse(raw.created_at as string) : NaN;

@@ -51,9 +51,9 @@ export function fileScope(path: string, scope: (cwd: string) => boolean): FileSc
           result = { status: 'in' };
         }
         if (result.status === 'out') break;
-        // A sobra começa no último "cwd" se ele está perto do fim (o valor pode vir só no bloco seguinte, depois de
+        // A sobra começa no último "cwd" (ou "current_dir") se ele está perto do fim (o valor pode vir só no bloco seguinte, depois de
         // espaços); senão, os últimos bytes, para uma chave cortada no meio.
-        const last = text.lastIndexOf('"cwd"');
+        const last = Math.max(text.lastIndexOf('"cwd"'), text.lastIndexOf('"current_dir"'));
         carry = text.slice(last >= 0 && last >= text.length - SCAN_CHUNK / 4 ? Math.min(last, text.length - SCAN_OVERLAP) : -SCAN_OVERLAP);
       }
     } finally {

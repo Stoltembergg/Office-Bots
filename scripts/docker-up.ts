@@ -255,7 +255,11 @@ export function planGrokMount(env: NodeJS.ProcessEnv, home: string, resolveDir: 
   const raw = env.GROK_HOME?.trim();
   const hostDir = raw ? expandHome(raw, home) : join(home, '.grok');
   const source = resolveDir(join(hostDir, 'sessions'));
-  return source ? { hostDir, binds: [{ source, target: posix.join(GROK_CONTAINER_DIR, 'sessions') }] } : undefined;
+  if (!source) return undefined;
+  // `sessions` como link para a própria pasta do Grok (ou uma acima dela) montaria auth.json junto: recusa.
+  const home_ = resolveDir(hostDir) ?? hostDir;
+  if (home_ === source || home_.startsWith(source.endsWith('/') ? source : `${source}/`)) return undefined;
+  return { hostDir, binds: [{ source, target: posix.join(GROK_CONTAINER_DIR, 'sessions') }] };
 }
 
 /** Metadados das contas do Codex para HABBLAUD_ACCOUNTS: `provider: 'codex'` e a pasta do HOST em `configDir`. */

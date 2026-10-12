@@ -2,11 +2,12 @@
 // encerradas) de sessions/<cwd>/<id>/, pelo summary.json de cada uma (título, cwd, horários) e o tamanho de
 // updates.jsonl. Sessões de subagente ficam de fora, como os subagentes do Claude Code.
 import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { RecentSession } from '../../../shared/types';
 import { HISTORY_LIMIT, HISTORY_MAX_AGE_MS } from '../history';
 import type { HistoryProvider, HistoryResolveResult } from '../source';
-import { findSessionDir, groupCwd, isGrokSessionId, readSummary, SESSIONS_DIR, SUMMARY_FILE, UPDATES_FILE, type GrokSummary } from './files';
+import { fileScope } from '../scope';
+import { findSessionDir, groupCwd, isGrokSessionId, readSummary, SESSIONS_DIR, SUMMARY_FILE, updatesPathOf, type GrokSummary } from './files';
 import { createGrokTerminalParser } from './updates';
 
 export interface GrokHistoryOptions {
@@ -56,9 +57,11 @@ export class GrokHistory implements HistoryProvider {
       for (const id of ids) {
         if (!isGrokSessionId(id)) continue;
         const dir = join(groupDir, id);
+        const updatesPath = updatesPathOf(acc.dir, dir);
+        if (!updatesPath) continue;
         let updates;
         try {
-          updates = statSync(join(dir, UPDATES_FILE));
+          updates = statSync(updatesPath);
         } catch {
           continue;
         }
@@ -66,7 +69,10 @@ export class GrokHistory implements HistoryProvider {
         const summary = this.summaryOf(dir);
         if (summary.kind === 'subagent') continue;
         const project = summary.cwd ?? groupCwd(groupDir, g);
-        if (this.opts.inScope && !(project && this.opts.inScope(project))) continue;
+        const inScope = this.opts.inScope;
+        if (inScope && !(project && inScope(project))) continue;
+        // A conversa inteira também: uma que passou por outra pasta não entra nem com título.
+        if (inScope && fileScope(updatesPath, inScope).status === 'out') continue;
         const agentId = this.opts.openAgentOf(acc.id, id);
         const s: RecentSession = { account: acc.id, provider: 'grok', sessionId: id, projectDir: g, lastAt: updates.mtimeMs, size: updates.size, open: !!agentId };
         if (project) s.project = project;
@@ -84,17 +90,14 @@ export class GrokHistory implements HistoryProvider {
     if (!acc || acc.id !== account) return { status: 404, error: 'conta desconhecida' };
     if (!isGrokSessionId(sessionId)) return { status: 400, error: 'id de sessão inválido' };
     const dir = findSessionDir(acc.dir, sessionId);
-    if (!dir) return { status: 404, error: 'sessão não encontrada' };
-    const path = join(dir, UPDATES_FILE);
-    try {
-      if (!statSync(path).isFile()) return { status: 404, error: 'sessão não encontrada' };
-    } catch {
-      return { status: 404, error: 'sessão não encontrada' };
-    }
-    const summary = this.summaryOf(dir);
+    const path = dir && updatesPathOf(acc.dir, dir);
+    if (!dir || !path) return { status: 404, error: 'sessão não encontrada' };
     const found: HistoryResolveResult = { path, createParser: () => createGrokTerminalParser(this.now) };
-    // A pasta da sessão nem sempre aparece no updates.jsonl: o escopo confere a do summary.json.
-    if (summary.cwd) found.cwd = summary.cwd;
+    // A pasta da sessão nem sempre aparece no updates.jsonl: o escopo confere a do summary.json (ou a do grupo), a
+    // mesma que a listagem mostra.
+    const groupDir = dirname(dir);
+    const cwd = this.summaryOf(dir).cwd ?? groupCwd(groupDir, basename(groupDir));
+    if (cwd) found.cwd = cwd;
     return found;
   }
 

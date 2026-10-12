@@ -360,7 +360,10 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 Fonte `sources/grok/` (`provider: 'grok'`), ligada quando há `GROK_HOME` (ou `~/.grok`) com `sessions/` ou
 `active_sessions.json`. Uma conta só (`.grok`). Ids: `<conta>:<sessionId>`.
 
-- **Sessões abertas** (`files.ts`, `source.ts`): `active_sessions.json` (`session_id`, `pid`, `cwd`), com o pid vivo.
+- **Sessões abertas** (`files.ts`, `source.ts`): `active_sessions.json` (`session_id`, `pid`, `cwd` absoluto), com o
+  pid vivo e de um processo `grok` (`ps -o comm=`, cache de 60 s). Pasta mudou no registro = sessão nova. Tudo lido
+  fica dentro do realpath de `sessions/`, sem links; o mesmo id em outra pasta não serve (e sem cwd, id ambíguo = 404).
+  No Docker a sessão só entra com o `summary.json` lido (para separar o `grok -p`).
   No Docker (`HABBLAUD_GROK_DIR=/grok`, só `sessions/` montada): `updates.jsonl` modificado nos últimos 30 min, cwd do
   `summary.json` (o Grok troca o `active_sessions.json` por rename; um bind de arquivo único ficaria velho).
 - **Conversa** (`updates.ts`): `sessions/<cwd codificado>/<id>/updates.jsonl` (updates do ACP). `user_message_chunk`
@@ -368,9 +371,10 @@ Fonte `sources/grok/` (`provider: 'grok'`), ligada quando há `GROK_HOME` (ou `~
   (`read_file` = Read, `run_terminal_command` = Bash, `search_replace` = Edit...); `plan` = tarefas. Título e modelo
   do `summary.json`; `session_kind: 'subagent'` fica de fora.
 - **Escopo por pasta:** o cwd da lista (ou do `summary.json`) precisa ser de dentro; `fileScope` no arquivo inteiro e
-  `cwdOutOfScope` em cada linha nova (uma tarefa em segundo plano grava o próprio `cwd`). Como a conversa nem sempre
-  tem `cwd`, o terminal aceita arquivo sem nenhum quando a sala do agente (ou o `cwd` do índice, no histórico) é de
-  dentro (`HistorySession.cwd`).
+  `cwdOutOfScope` em cada linha nova (uma tarefa em segundo plano grava o próprio `cwd`; um resultado de Bash, o
+  `current_dir`, que `cwdsInText` também conta para todas as ferramentas). Como a conversa nem sempre tem `cwd`, o
+  terminal aceita arquivo sem nenhum só para agentes do Grok, pela sala (e o histórico, pelo `cwd` do índice,
+  `HistorySession.cwd`); Claude Code e Codex continuam exigindo a pasta no arquivo.
 - Sem permissões, mensagens nem uso de 5h/semanal.
 
 ## Variáveis de ambiente
