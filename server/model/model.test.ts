@@ -48,6 +48,9 @@ describe('salas', () => {
     expect(inRoots('/Users/eu/Claude/empresa-ab', roots)).toBe(false);
     expect(inRoots('/Users/eu/Claude', roots)).toBe(false);
     expect(inRoots('/qualquer', [])).toBe(true);
+    // `..` e `.` contam pelo destino, não pelo texto.
+    expect(inRoots('/Users/eu/Claude/empresa-a/../empresa-b', roots)).toBe(false);
+    expect(inRoots('/Users/eu/Claude/empresa-a/./app', roots)).toBe(true);
   });
 
   it('desambigua basenames repetidos com o diretório pai', () => {

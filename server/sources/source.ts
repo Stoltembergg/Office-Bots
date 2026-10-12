@@ -12,6 +12,7 @@
 // depois, SEMPRE em par (num `finally`, inclusive num boot assíncrono). O Office conta os boots: enquanto alguma
 // fonte boota não há avisos e o feed fica guardado para sair em ordem cronológica no fim do último boot (uma fonte
 // que nunca chamasse endBoot calaria os avisos de todas).
+import { closeSync, openSync, readSync } from 'node:fs';
 import type { Provider, RecentSession, SourceInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
 import { HISTORY_LIMIT } from './history';
@@ -148,12 +149,9 @@ export interface HistoryProvider extends SessionLookup {
  */
 export class HistorySet implements SessionLookup {
   private readonly list_: HistoryProvider[] = [];
-  /** Com escopo: as sessões (`conta:id`) que a última listagem mostrou, as únicas que resolve() abre. */
-  private listed = new Set<string>();
-
   /**
-   * `inScope`: escopo por pasta (HABBLAUD_PROJECT_ROOTS). Sessão sem projeto conhecido fica de fora, e resolve() só
-   * abre o que a listagem mostrou: sem isso dava para ler a conversa de outra pasta pelo id.
+   * `inScope`: escopo por pasta (HABBLAUD_PROJECT_ROOTS). Sessão sem projeto conhecido fica de fora da lista, e
+   * resolve() confere o cwd gravado no próprio arquivo que vai abrir (o id sozinho pode existir em outra pasta).
    */
   constructor(
     providers: readonly HistoryProvider[] = [],
@@ -183,13 +181,44 @@ export class HistorySet implements SessionLookup {
     const inScope = this.inScope;
     const scoped = inScope ? out.filter((s) => s.project !== undefined && inScope(s.project)) : out;
     const result = scoped.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
-    if (inScope) this.listed = new Set(result.map((s) => `${s.account}:${s.sessionId}`));
     return result;
   }
 
   resolve(account: string, sessionId: string): HistoryResolveResult {
-    if (this.inScope && !this.listed.has(`${account}:${sessionId}`)) return { status: 404, error: 'sessão desconhecida' };
     const owner = this.list_.find((p) => p.hasAccount(account)) ?? this.list_[0];
-    return owner ? owner.resolve(account, sessionId) : { status: 404, error: 'conta desconhecida' };
+    const found: HistoryResolveResult = owner ? owner.resolve(account, sessionId) : { status: 404, error: 'conta desconhecida' };
+    if (!this.inScope || !('path' in found)) return found;
+    const cwd = headCwd(found.path);
+    return cwd !== undefined && this.inScope(cwd) ? found : { status: 404, error: 'sessão não encontrada' };
+  }
+}
+
+/** Quanto do começo do arquivo headCwd lê: o session_meta do Codex pode trazer as instruções inteiras. */
+const HEAD_CWD_BYTES = 256 * 1024;
+
+/**
+ * O primeiro `"cwd"` do começo do arquivo (Claude Code: em cada linha; Codex: no session_meta), ou undefined.
+ * Busca no texto, não por linha: uma primeira linha maior que o trecho lido ainda serve.
+ */
+export function headCwd(path: string): string | undefined {
+  let text: string;
+  try {
+    const fd = openSync(path, 'r');
+    try {
+      const buf = Buffer.alloc(HEAD_CWD_BYTES);
+      text = buf.toString('utf8', 0, readSync(fd, buf, 0, buf.length, 0));
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
+  const m = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(text);
+  if (!m) return undefined;
+  try {
+    const cwd: unknown = JSON.parse(m[1]);
+    return typeof cwd === 'string' && cwd ? cwd : undefined;
+  } catch {
+    return undefined;
   }
 }

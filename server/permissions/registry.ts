@@ -57,6 +57,8 @@ export interface OfficeLike {
   addActivity(id: string, activity: Activity, current: boolean, opts?: { feed?: boolean }): void;
   /** Aviso "pede permissão" ou "tem uma pergunta" (mesmo dedupe do aviso "precisa de você" do status). */
   noticePermission(id: string, what: string, kind?: 'permission' | 'question'): void;
+  /** Escopo por pasta (Office.inScope); ausente = sem escopo. */
+  inScope?(cwd: string): boolean;
 }
 
 export interface RegistryOptions {
@@ -389,6 +391,8 @@ export class PermissionRegistry {
     // Pergunta: todas precisam aparecer no escritório (o hook só responde se cada uma tiver resposta).
     if (ask && (!questions?.length || questions.length !== askCount(req.input.questions))) return { skip: 'unsupported-tool' };
     if (this.opts.viewers() <= 0) return { skip: 'no-viewers' };
+    // Escopo por pasta: um pedido de outra pasta não entra, nem pela sessão de um principal de dentro.
+    if (req.cwd && this.opts.office.inScope && !this.opts.office.inScope(req.cwd)) return { skip: 'unknown-session' };
     const target = codex
       ? this.resolveCodexAgent(req.sessionId, req.agentId, req.agentType, this.opts.codexAccount?.(req.account, req.codexHome) ?? req.account)
       : this.resolveAgent(req.sessionId, req.agentId, req.agentType);

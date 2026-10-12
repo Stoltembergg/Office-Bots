@@ -1,8 +1,11 @@
 // Fontes de agentes (SourceSet) e histórico de várias ferramentas (HistorySet): o que o servidor vê como uma
 // fonte só, o parser escolhido por agente, a falha isolada de uma fonte e o boot contado no Office.
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Provider, RecentSession, SourceInfo, TerminalEntry } from '../../shared/types';
 import { setQuiet } from '../log';
+import { tempDir } from '../test/fixtures';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { HistorySet, SourceSet, type AgentSource, type HistoryProvider, type HistoryResolveResult } from './source';
@@ -192,20 +195,37 @@ describe('HistorySet', () => {
 describe('HistorySet: escopo por pasta', () => {
   const withProject = (id: string, lastAt: number, project?: string): RecentSession => ({ ...session(undefined, '.claude', id, lastAt), ...(project ? { project } : {}) });
 
-  it('lista só as sessões do escopo (sem projeto conhecido fica de fora) e só resolve as listadas', async () => {
-    const found: HistoryResolveResult = { path: '/t.jsonl', createParser: () => tagged('c') };
-    const claude = fakeHistory('claude', ['.claude'], async () => [
-      withProject('dentro', 30, '/p/empresa-a/app'),
-      withProject('fora', 20, '/p/empresa-b'),
-      withProject('sem-projeto', 10),
-    ], found);
-    const set = new HistorySet([claude], undefined, (project) => project === '/p/empresa-a/app');
-    // Antes de listar, nada resolve: o terminal só abre o que a listagem mostrou.
-    expect(set.resolve('.claude', 'dentro')).toEqual({ status: 404, error: 'sessão desconhecida' });
+  it('lista só as sessões do escopo (sem projeto conhecido fica de fora)', async () => {
+    const claude = fakeHistory('claude', ['.claude'], async () => [withProject('dentro', 30, '/p/empresa-a/app'), withProject('fora', 20, '/p/empresa-b'), withProject('sem-projeto', 10)]);
+    const set = new HistorySet([claude], undefined, (project) => project.startsWith('/p/empresa-a'));
     expect((await set.list()).map((s) => s.sessionId)).toEqual(['dentro']);
-    expect(set.resolve('.claude', 'dentro')).toBe(found);
-    expect(set.resolve('.claude', 'fora')).toEqual({ status: 404, error: 'sessão desconhecida' });
     // Sem escopo: tudo, como antes.
     expect((await new HistorySet([claude]).list()).map((s) => s.sessionId)).toEqual(['dentro', 'fora', 'sem-projeto']);
+  });
+
+  it('resolve confere o cwd gravado no arquivo que vai ser aberto (não basta o id ter aparecido na lista)', () => {
+    const tmp = tempDir();
+    try {
+      const file = (name: string, line: object) => {
+        const path = join(tmp.dir, name);
+        writeFileSync(path, `${JSON.stringify(line)}\n`);
+        return path;
+      };
+      const inside = file('a.jsonl', { type: 'user', cwd: '/p/empresa-a/app' });
+      const outside = file('b.jsonl', { type: 'user', cwd: '/p/empresa-b' });
+      const codexInside = file('c.jsonl', { type: 'session_meta', payload: { id: 'x', cwd: '/p/empresa-a' } });
+      const noCwd = file('d.jsonl', { type: 'user' });
+      const at = (path: string) => fakeHistory('claude', ['.claude'], async () => [], { path, createParser: () => tagged('c') });
+      const scoped = (path: string) => new HistorySet([at(path)], undefined, (project) => project.startsWith('/p/empresa-a')).resolve('.claude', 'x');
+      expect(scoped(inside)).toMatchObject({ path: inside });
+      expect(scoped(codexInside)).toMatchObject({ path: codexInside });
+      expect(scoped(outside)).toEqual({ status: 404, error: 'sessão não encontrada' });
+      expect(scoped(noCwd)).toEqual({ status: 404, error: 'sessão não encontrada' });
+      // Erro do provedor (id inválido etc.) passa como estava.
+      const bad = fakeHistory('claude', ['.claude'], async () => [], { status: 400, error: 'id de sessão inválido' });
+      expect(new HistorySet([bad], undefined, () => true).resolve('.claude', 'x')).toEqual({ status: 400, error: 'id de sessão inválido' });
+    } finally {
+      tmp.cleanup();
+    }
   });
 });

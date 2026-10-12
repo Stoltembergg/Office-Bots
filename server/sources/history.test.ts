@@ -229,3 +229,14 @@ describe('utilitários', () => {
     expect(openMainAgent(agents, '.b', 's3')).toBe('.b:3');
   });
 });
+
+describe('SessionHistory: escopo por pasta', () => {
+  it('o filtro vale antes do limite: sessões recentes de fora não tiram do histórico uma de dentro', async () => {
+    const { acc } = setup();
+    const c = acc('.claude');
+    for (let i = 1; i <= 3; i++) session(c, '/p/empresa-b', sid(i), [withCwd(L.prompt('fora', { at: NOW - i * MIN }), '/p/empresa-b')], NOW - i * MIN);
+    session(c, '/p/empresa-a/app', sid(9), [withCwd(L.prompt('dentro', { at: NOW - HOUR }), '/p/empresa-a/app')], NOW - HOUR);
+    const list = await history([c], { limit: 2, inScope: (p) => p.startsWith('/p/empresa-a') }).list();
+    expect(list.map((s) => s.sessionId)).toEqual([sid(9)]);
+  });
+});

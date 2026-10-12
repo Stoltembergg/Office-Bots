@@ -312,6 +312,25 @@ export class Office {
     return inRoots(cwd, this.deps.projectRoots ?? []);
   }
 
+  /** Há escopo por pasta (OfficeDeps.projectRoots não vazio). */
+  get scoped(): boolean {
+    return !!this.deps.projectRoots?.length;
+  }
+
+  /**
+   * A sessão passou a mexer em outra pasta, fora do escopo: o agente (e os subagentes dele) sai agora, sem o período
+   * de graça do closeMain, para nada do que vem depois aparecer (atividade, terminal aberto, permissão).
+   */
+  leaveScope(id: string): void {
+    if (!this.agents.has(id)) return;
+    for (const sub of this.descendants(id)) this.agents.delete(sub.info.id);
+    this.agents.delete(id);
+    const occupied = new Set([...this.agents.values()].map((r) => r.info.roomId));
+    for (const room of [...this.rooms.keys()]) if (!occupied.has(room)) this.rooms.delete(room);
+    this.recomputeRoomNames();
+    this.markDirty();
+  }
+
   addMain(p: MainInput): void {
     const now = this.now();
     const existing = this.agents.get(p.id);

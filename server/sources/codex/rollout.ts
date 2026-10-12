@@ -404,7 +404,9 @@ export type CodexSignal =
   | { type: 'progress' }
   | { type: 'usage'; usage: AccountUsage; plan?: string }
   | { type: 'github'; event: GitHubEvent; key: string }
-  | { type: 'meta'; meta: RolloutMeta };
+  | { type: 'meta'; meta: RolloutMeta }
+  /** cwd do turno (turn_context): o escopo por pasta confere cada um. */
+  | { type: 'cwd'; cwd: string };
 
 export interface CodexLineResult {
   activities: ParsedActivity[];
@@ -538,6 +540,7 @@ class RolloutLineParser {
         return;
       }
       case 'turn_context':
+        if (typeof p.cwd === 'string' && p.cwd) this.out.signals.push({ type: 'cwd', cwd: p.cwd });
         return this.model(p.model);
       case 'event_msg':
         return this.event(p);

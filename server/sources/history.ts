@@ -52,6 +52,8 @@ export interface HistoryOptions {
   now?: () => number;
   maxAgeMs?: number;
   limit?: number;
+  /** Escopo por pasta (HABBLAUD_PROJECT_ROOTS): só sessões com projeto aceito entram, antes do limite. */
+  inScope?: (project: string) => boolean;
 }
 
 /** O que o começo e o fim do transcript dizem sobre a sessão. */
@@ -105,33 +107,37 @@ export class SessionHistory implements HistoryProvider {
     const all: Candidate[] = [];
     for (const acc of this.opts.accounts()) all.push(...(await this.candidates(acc, now)));
     all.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    const picked = all.slice(0, this.limit);
-    const metas = await mapLimit(picked, READ_CONCURRENCY, (c) => this.metaOf(c));
-    // Esquece os arquivos que saíram da janela (o cache não cresce sem limite).
-    const keep = new Set(picked.map((c) => c.path));
-    for (const path of this.cache.keys()) if (!keep.has(path)) this.cache.delete(path);
-
+    // Com escopo, as sessões de fora não contam no limite: lê de `limit` em `limit` até preencher a janela.
     const out: RecentSession[] = [];
-    picked.forEach((c, i) => {
-      const meta = metas[i];
-      const agentId = this.opts.openAgentOf(c.account, c.sessionId);
-      // Sem nenhuma linha com horário (sessão aberta e fechada sem conversa): não há o que mostrar.
-      if (!agentId && meta.firstAt === undefined && meta.lastAt === undefined) return;
-      const s: RecentSession = {
-        account: c.account,
-        sessionId: c.sessionId,
-        projectDir: c.projectDir,
-        lastAt: meta.lastAt ?? c.mtimeMs,
-        size: c.size,
-        open: !!agentId,
-      };
-      if (meta.project) s.project = meta.project;
-      if (meta.title) s.title = meta.title;
-      if (meta.firstAt !== undefined) s.firstAt = meta.firstAt;
-      if (agentId) s.agentId = agentId;
-      out.push(s);
-    });
-    return out.sort((a, b) => b.lastAt - a.lastAt);
+    const keep = new Set<string>();
+    for (let from = 0; from < all.length && out.length < this.limit && (from === 0 || this.opts.inScope); from += this.limit) {
+      const picked = all.slice(from, from + this.limit);
+      const metas = await mapLimit(picked, READ_CONCURRENCY, (c) => this.metaOf(c));
+      for (const c of picked) keep.add(c.path);
+      picked.forEach((c, i) => {
+        const meta = metas[i];
+        const agentId = this.opts.openAgentOf(c.account, c.sessionId);
+        // Sem nenhuma linha com horário (sessão aberta e fechada sem conversa): não há o que mostrar.
+        if (!agentId && meta.firstAt === undefined && meta.lastAt === undefined) return;
+        const s: RecentSession = {
+          account: c.account,
+          sessionId: c.sessionId,
+          projectDir: c.projectDir,
+          lastAt: meta.lastAt ?? c.mtimeMs,
+          size: c.size,
+          open: !!agentId,
+        };
+        if (meta.project) s.project = meta.project;
+        if (meta.title) s.title = meta.title;
+        if (meta.firstAt !== undefined) s.firstAt = meta.firstAt;
+        if (agentId) s.agentId = agentId;
+        if (this.opts.inScope && !(meta.project && this.opts.inScope(meta.project))) return;
+        out.push(s);
+      });
+    }
+    // Esquece os arquivos que saíram da janela (o cache não cresce sem limite).
+    for (const path of this.cache.keys()) if (!keep.has(path)) this.cache.delete(path);
+    return out.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
   }
 
   /**

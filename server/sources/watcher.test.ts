@@ -14,7 +14,7 @@ setQuiet(true);
 
 const CWD = '/projetos/loja';
 
-function setup(opts: { tailBytes?: number } = {}) {
+function setup(opts: { tailBytes?: number; projectRoots?: string[] } = {}) {
   const tmp = tempDir();
   const home = tmp.dir;
   const dir = join(home, '.claude');
@@ -32,6 +32,7 @@ function setup(opts: { tailBytes?: number } = {}) {
   });
   const office = new Office({
     names: new NameStore(null),
+    projectRoots: opts.projectRoots,
     version: 'teste',
     startedAt: clock,
     accounts: (s) => accounts.list(s),
@@ -674,6 +675,30 @@ describe('ClaudeWatcher — shell lançado no começo de um transcript maior que
       const a = c.agent('.claude:800')!;
       expect(a.shells?.map((j) => [j.id, j.label, j.startedAt])).toEqual([['bcedo', 'Testes de ponta a ponta', t0 + 100]]);
       expect(a.activity?.text).toBe('Esperando o shell: Testes de ponta a ponta');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+});
+
+describe('ClaudeWatcher: escopo por pasta', () => {
+  const withCwd = (line: string, cwd: string) => JSON.stringify({ ...JSON.parse(line), cwd });
+
+  it('/resume de uma conversa de outra pasta: o transcript de fora não é lido (só o de dentro)', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      // A sessão roda em CWD, mas o id só existe na pasta de outro projeto (procurado pelo id, como no /resume).
+      writeLines(join(c.dir, 'projects', encodeCwd('/projetos/outra'), 'sess-b.jsonl'), [withCwd(L.prompt('SEGREDO_B', { at: c.now() - 1000 }), '/projetos/outra')]);
+      c.openSession(100, 'sess-b');
+      c.watcher.boot();
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_B');
+      expect(c.watcher.transcriptPathOf('.claude:100')).toBeUndefined();
+      // A conversa de dentro, com o cwd gravado: lida como sempre.
+      writeLines(c.transcript('sess-a'), [withCwd(L.prompt('dentro', { at: c.now() - 500 }), CWD)]);
+      c.openSession(101, 'sess-a');
+      c.poll();
+      expect(c.watcher.transcriptPathOf('.claude:101')).toBe(c.transcript('sess-a'));
     } finally {
       c.watcher.stop();
       c.tmp.cleanup();

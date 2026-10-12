@@ -131,6 +131,8 @@ describe('docker-up', () => {
     const roots = projectRootsOf({ HABBLAUD_PROJECT_ROOTS: '~/Claude/empresa-a, /srv/b/' }, '/Users/fulano');
     expect(roots).toEqual(['/Users/fulano/Claude/empresa-a', '/srv/b']);
     expect(projectRootsOf({}, '/Users/fulano')).toEqual([]);
+    // Uma vírgula no caminho (do HOME, por exemplo) partiria a lista dentro do container: recusa.
+    expect(() => projectRootsOf({ HABBLAUD_PROJECT_ROOTS: '~/empresa-a' }, '/Users/eu,teste')).toThrow(/vírgula/);
     const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
     expect(renderOverride(mounts, new Date(0), undefined, undefined, [], roots)).toContain('HABBLAUD_PROJECT_ROOTS: "/Users/fulano/Claude/empresa-a,/srv/b"');
     expect(renderOverride(mounts)).not.toContain('HABBLAUD_PROJECT_ROOTS');

@@ -306,7 +306,11 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
 
 /** HABBLAUD_PROJECT_ROOTS com `~` expandido aqui no host: no container o HOME é outro e os caminhos são os do host. */
 export function projectRootsOf(env: NodeJS.ProcessEnv, home: string): string[] {
-  return splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home));
+  const roots = splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home));
+  // A lista vai separada por vírgula: uma vírgula no caminho a partiria em outras pastas dentro do container.
+  const bad = roots.find((r) => r.includes(','));
+  if (bad) fail(`HABBLAUD_PROJECT_ROOTS: a pasta "${bad}" tem vírgula, e a lista é separada por vírgula; renomeie a pasta ou use outra.`);
+  return roots;
 }
 
 /**

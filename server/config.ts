@@ -1,11 +1,13 @@
 // Configuração do servidor a partir das variáveis de ambiente (documentadas em server/README.md).
 import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { discoverClaudeDirs, expandHome, splitList } from './accounts/detect';
 import { parseAllowedHosts } from './http/guard';
+import { normalizeCwd } from './model/rooms';
 import { parseGithubRepo } from './updates/checker';
 
 export interface ServerConfig {
@@ -31,7 +33,8 @@ export interface ServerConfig {
   allowedHosts: Set<string>;
   /**
    * Só mostra sessões cujo cwd esteja numa destas pastas (HABBLAUD_PROJECT_ROOTS, separadas por vírgula, `~` vale).
-   * Vazio = todas. No Docker são caminhos do host: o docker-up já os repassa expandidos.
+   * Vazio = todas. No Docker são caminhos do host: o docker-up já os repassa expandidos. Com escopo, dataDir fica em
+   * <dataDir>/escopos/<hash> (ver scopedDataDir).
    */
   projectRoots: string[];
   /**
@@ -148,6 +151,16 @@ export function messagesOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
   return terminal ? `mesma trava do terminal: ${terminal}` : undefined;
 }
 
+/**
+ * Com escopo por pasta, os dados gravados (nomes, timelapse, Meu dia) ficam em <dataDir>/escopos/<hash das pastas>:
+ * o que outro escopo gravou no mesmo lugar não aparece. A ordem das pastas não importa.
+ */
+function scopedDataDir(base: string, roots: readonly string[]): string {
+  if (!roots.length) return base;
+  const key = [...new Set(roots.map((r) => normalizeCwd(r)))].sort().join('\n');
+  return join(base, 'escopos', createHash('sha256').update(key).digest('hex').slice(0, 12));
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): ServerConfig {
   const home = env.HOME || homedir();
   const inDocker = detectDocker(env);
@@ -155,6 +168,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   const rootDir = findRoot(dirname(fileURLToPath(import.meta.url)));
   const host = env.HABBLAUD_HOST?.trim() || '127.0.0.1';
   const pkg = readPackage(rootDir);
+  const projectRoots = splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home));
   return {
     port: Number.isFinite(port) && port > 0 && port < 65536 ? port : 4747,
     host,
@@ -163,10 +177,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     inDocker,
     home,
     claudeDirs: discoverClaudeDirs(env, home),
-    dataDir: resolve(env.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))),
+    dataDir: scopedDataDir(resolve(env.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))), projectRoots),
     usageDir: resolve(env.HABBLAUD_USAGE_DIR?.trim() || join(home, '.habblaud', 'usage')),
     allowedHosts: parseAllowedHosts(env.HABBLAUD_ALLOWED_HOSTS),
-    projectRoots: splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home)),
+    projectRoots,
     terminal: terminalOffReason(env, host, inDocker) === undefined,
     messages: messagesOffReason(env, host, inDocker) === undefined,
     timeline: !env.HABBLAUD_TIMELINE?.trim() || isTruthy(env.HABBLAUD_TIMELINE),

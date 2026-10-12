@@ -1,4 +1,5 @@
 // Salas do escritório: identidade (cwd normalizado), nome exibido e posição (slot) no prédio.
+import { posix } from 'node:path';
 
 /** cwd normalizado: sem barras repetidas nem barra final. */
 export function normalizeCwd(cwd: string): string {
@@ -12,9 +13,10 @@ export function normalizeCwd(cwd: string): string {
  */
 export function inRoots(cwd: string, roots: readonly string[]): boolean {
   if (!roots.length) return true;
-  const c = normalizeCwd(cwd);
+  // posix.normalize resolve `.` e `..` pelo texto (o destino é o que conta); symlinks ficam como estão.
+  const c = normalizeCwd(posix.normalize(cwd));
   return roots.some((root) => {
-    const r = normalizeCwd(root);
+    const r = normalizeCwd(posix.normalize(root));
     return c === r || c.startsWith(r === '/' ? r : `${r}/`);
   });
 }

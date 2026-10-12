@@ -15,7 +15,7 @@ import { errMsg, log } from '../log';
 import type { Office, TranscriptSummary } from '../model/office';
 import { compareVersions, registryStatus, RegistryReader, SHELL_STATUS_VERSION, type RegistryEntry } from './registry';
 import { SHELL_FALLBACK_MAX_AGE_MS, ShellTracker, toShellJob, type ShellFinish } from './shells';
-import type { AgentSource } from './source';
+import { headCwd, type AgentSource } from './source';
 import {
   BOOT_RECENT_MS,
   concludedByIdle,
@@ -422,12 +422,21 @@ export class ClaudeWatcher implements AgentSource {
     const name = `${t.sessionId}.jsonl`;
     const projects = join(t.dir, 'projects');
     const expected = join(projects, encodeCwd(t.entry.cwd), name);
-    if (existsSync(expected)) return expected;
+    // Escopo por pasta: o arquivo escolhido precisa ter o cwd de dentro gravado (um /resume pode achar pelo id a
+    // conversa de outro projeto). Ainda sem linha com cwd: espera a próxima tentativa.
+    const office = this.opts.office;
+    const usable = (p: string) => {
+      if (!existsSync(p)) return false;
+      if (!office.scoped) return true;
+      const cwd = headCwd(p);
+      return cwd !== undefined && office.inScope(cwd);
+    };
+    if (usable(expected)) return expected;
     // Caminhos longos podem ser abreviados pelo Claude Code: procura pelo sessionId.
     try {
       for (const d of readdirSync(projects)) {
         const p = join(projects, d, name);
-        if (existsSync(p)) return p;
+        if (usable(p)) return p;
       }
     } catch {
       // projects/ ainda não existe

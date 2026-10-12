@@ -1,5 +1,5 @@
 // Integração da fonte do Codex: um CODEX_HOME temporário (rollouts e locks sintéticos), o AccountsService e o Office.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentInfo, Notice } from '../../../shared/types';
@@ -22,7 +22,7 @@ afterEach(() => {
   cleanups = [];
 });
 
-function setup(opts: { names?: string[]; noLocks?: boolean; env?: (dirs: string[]) => NodeJS.ProcessEnv } = {}) {
+function setup(opts: { names?: string[]; noLocks?: boolean; env?: (dirs: string[]) => NodeJS.ProcessEnv; projectRoots?: string[] } = {}) {
   const homes = (opts.names ?? ['.codex']).map((n) => codexHome(n));
   const home = homes[0];
   cleanups.push(...homes.map((h) => h.cleanup));
@@ -33,6 +33,7 @@ function setup(opts: { names?: string[]; noLocks?: boolean; env?: (dirs: string[
   const accounts = new AccountsService({ dirs: [], home: home.home, env: {}, now, onChange: () => late.office?.markDirty() });
   const office = new Office({
     names: new NameStore(null),
+    projectRoots: opts.projectRoots,
     version: 'teste',
     startedAt: clock,
     accounts: (s) => accounts.list(s),
@@ -497,5 +498,51 @@ describe('fonte do Codex: contas', () => {
     // Sem o rollout legível não há projeto: fica fora (um hook com o cwd o traria).
     expect(ctx.agent()).toBeUndefined();
     expect(ctx.source.transcriptPathOf(KEY)).toBeUndefined();
+  });
+});
+
+describe('fonte do Codex: escopo por pasta (HABBLAUD_PROJECT_ROOTS)', () => {
+  const ev = (name: string, cwd: string, extra: Record<string, unknown> = {}) => ({ hook_event_name: name, session_id: T, cwd, transcript_path: null, turn_id: 't1', ...extra });
+  const texts = (ctx: ReturnType<typeof setup>) => JSON.stringify(ctx.office.commit().snapshot);
+
+  it('hook com cwd de fora depois de um de dentro: o agente sai na hora e a atividade de fora não aparece', () => {
+    const ctx = setup({ projectRoots: ['/projetos/api'] });
+    ctx.source.boot();
+    ctx.hook(ev('SessionStart', '/projetos/api', { source: 'startup' }));
+    expect(ctx.agent()).toBeDefined();
+    ctx.hook(ev('PreToolUse', '/projetos/outra', { tool_name: 'Bash', tool_use_id: 'c1', tool_input: { command: 'cat SEGREDO_B' } }));
+    expect(ctx.office.has(KEY)).toBe(false);
+    expect(texts(ctx)).not.toContain('SEGREDO_B');
+    // Não volta mais, nem com hooks de dentro de novo.
+    ctx.hook(ev('UserPromptSubmit', '/projetos/api', { prompt: 'oi' }));
+    ctx.poll();
+    expect(ctx.office.has(KEY)).toBe(false);
+  });
+
+  it('turn_context com cwd de fora no rollout: o agente sai e o turno de fora não aparece', () => {
+    const ctx = setup({ projectRoots: ['/projetos/api'] });
+    const at = ctx.now() - 10_000;
+    const path = ctx.home.rollout(T, [R.meta(T, { at, cwd: '/projetos/api' }), R.taskStarted('t1', at), R.user(T, 't1', 'u', 'dentro', at)]);
+    ctx.home.lock(T, at);
+    ctx.source.boot();
+    expect(ctx.agent()).toBeDefined();
+    appendFileSync(path, `${R.turnContext({ cwd: '/projetos/outra' })}\n${R.user(T, 't2', 'u2', 'SEGREDO_B')}\n`);
+    ctx.advance(2_000);
+    ctx.poll();
+    expect(ctx.office.has(KEY)).toBe(false);
+    expect(texts(ctx)).not.toContain('SEGREDO_B');
+  });
+
+  it('subagente com cwd de fora (ou ainda sem cwd) não entra pelo pai de dentro', () => {
+    const ctx = setup({ projectRoots: ['/projetos/api'] });
+    const at = ctx.now() - 10_000;
+    ctx.home.rollout(T, [R.meta(T, { at, cwd: '/projetos/api' }), R.taskStarted('p1', at), R.user(T, 'p1', 'u', 'pai', at)]);
+    ctx.home.rollout(C, [R.meta(C, { at: at + 1_000, cwd: '/projetos/outra', sessionId: T, source: SOURCES.sub(T) }), R.taskStarted('s1', at + 1_000), R.user(C, 's1', 'su', 'SEGREDO_SUB', at + 1_100)]);
+    ctx.home.lock(T, at);
+    ctx.home.lock(C, at + 1_000);
+    ctx.source.boot();
+    expect(ctx.agent()).toBeDefined();
+    expect(ctx.agent(`.codex:${C}`)).toBeUndefined();
+    expect(texts(ctx)).not.toContain('SEGREDO_SUB');
   });
 });

@@ -76,9 +76,30 @@ interface ConversationSource {
   poll(): PollResult;
 }
 
-/** Passa as linhas pelo parser; uma linha que o faça falhar é pulada sem perder o resto do lote. */
-function parseInto(parser: TerminalParser, lines: readonly string[], out: TerminalEntry[]): void {
+/** Todo `"cwd"` de uma linha crua (Claude Code: em cada linha; Codex: session_meta e turn_context). */
+const CWD_RE = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/g;
+
+/** A linha cita alguma pasta fora do escopo? */
+function outOfScope(line: string, scope: (cwd: string) => boolean): boolean {
+  for (const m of line.matchAll(CWD_RE)) {
+    try {
+      const cwd: unknown = JSON.parse(m[1]);
+      if (typeof cwd === 'string' && !scope(cwd)) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Passa as linhas pelo parser; uma linha que o faça falhar é pulada sem perder o resto do lote. Com `scope` (escopo
+ * por pasta), para na primeira linha de outra pasta e devolve false: dali em diante a conversa não é mais desta
+ * instância.
+ */
+function parseInto(parser: TerminalParser, lines: readonly string[], out: TerminalEntry[], scope?: (cwd: string) => boolean): boolean {
   for (const line of lines) {
+    if (scope && outOfScope(line, scope)) return false;
     let entries: TerminalEntry[];
     try {
       entries = parser.push(line);
@@ -88,6 +109,14 @@ function parseInto(parser: TerminalParser, lines: readonly string[], out: Termin
     }
     for (const e of entries) out.push(e);
   }
+  return true;
+}
+
+/** Escopo das conexões de terminal: a pasta de cada linha e o agente ainda no escritório. */
+interface ScopeGuard {
+  scope?: (cwd: string) => boolean;
+  /** O agente continua no escritório (ausente = conversa do histórico). */
+  alive?: () => boolean;
 }
 
 /**
@@ -98,11 +127,13 @@ class TranscriptSource implements ConversationSource {
   private tail: FileTail;
   /** Criado em load(), que sempre roda antes do primeiro poll(). */
   private parser!: TerminalParser;
+  /** Apareceu uma linha de outra pasta (ou o agente saiu do escopo): nada mais é lido. */
+  private closed = false;
 
   constructor(
     private readonly agentId: string,
     path: string,
-    private readonly o: Required<Pick<TerminalOptions, 'transcriptPathOf' | 'createParser' | 'initTailBytes' | 'initEntries'>>,
+    private readonly o: Required<Pick<TerminalOptions, 'transcriptPathOf' | 'createParser' | 'initTailBytes' | 'initEntries'>> & ScopeGuard,
     readonly intervalMs: number,
   ) {
     this.tail = new FileTail(path);
@@ -114,9 +145,9 @@ class TranscriptSource implements ConversationSource {
     const keep = this.o.initEntries;
     let entries: TerminalEntry[] = [];
     let dropped = false;
-    for (let i = 0; i < MAX_INIT_READS; i++) {
+    for (let i = 0; i < MAX_INIT_READS && !this.closed; i++) {
       const r = this.tail.read();
-      parseInto(this.parser, r.lines, entries);
+      if (!parseInto(this.parser, r.lines, entries, this.o.scope)) this.closed = true;
       // Descarta o excesso pelo caminho (transcript com muitas entradas pequenas).
       if (entries.length > keep * 2) {
         entries = entries.slice(-keep);
@@ -132,6 +163,10 @@ class TranscriptSource implements ConversationSource {
   }
 
   poll(): PollResult {
+    if (this.closed || (this.o.alive && !this.o.alive())) {
+      this.closed = true;
+      return { stop: true };
+    }
     // /clear ou /resume no mesmo processo: o principal continua o mesmo, o transcript é outro.
     const path = this.o.transcriptPathOf(this.agentId);
     if (path && path !== this.tail.path) {
@@ -143,7 +178,10 @@ class TranscriptSource implements ConversationSource {
       // Arquivo sumido: `missing`, sem linhas; continua tentando nos próximos ciclos.
       const r = this.tail.read();
       if (r.reset) return { init: this.load() };
-      parseInto(this.parser, r.lines, fresh);
+      if (!parseInto(this.parser, r.lines, fresh, this.o.scope)) {
+        this.closed = true;
+        return { append: fresh, stop: true };
+      }
       if (!r.more) break;
     }
     return { append: fresh };
@@ -240,7 +278,7 @@ export class TerminalStreams {
    * (HistorySession.createParser; padrão: o do Claude Code). Mesmos erros de attach (429/500).
    */
   attachSession(req: IncomingMessage, res: ServerResponse, streamId: string, path: string, createParser?: () => TerminalParser): void {
-    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries };
+    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries, scope: this.scope() };
     this.serve(req, res, streamId, new TranscriptSource(streamId, path, o, this.sessionPollMs));
   }
 
@@ -282,6 +320,12 @@ export class TerminalStreams {
     }
   }
 
+  /** Escopo por pasta do Office (HABBLAUD_PROJECT_ROOTS), para as conexões novas. */
+  private scope(): ((cwd: string) => boolean) | undefined {
+    const office = this.opts.office;
+    return office.scoped ? (cwd) => office.inScope(cwd) : undefined;
+  }
+
   /** Fonte da conversa do agente, ou a mensagem do 404. */
   private sourceFor(agentId: string): ConversationSource | string {
     const office = this.opts.office;
@@ -290,7 +334,14 @@ export class TerminalStreams {
       if (!path) return 'transcript do agente não encontrado';
       const parserFor = this.opts.parserFor;
       const createParser = parserFor ? () => parserFor(agentId) ?? this.createParser() : this.createParser;
-      const o = { transcriptPathOf: this.opts.transcriptPathOf, createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries };
+      const o = {
+        transcriptPathOf: this.opts.transcriptPathOf,
+        createParser,
+        initTailBytes: this.initTailBytes,
+        initEntries: this.initEntries,
+        scope: this.scope(),
+        alive: office.scoped ? () => office.has(agentId) : undefined,
+      };
       return new TranscriptSource(agentId, path, o, this.pollMs);
     }
     // Os agentes do demo não estão entre os reais do Office, mas office.detail os encontra.

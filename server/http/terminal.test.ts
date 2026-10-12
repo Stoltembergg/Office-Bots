@@ -110,11 +110,12 @@ interface Served {
   close: () => Promise<void>;
 }
 
-async function serve(opts: { terminal?: boolean; streams?: Partial<TerminalOptions> } = {}): Promise<Served> {
+async function serve(opts: { terminal?: boolean; streams?: Partial<TerminalOptions>; projectRoots?: string[] } = {}): Promise<Served> {
   const tmp = tempDir();
   const terminal = opts.terminal ?? true;
   const office = new Office({
     names: new NameStore(null),
+    projectRoots: opts.projectRoots,
     version: 't',
     startedAt: Date.now(),
     accounts: () => [],
@@ -425,6 +426,37 @@ describe('terminal: transporte', () => {
       appendLines(second, [line('fim')]);
       await waitFor(() => expect(view(s)).toEqual(['novo', 'fim']));
       s.close();
+    } finally {
+      await env.close();
+    }
+  });
+
+  it('escopo por pasta: o stream para na primeira linha de outra pasta e quando o agente sai do escritório', async () => {
+    const env = await serve({ projectRoots: ['/p/loja'] });
+    try {
+      const path = join(env.dir, 's1.jsonl');
+      writeLines(path, [JSON.stringify({ id: 'a', text: 'a', cwd: '/p/loja' })]);
+      env.paths.set(MAIN, path);
+      const s = await open(env.base, route(MAIN));
+      await waitFor(() => expect(view(s)).toEqual(['a']));
+      appendLines(path, [JSON.stringify({ id: 'b', text: 'b', cwd: '/p/loja/app' }), JSON.stringify({ id: 'fora', text: 'SEGREDO_B', cwd: '/p/outra' }), line('depois')]);
+      await waitFor(() => expect(view(s)).toEqual(['a', 'b']));
+      await new Promise((ok) => setTimeout(ok, 100));
+      expect(s.raw).not.toContain('SEGREDO_B');
+      expect(view(s)).toEqual(['a', 'b']);
+      s.close();
+
+      // Agente que sai do escritório (leaveScope): o stream aberto para de ler.
+      const second = join(env.dir, 's2.jsonl');
+      writeLines(second, [line('x')]);
+      env.paths.set(MAIN, second);
+      const t = await open(env.base, route(MAIN));
+      await waitFor(() => expect(view(t)).toEqual(['x']));
+      env.office.leaveScope(MAIN);
+      appendLines(second, [line('SEGREDO_DEPOIS')]);
+      await new Promise((ok) => setTimeout(ok, 100));
+      expect(t.raw).not.toContain('SEGREDO_DEPOIS');
+      t.close();
     } finally {
       await env.close();
     }
