@@ -68,6 +68,12 @@ const WEB_MAX_OUT = 9;
 /** Tom das bordas da área externa (vinheta) e do gramado além dela. */
 const VIGNETTE_ALPHA = 0.2;
 const VIGNETTE_EDGE = `rgba(18,40,26,${VIGNETTE_ALPHA})`;
+/** Faixa (tiles) junto à borda da área externa onde a vinheta já está completa: a grama de fora é pintada com a
+ * vinheta completa, então as duas ficam com o mesmo tom (dia e noite) e a emenda some. */
+const EDGE_BAND = 5;
+/** Lado (tiles) das células de grama além da base e teto do cache. */
+const GRASS_CELL = 8;
+const GRASS_CELL_CACHE = 1024;
 
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
@@ -121,7 +127,8 @@ export class Renderer {
   /** Último fator noturno aplicado (usado pelo overlay). */
   night = 0;
   private clearColor = '#7fae62';
-  private grass: CanvasPattern | null = null;
+  /** Células de grama (GRASS_CELL tiles) além da base, por coordenada de célula. */
+  private grassCells = new Map<string, HTMLCanvasElement>();
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -249,52 +256,11 @@ export class Renderer {
       }
     }
     this.desaturate(ctx);
-    // fundo além da área desenhada: a própria grama (amostra espelhada 2x2, sem emendas), já no
-    // tom da borda da vinheta
-    const s = 4 * TILE;
-    try {
-      const tile = document.createElement('canvas');
-      tile.width = 2 * s;
-      tile.height = 2 * s;
-      const tctx = tile.getContext('2d')!;
-      tctx.imageSmoothingEnabled = false;
-      for (const [mx, my] of [
-        [0, 0],
-        [1, 0],
-        [0, 1],
-        [1, 1],
-      ] as const) {
-        tctx.setTransform(mx ? -1 : 1, 0, 0, my ? -1 : 1, mx ? 2 * s : 0, my ? 2 * s : 0);
-        tctx.drawImage(c, 0, 0, s, s, 0, 0, s, s);
-      }
-      tctx.setTransform(1, 0, 0, 1, 0, 0);
-      // média da amostra: suaviza as manchas grandes (que viram faixas ao repetir), mantém o capim
-      const d = tctx.getImageData(0, 0, 2 * s, 2 * s).data;
-      let r = 0;
-      let g = 0;
-      let bl = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        r += d[i];
-        g += d[i + 1];
-        bl += d[i + 2];
-      }
-      const n = d.length / 4;
-      const avg = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(bl / n)})`;
-      tctx.globalAlpha = 0.6;
-      tctx.fillStyle = avg;
-      tctx.fillRect(0, 0, 2 * s, 2 * s);
-      tctx.globalAlpha = 1;
-      tctx.fillStyle = VIGNETTE_EDGE;
-      tctx.fillRect(0, 0, 2 * s, 2 * s);
-      this.grass = this.ctx.createPattern(tile, 'repeat');
-      // cor de fundo (antes do padrão carregar): a média já com o tom da vinheta
-      const k = VIGNETTE_ALPHA;
-      this.clearColor = `rgb(${Math.round((r / n) * (1 - k) + 18 * k)},${Math.round((g / n) * (1 - k) + 40 * k)},${Math.round((bl / n) * (1 - k) + 26 * k)})`;
-    } catch {
-      this.grass = null;
-      this.clearColor = '#6f9a5a';
-    }
     this.finishBase(ctx);
+    // fundo além da área desenhada: a mesma grama procedural (ruído ancorado no mundo, semente da base),
+    // pintada por célula sob demanda com a dessaturação e a vinheta completa — contínua com a borda
+    this.grassCells.clear();
+    this.clearColor = this.grassAverage();
     this.base = c;
   }
 
@@ -316,13 +282,11 @@ export class Renderer {
       const px = (n: number) => n * TILE;
       const floors: FloorPatch[] = h
         ? [
-            { kind: 'grass', x: 0, y: 0, w: px(P), h: px(STREET_W), seed: 11 },
             { kind: 'sidewalk', x: 0, y: px(2), w: px(P), h: px(2), seed: 12 },
             { kind: 'sidewalk', x: 0, y: px(9), w: px(P), h: px(2), seed: 14 },
             { kind: 'street', x: 0, y: px(4), w: px(P), h: px(5), seed: 13 },
           ]
         : [
-            { kind: 'grass', x: 0, y: 0, w: px(STREET_W), h: px(P), seed: 11 },
             { kind: 'sidewalk', x: px(1), y: 0, w: px(2), h: px(P), seed: 12 },
             { kind: 'sidewalk', x: px(8), y: 0, w: px(2), h: px(P), seed: 14 },
             { kind: 'street', x: px(3), y: 0, w: px(5), h: px(P), seed: 13 },
@@ -348,6 +312,85 @@ export class Renderer {
   }
 
   /** Ruas além da camada base: cada rua h segue para os dois lados e cada rua v para cima e para baixo. */
+  /** Uma célula de grama além da base, pintada como a base pinta a sua (ruído do mundo, semente 11), já
+   * dessaturada e com a vinheta completa. Cache por célula; zera quando a base é refeita. */
+  private grassCell(cx: number, cy: number): HTMLCanvasElement | null {
+    const key = `${cx},${cy}`;
+    const hit = this.grassCells.get(key);
+    if (hit) return hit;
+    if (this.grassCells.size > GRASS_CELL_CACHE) this.grassCells.clear();
+    const size = GRASS_CELL * TILE;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(-cx * size, -cy * size);
+    try {
+      this.art.drawFloor(ctx, 'grass', cx * size, cy * size, size, size, { seed: 11 });
+    } catch {
+      ctx.fillStyle = '#9fc77f';
+      ctx.fillRect(cx * size, cy * size, size, size);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    try {
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.fillStyle = 'rgba(128,128,128,0.16)';
+      ctx.fillRect(0, 0, size, size);
+    } catch {
+      // sem o modo de mistura: segue sem dessaturar
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = VIGNETTE_EDGE;
+    ctx.fillRect(0, 0, size, size);
+    this.grassCells.set(key, c);
+    return c;
+  }
+
+  /** Cor média de uma célula de grama: fundo da tela antes de a cena cobrir tudo. */
+  private grassAverage(): string {
+    const c = this.grassCell(0, 0);
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return '#6f9a5a';
+    try {
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        r += d[i];
+        g += d[i + 1];
+        b += d[i + 2];
+      }
+      const n = d.length / 4;
+      return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
+    } catch {
+      return '#6f9a5a';
+    }
+  }
+
+  /** Grama além da base: as células visíveis que não estão inteiras dentro da base. */
+  private drawGrassBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
+    if (!this.base) return;
+    const size = GRASS_CELL * TILE;
+    const bx0 = this.baseX;
+    const by0 = this.baseY;
+    const bx1 = bx0 + this.base.width;
+    const by1 = by0 + this.base.height;
+    if (vx0 >= bx0 && vy0 >= by0 && vx1 <= bx1 && vy1 <= by1) return;
+    const ctx = this.ctx;
+    for (let cy = Math.floor(vy0 / size); cy * size < vy1; cy++) {
+      for (let cx = Math.floor(vx0 / size); cx * size < vx1; cx++) {
+        const x = cx * size;
+        const y = cy * size;
+        if (x >= bx0 && y >= by0 && x + size <= bx1 && y + size <= by1) continue;
+        const cell = this.grassCell(cx, cy);
+        if (cell) ctx.drawImage(cell, x, y);
+      }
+    }
+  }
+
   private drawStripsBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
     if (!this.base) return;
     const bx0 = this.baseX;
@@ -404,18 +447,23 @@ export class Renderer {
       return t * t * (3 - 2 * t);
     };
     try {
+      // a máscara tem 1 tile de margem em volta (valores da borda): ampliada com suavização, a borda real não
+      // se mistura com o transparente de fora, senão o último tile ficaria meio vinhetado e apareceria como linha
+      const mw = b.w + 2;
+      const mh = b.h + 2;
       const m = document.createElement('canvas');
-      m.width = b.w;
-      m.height = b.h;
+      m.width = mw;
+      m.height = mh;
       const mctx = m.getContext('2d')!;
-      const img = mctx.createImageData(b.w, b.h);
-      for (let ty = 0; ty < b.h; ty++) {
-        for (let tx = 0; tx < b.w; tx++) {
-          const wx = b.x + tx + 0.5;
-          const wy = b.y + ty + 0.5;
-          const fx = wx < r.x ? smooth(6, r.x - b.x, r.x - wx) : wx > r.x + r.w ? smooth(6, b.x + b.w - (r.x + r.w), wx - (r.x + r.w)) : 0;
-          const fy = wy < r.y ? smooth(5, r.y - b.y, r.y - wy) : wy > r.y + r.h ? smooth(12, b.y + b.h - (r.y + r.h), wy - (r.y + r.h)) : 0;
-          const i = (ty * b.w + tx) * 4;
+      const img = mctx.createImageData(mw, mh);
+      for (let ty = 0; ty < mh; ty++) {
+        for (let tx = 0; tx < mw; tx++) {
+          const wx = b.x + Math.min(b.w - 1, Math.max(0, tx - 1)) + 0.5;
+          const wy = b.y + Math.min(b.h - 1, Math.max(0, ty - 1)) + 0.5;
+          // completa EDGE_BAND tiles antes da borda: a faixa final é uniforme e serve de amostra para a grama de fora
+          const fx = wx < r.x ? smooth(6, r.x - b.x - EDGE_BAND, r.x - wx) : wx > r.x + r.w ? smooth(6, b.x + b.w - (r.x + r.w) - EDGE_BAND, wx - (r.x + r.w)) : 0;
+          const fy = wy < r.y ? smooth(5, r.y - b.y - EDGE_BAND, r.y - wy) : wy > r.y + r.h ? smooth(12, b.y + b.h - (r.y + r.h) - EDGE_BAND, wy - (r.y + r.h)) : 0;
+          const i = (ty * mw + tx) * 4;
           img.data[i] = 18;
           img.data[i + 1] = 40;
           img.data[i + 2] = 26;
@@ -424,7 +472,7 @@ export class Renderer {
       }
       mctx.putImageData(img, 0, 0);
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(m, x0, y0, w, h);
+      ctx.drawImage(m, x0 - TILE, y0 - TILE, w + 2 * TILE, h + 2 * TILE);
       ctx.imageSmoothingEnabled = false;
     } catch {
       // sem vinheta
@@ -450,17 +498,8 @@ export class Renderer {
     const vy0 = -oy / scale;
     const vx1 = vx0 + W / scale;
     const vy1 = vy0 + H / scale;
-    if (this.grass && this.base) {
-      const bx1 = this.baseX + this.base.width;
-      const by1 = this.baseY + this.base.height;
-      if (vx0 < this.baseX || vy0 < this.baseY || vx1 > bx1 || vy1 > by1) {
-        // padrão ancorado na origem do mundo (múltiplo do tile), alinhado à camada base
-        ctx.fillStyle = this.grass;
-        ctx.save();
-        ctx.translate(this.baseX, this.baseY);
-        ctx.fillRect(vx0 - this.baseX - 1, vy0 - this.baseY - 1, vx1 - vx0 + 2, vy1 - vy0 + 2);
-        ctx.restore();
-      }
+    if (this.base) {
+      this.drawGrassBeyond(vx0, vy0, vx1, vy1);
       this.drawStripsBeyond(vx0, vy0, vx1, vy1);
     }
     // carros e pedestres de uma borda à outra da união (base ∪ visão): nunca fora do asfalto ou da calçada,
