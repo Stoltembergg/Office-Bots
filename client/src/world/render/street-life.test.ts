@@ -329,6 +329,24 @@ describe('cruzamentos (ruas norte–sul)', () => {
     expect(c.y).toBeGreaterThan(K.stopS);
   });
 
+  it('não sai do STOP com um carro da principal que chegaria ao quadrado antes de ele terminar de atravessar; os dois nunca se sobrepõem', () => {
+    const l = lifeV();
+    const c = vcar(K.stopS - CAR_HALF_L, 1, 40, { v: 0, stoppedAt: 1 });
+    // a 160 px do quadrado a 70 px/s: chega em ~2,3 s; o norte–sul levaria ~3,5 s para sair do quadrado
+    const h = hcar({ x: K.x0 - CAR_HALF_L - 160, y: 560, dir: 1, speed: 70, v: 70, variant: 0 });
+    l.cars.push(c, h);
+    let now = 5000;
+    for (let t = 0; t < 8000; t += 50) {
+      now = 5000 + t;
+      l.update(now, 0.05, 0, 1400, 0, 1000);
+      const cInBox = c.y + CAR_HALF_L > K.y0 && c.y - CAR_HALF_L < K.y1;
+      const hInBox = h.x + CAR_HALF_L > K.x0 && h.x - CAR_HALF_L < K.x1;
+      expect(cInBox && hInBox, `sobreposição em t=${t}`).toBe(false);
+    }
+    expect(c.y).toBeGreaterThan(K.y1);
+    expect(h.x).toBeGreaterThan(K.x1);
+  });
+
   it('o carro da principal cede a um carro norte–sul parado dentro do quadrado', () => {
     const l = lifeV();
     l.cars.push(vcar(584, 1, 0, { v: 0, cleared: K.stopS - CAR_HALF_L }));

@@ -219,9 +219,9 @@ export class StreetLife {
         continue;
       }
       let want = c.speed;
-      // um carro da rua norte–sul dentro do quadrado: para antes da faixa que antecede o quadrado
+      // um carro da rua norte–sul que saiu do STOP e ainda não atravessou o quadrado: para antes da faixa que o antecede
       for (const k of this.geo.crossings) {
-        if (!k.main || !this.carInBox(k)) continue;
+        if (!k.main || !this.carCommitted(k)) continue;
         const stop = c.dir > 0 ? k.x0 - 2 * TILE - STOP_GAP : k.x1 + 2 * TILE + STOP_GAP;
         const toStop = (stop - c.x) * c.dir;
         if (toStop > 0 && toStop < BRAKE_DIST) want = Math.min(want, Math.max(0, (toStop - 2) * 1.2));
@@ -272,7 +272,7 @@ export class StreetLife {
         if (toLine <= 3 && c.v < 1) c.stoppedAt = now;
         continue;
       }
-      const go = now - c.stoppedAt >= STOP_HOLD_MS && this.boxClear(k) && !this.pedOnV(k, 'n') && !this.pedOnV(k, 's');
+      const go = now - c.stoppedAt >= STOP_HOLD_MS && this.boxClear(k, c) && !this.pedOnV(k, 'n') && !this.pedOnV(k, 's');
       if (go) {
         c.cleared = line;
         c.stoppedAt = 0;
@@ -287,20 +287,34 @@ export class StreetLife {
     c.y += c.dir * c.v * step;
   }
 
-  /** Um carro norte–sul com o corpo dentro do quadrado do cruzamento. */
-  carInBox(k: Crossing): boolean {
-    return this.cars.some((o) => o.axis === 'v' && o.x >= k.x0 && o.x <= k.x1 && o.y + CAR_HALF_L > k.y0 && o.y - CAR_HALF_L < k.y1);
+  /** Um carro norte–sul que já cumpriu o STOP deste cruzamento (ou está dentro do quadrado) e ainda não saiu dele. */
+  carCommitted(k: Crossing): boolean {
+    return this.cars.some((o) => {
+      if (o.axis !== 'v' || o.x < k.x0 || o.x > k.x1) return false;
+      const inBox = o.y + CAR_HALF_L > k.y0 && o.y - CAR_HALF_L < k.y1;
+      const line = o.dir > 0 ? k.stopS - CAR_HALF_L : k.stopN + CAR_HALF_L;
+      const beforeExit = o.dir > 0 ? o.y - CAR_HALF_L < k.y1 : o.y + CAR_HALF_L > k.y0;
+      return inBox || (o.cleared === line && beforeExit);
+    });
   }
 
-  /** Quadrado livre para um carro norte–sul entrar (ver stepVCar). */
-  boxClear(k: Crossing): boolean {
+  /**
+   * Quadrado livre para o carro norte–sul `c` entrar: nenhum outro norte–sul dentro; nenhum carro da principal dentro
+   * (com margem), nem chegando a menos de YIELD_SAFE_DIST, nem perto o bastante para alcançar o quadrado antes de `c`
+   * terminar de atravessá-lo na velocidade dele (o da principal pode estar acelerando: conta a de cruzeiro).
+   */
+  boxClear(k: Crossing, c: Car): boolean {
+    const toExit = c.dir > 0 ? k.y1 - (c.y - CAR_HALF_L) : c.y + CAR_HALF_L - k.y0;
+    const tCross = toExit / Math.max(c.speed, 1) + 0.4;
     return this.cars.every((o) => {
+      if (o === c) return true;
       if (o.axis === 'v') return !(o.x >= k.x0 && o.x <= k.x1 && o.y + CAR_HALF_L > k.y0 - 4 && o.y - CAR_HALF_L < k.y1 + 4);
       if (!k.main) return true;
       if (o.x >= k.x0 - CROSS_CLEAR_PX && o.x <= k.x1 + CROSS_CLEAR_PX) return false;
       const passed = o.dir > 0 ? o.x > k.x1 : o.x < k.x0;
       if (passed) return true;
-      return (o.dir > 0 ? k.x0 - o.x : o.x - k.x1) > YIELD_SAFE_DIST;
+      const toBox = (o.dir > 0 ? k.x0 - o.x : o.x - k.x1) - CAR_HALF_L;
+      return toBox > YIELD_SAFE_DIST && toBox > Math.max(o.v, o.speed) * tCross + 10;
     });
   }
 
