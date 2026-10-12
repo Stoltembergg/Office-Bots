@@ -295,7 +295,12 @@ export class Renderer {
       ctx.fillStyle = 'rgba(255,236,170,0.75)';
       if (h) for (let x = 4; x < c.width; x += 24) ctx.fillRect(x, px(6) + TILE / 2 - 1, 12, 2);
       else for (let y = 4; y < c.height; y += 24) ctx.fillRect(px(5) + TILE / 2 - 1, y, 2, 12);
+      // dessaturação e vinheta só sobre o pavimento: as linhas de grama ficam transparentes e a célula de grama
+      // (já acabada) aparece por baixo — sem banda escura junto às calçadas
       ctx.save();
+      ctx.beginPath();
+      for (const f of floors) ctx.rect(f.x, f.y, f.w, f.h);
+      ctx.clip();
       try {
         ctx.globalCompositeOperation = 'saturation';
         ctx.fillStyle = 'rgba(128,128,128,0.16)';
@@ -303,9 +308,10 @@ export class Renderer {
       } catch {
         // sem o modo de mistura: segue sem dessaturar
       }
-      ctx.restore();
+      ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = VIGNETTE_EDGE;
       ctx.fillRect(0, 0, c.width, c.height);
+      ctx.restore();
       const pattern = this.ctx.createPattern(c, 'repeat');
       if (pattern) this.strips.push({ axis: s.axis, rect: s.rect, pattern });
     }
