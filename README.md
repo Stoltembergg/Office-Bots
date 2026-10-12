@@ -223,6 +223,11 @@ Depois, **abra o Codex e aprove os hooks do Habblaud em `/hooks`**: o Codex só 
 aprova (o Habblaud nunca grava essa aprovação). Com o Habblaud no Docker, para mandar mensagens às sessões do Codex
 deixe também `npm run codex:bridge` rodando no Mac (veja [Codex](#codex)).
 
+### 5. Grok no escritório (opcional)
+
+Se você usa o **Grok** da xAI (a CLI `grok`), as sessões abertas dele também entram no escritório, cada uma com o selo
+**GROK**, sem instalar nada. Veja [Grok](#grok).
+
 ### Abrir no celular (opcional)
 
 Por padrão o Habblaud só aceita conexões do próprio computador. Para abrir no celular (no mesmo Wi-Fi), com Docker:
@@ -494,6 +499,24 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
   pouco para ir embora depois que você fecha o terminal.
 - Conversas da nuvem do ChatGPT (sem arquivo no computador) não aparecem. `HABBLAUD_CODEX=0` desliga o Codex.
 
+### Grok
+
+As sessões abertas da CLI `grok` (o TUI) aparecem como as do Codex: personagem, sala do projeto, atividade, tarefas,
+título, modelo, tokens, terminal e histórico. O chip da conta é vazado e leva o selo **GROK**.
+
+- **Sem instalar nada:** o Habblaud lê o que o próprio Grok grava em `~/.grok` (ou `GROK_HOME`): a lista das sessões
+  abertas (`active_sessions.json`) e, de cada sessão, a conversa (`updates.jsonl`) e o resumo (`summary.json`). Nunca
+  lê `auth.json` nem `config.toml`.
+- **Ainda não dá** para aprovar pedidos nem mandar mensagens pelo escritório, e o Grok não informa limite de uso (a
+  conta dele fica fora do painel de uso). Um pedido de aprovação aberto não levanta a mão do personagem: ele fica
+  "trabalhando" até o turno terminar.
+- Sessões do `grok -p` (sem o TUI) e de subagentes não entram no escritório; as de subagente também ficam fora do
+  histórico.
+- **No Docker** o `docker:up` monta só `~/.grok/sessions`, somente leitura. Lá dentro a lista das sessões abertas não
+  serve (o Grok a troca por outro arquivo a cada mudança), então vale a conversa modificada nos últimos 30 minutos:
+  uma sessão fechada leva até 30 minutos para sair, e uma aberta e parada há mais que isso some até a próxima escrita.
+- `HABBLAUD_GROK=0` desliga o Grok.
+
 ### GitHub no escritório
 
 O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o Habblaud lê nos
@@ -612,12 +635,13 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_CODEX` | ligado | `0` desliga o Codex no escritório. |
 | `HABBLAUD_CODEX_DIRS` | detecção automática | Pastas do Codex, separadas por vírgula (no lugar de `~/.codex*` e `CODEX_HOME`). |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH (no Windows, `codex.exe`) | O binário do Codex que entrega as mensagens (`codex queue`), no modo Node ou no `npm run codex:bridge`. |
+| `HABBLAUD_GROK` | ligado | `0` desliga o Grok no escritório. A pasta vem de `GROK_HOME` (padrão `~/.grok`). |
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `HABBLAUD_PROJECT_ROOTS` | todas as pastas | Só mostra as sessões abertas nessas pastas (ou dentro delas), separadas por vírgula; `~` vale. Ex.: `~/Claude/empresa-a`. O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. A comparação é pelo caminho como a ferramenta o grava (com `..` resolvido, sem seguir links, diferenciando maiúsculas), e qualquer campo `cwd` da conversa conta: um argumento de ferramenta com esse nome apontando para outra pasta também tira a sessão. As contas (nome e pasta de configuração) continuam aparecendo. |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
-`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR`,
+`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_GROK` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `GROK_HOME`, `HABBLAUD_USAGE_DIR`,
 `HABBLAUD_PROJECT_ROOTS` e `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 

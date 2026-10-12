@@ -33,6 +33,9 @@ import { ClaudeWatcher } from './sources/watcher';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
+import { discoverGrokDir } from './sources/grok/files';
+import { GrokHistory } from './sources/grok/history';
+import { GrokSource } from './sources/grok/source';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 
@@ -100,6 +103,12 @@ if (codex) agents.add(codex);
 // Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
 // (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.
 const codexLive: CodexLive | undefined = codex;
+// Grok (GROK_HOME ou ~/.grok; no Docker, a pasta montada em HABBLAUD_GROK_DIR; HABBLAUD_GROK=0 desliga): só lê.
+const grokDir = config.grok ? discoverGrokDir(process.env, config.home) : undefined;
+const grok = grokDir
+  ? new GrokSource({ accounts, office, dir: grokDir, hostDir: process.env.HABBLAUD_GROK_HOST_DIR?.trim() || undefined, inDocker: config.inDocker })
+  : undefined;
+if (grok) agents.add(grok);
 late.office = office;
 late.agents = agents;
 const hub = new Hub(office);
@@ -120,6 +129,18 @@ const history = config.terminal
       inScope,
     )
   : undefined;
+if (history && grok) {
+  history.add(
+    new GrokHistory({
+      account: () => {
+        const e = accounts.entriesOf('grok')[0];
+        return e ? { id: e.id, dir: e.dir } : undefined;
+      },
+      openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid),
+      inScope,
+    }),
+  );
+}
 if (history && codex) history.add(new CodexHistory({ accounts: () => accounts.entriesOf('codex'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid), inScope }));
 // Linha do tempo do timelapse: grava cada snapshot novo (com throttle) em <dataDir>/timeline.
 const timelineDir = join(config.dataDir, TIMELINE_DIR);

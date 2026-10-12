@@ -472,6 +472,28 @@ describe('terminal: transporte', () => {
     }
   });
 
+  it('escopo por pasta: conversa sem nenhum cwd (Grok) vale pela sala do agente; com uma linha de fora, não', async () => {
+    const env = await serve({ projectRoots: ['/p/loja'] });
+    try {
+      const path = join(env.dir, 'g1.jsonl');
+      writeLines(path, [line('a')]);
+      env.paths.set(MAIN, path);
+      const s = await open(env.base, route(MAIN));
+      await waitFor(() => expect(view(s)).toEqual(['a']));
+      s.close();
+      const out = join(env.dir, 'g2.jsonl');
+      writeLines(out, [JSON.stringify({ id: 'fora', text: 'SEGREDO', cwd: '/p/outra' }), line('b')]);
+      env.paths.set(MAIN, out);
+      const u = await open(env.base, route(MAIN));
+      await waitFor(() => expect(inits(u)).toHaveLength(1));
+      expect(inits(u)[0].entries).toEqual([]);
+      expect(u.raw).not.toContain('SEGREDO');
+      u.close();
+    } finally {
+      await env.close();
+    }
+  });
+
   it('stop() encerra os streams abertos', async () => {
     const env = await serve();
     try {

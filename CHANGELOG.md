@@ -16,6 +16,9 @@ do meio (0.**3**.0).
   O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer
   em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. No Docker, o
   `docker:up` repassa as pastas já expandidas.
+- Grok no escritório: as sessões abertas da CLI `grok` aparecem com o selo **GROK**, com atividade, tarefas, título,
+  modelo, tokens, terminal e histórico, lidas de `~/.grok` (ou `GROK_HOME`) sem instalar nada. No Docker o `docker:up`
+  monta só `~/.grok/sessions`, somente leitura. `HABBLAUD_GROK=0` desliga.
 
 ## [0.8.0] - 2026-10-09
 

@@ -40,7 +40,7 @@ import {
 } from './model';
 import { isLocalHostname, PermissionCard } from './permission';
 import { canRenameRoom } from './roomrename';
-import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, providerOf } from './provider';
+import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, PROVIDER_NAME, providerOf } from './provider';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
@@ -643,7 +643,7 @@ class AgentView {
             : TERMINAL_UNAVAILABLE_HINT
           : !live
             ? 'O agente já saiu do escritório.'
-            : `Ver a conversa desta sessão como no ${provider === 'codex' ? 'Codex' : 'terminal do Claude Code'}, ao vivo (T)`,
+            : `Ver a conversa desta sessão como no ${provider === 'claude' ? 'terminal do Claude Code' : PROVIDER_NAME[provider]}, ao vivo (T)`,
     );
   }
 

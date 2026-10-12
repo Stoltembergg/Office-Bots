@@ -103,6 +103,11 @@ interface ScopeGuard {
   scope?: (cwd: string) => boolean;
   /** O agente continua no escritório (ausente = conversa do histórico). */
   alive?: () => boolean;
+  /**
+   * Pasta conhecida da sessão (a sala do agente, ou a do índice da ferramenta no histórico): um arquivo sem nenhum
+   * `cwd` (o Grok nem sempre grava a pasta na conversa) vale se ela for de dentro.
+   */
+  cwd?: string;
 }
 
 /**
@@ -128,7 +133,10 @@ class TranscriptSource implements ConversationSource {
   load(): TerminalInit {
     this.parser = this.o.createParser();
     // Escopo por pasta: o arquivo inteiro precisa ser de dentro (uma troca de pasta antes da janela lida passaria).
-    if (this.o.scope && fileScope(this.tail.path, this.o.scope).status !== 'in') this.closed = true;
+    if (this.o.scope) {
+      const st = fileScope(this.tail.path, this.o.scope).status;
+      if (st === 'out' || (st === 'unknown' && !(this.o.cwd !== undefined && this.o.scope(this.o.cwd)))) this.closed = true;
+    }
     if (this.closed) return { agentId: this.agentId, entries: [], truncated: false };
     const offset = this.tail.seekTail(this.o.initTailBytes);
     const keep = this.o.initEntries;
@@ -266,8 +274,8 @@ export class TerminalStreams {
    * `streamId` vai no `init` (ex.: "session:<conta>:<sessionId>"); `createParser` é o da ferramenta da sessão
    * (HistorySession.createParser; padrão: o do Claude Code). Mesmos erros de attach (429/500).
    */
-  attachSession(req: IncomingMessage, res: ServerResponse, streamId: string, path: string, createParser?: () => TerminalParser): void {
-    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries, scope: this.scope() };
+  attachSession(req: IncomingMessage, res: ServerResponse, streamId: string, path: string, createParser?: () => TerminalParser, cwd?: string): void {
+    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries, scope: this.scope(), cwd };
     this.serve(req, res, streamId, new TranscriptSource(streamId, path, o, this.sessionPollMs));
   }
 
@@ -315,6 +323,12 @@ export class TerminalStreams {
     return office.scoped ? office.inScope : undefined;
   }
 
+  /** Pasta da sala do agente (o cwd com que ele entrou no escritório). */
+  private agentCwd(agentId: string): string | undefined {
+    const room = this.opts.office.get(agentId)?.roomId;
+    return room === undefined ? undefined : this.opts.office.roomPath(room);
+  }
+
   /** Fonte da conversa do agente, ou a mensagem do 404. */
   private sourceFor(agentId: string): ConversationSource | string {
     const office = this.opts.office;
@@ -330,6 +344,7 @@ export class TerminalStreams {
         initEntries: this.initEntries,
         scope: this.scope(),
         alive: office.scoped ? () => office.has(agentId) : undefined,
+        cwd: this.agentCwd(agentId),
       };
       return new TranscriptSource(agentId, path, o, this.pollMs);
     }

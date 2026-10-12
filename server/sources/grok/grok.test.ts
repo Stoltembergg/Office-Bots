@@ -1,0 +1,257 @@
+// Fonte do Grok: um GROK_HOME temporário (active_sessions.json, sessions/<cwd>/<id>/updates.jsonl e summary.json
+// sintéticos), o AccountsService e o Office; mais o parser das linhas, o terminal e o histórico.
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { AgentInfo } from '../../../shared/types';
+import { AccountsService } from '../../accounts/service';
+import { setQuiet } from '../../log';
+import { NameStore } from '../../model/names';
+import { Office } from '../../model/office';
+import { HistorySet } from '../source';
+import { discoverGrokDir, findSessionDir, readActiveSessions, readSummary } from './files';
+import { GrokHistory } from './history';
+import { GrokSource } from './source';
+import { createGrokState, createGrokTerminalParser, parseGrokLine } from './updates';
+
+setQuiet(true);
+
+const S1 = '01a130a5-b15b-76a1-b90b-84e2e6186734';
+const S2 = '01a12b53-81ae-7c41-b2b9-148d30d36fc5';
+const CWD = '/work/acme/app';
+const OTHER = '/work/outra/app';
+const KEY = `.grok:${S1}`;
+
+let cleanups: Array<() => void> = [];
+afterEach(() => {
+  for (const c of cleanups) c();
+  cleanups = [];
+});
+
+let seq = 0;
+/** Uma linha de updates.jsonl no formato do Grok. */
+function line(update: Record<string, unknown>, ms: number): string {
+  seq++;
+  return JSON.stringify({ timestamp: Math.floor(ms / 1000), method: 'session/update', params: { sessionId: S1, update, _meta: { eventId: `ev-${seq}`, agentTimestampMs: ms } } });
+}
+const prompt = (text: string, ms: number) => line({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text } }, ms);
+const reply = (text: string, ms: number) => line({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } }, ms);
+const tool = (id: string, name: string, rawInput: Record<string, unknown>, ms: number) =>
+  line({ sessionUpdate: 'tool_call', toolCallId: id, title: name, rawInput, _meta: { 'x.ai/tool': { name } } }, ms);
+const toolDone = (id: string, text: string, ms: number, status = 'completed') =>
+  line({ sessionUpdate: 'tool_call_update', toolCallId: id, status, content: [{ type: 'content', content: { type: 'text', text } }] }, ms);
+const turnDone = (ms: number) => line({ sessionUpdate: 'turn_completed', stop_reason: 'end_turn', usage: { inputTokens: 100, outputTokens: 20 } }, ms);
+
+function grokHome() {
+  const dir = mkdtempSync(join(tmpdir(), 'habblaud-grok-'));
+  mkdirSync(join(dir, 'sessions'));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  return {
+    dir,
+    active(list: Array<{ id: string; cwd: string; pid?: number }>) {
+      writeFileSync(join(dir, 'active_sessions.json'), JSON.stringify(list.map((s) => ({ session_id: s.id, pid: s.pid ?? 4242, cwd: s.cwd, opened_at: new Date().toISOString() }))));
+    },
+    session(id: string, cwd: string, lines: string[], summary: Record<string, unknown> = {}) {
+      const d = join(dir, 'sessions', encodeURIComponent(cwd), id);
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, 'updates.jsonl'), lines.map((l) => `${l}\n`).join(''));
+      writeFileSync(join(d, 'summary.json'), JSON.stringify({ info: { id, cwd }, generated_title: 'Revisão do pagamento', current_model_id: 'grok-4.7', created_at: new Date().toISOString(), ...summary }));
+      return d;
+    },
+    append(id: string, cwd: string, lines: string[]) {
+      appendFileSync(join(dir, 'sessions', encodeURIComponent(cwd), id, 'updates.jsonl'), lines.map((l) => `${l}\n`).join(''));
+    },
+  };
+}
+
+function setup(opts: { projectRoots?: string[]; alive?: Set<number>; inDocker?: boolean } = {}) {
+  const home = grokHome();
+  let clock = Date.now();
+  const now = () => clock;
+  const accounts = new AccountsService({ dirs: [], home: home.dir, env: {}, now, onChange: () => undefined });
+  const office = new Office({
+    names: new NameStore(null),
+    projectRoots: opts.projectRoots,
+    version: 'teste',
+    startedAt: clock,
+    accounts: (s) => accounts.list(s),
+    sources: () => [],
+    accountName: (id) => accounts.find(id)?.detected.name,
+    now,
+  });
+  const alive = opts.alive;
+  const source = new GrokSource({ accounts, office, dir: home.dir, inDocker: opts.inDocker ?? false, now, isAlive: (pid) => (alive ? alive.has(pid) : true) });
+  cleanups.unshift(() => source.stop());
+  return {
+    home,
+    accounts,
+    office,
+    source,
+    now,
+    advance(ms: number) {
+      clock += ms;
+    },
+    poll() {
+      source.poll();
+      office.tick();
+      office.commit();
+    },
+    agent(id = KEY): AgentInfo | undefined {
+      return office.commit().snapshot.agents.find((a) => a.id === id);
+    },
+  };
+}
+
+describe('Grok: linhas de updates.jsonl', () => {
+  it('instrução abre o turno, ferramentas viram atividades no vocabulário do Claude Code, turn_completed fecha', () => {
+    const s = createGrokState();
+    const ctx = { idPrefix: 'k', now: 0 };
+    const p = parseGrokLine(s, prompt('Revise o fluxo de pagamento', 1_000), ctx);
+    expect(p.signals).toEqual([{ type: 'turnStart' }]);
+    expect(p.activities[0].activity).toMatchObject({ kind: 'prompt', at: 1_000 });
+    expect(s.firstPrompt).toBe('Revise o fluxo de pagamento');
+    const r = parseGrokLine(s, tool('c1', 'read_file', { target_file: '/work/acme/app/src/pay.ts' }, 2_000), ctx);
+    expect(r.activities[0].activity).toMatchObject({ id: 'k#c1', kind: 'read', tool: 'Read' });
+    expect(r.activities[0].activity.text).toContain('pay.ts');
+    const b = parseGrokLine(s, tool('c2', 'run_terminal_command', { command: 'npm test', description: 'Rodar os testes' }, 3_000), ctx);
+    expect(b.activities[0].activity.tool).toBe('Bash');
+    const e = parseGrokLine(s, tool('c3', 'search_replace', { file_path: '/work/acme/app/src/pay.ts', old_string: 'a', new_string: 'b' }, 4_000), ctx);
+    expect(e.activities[0].activity).toMatchObject({ kind: 'edit', tool: 'Edit' });
+    const f = parseGrokLine(s, toolDone('c2', 'erro: 1 teste falhou', 5_000, 'failed'), ctx);
+    expect(f.activities[0].activity).toMatchObject({ kind: 'error', error: true });
+    const d = parseGrokLine(s, turnDone(6_000), ctx);
+    expect(d.signals).toEqual([{ type: 'turnEnd' }]);
+    expect(s.turnOpen).toBe(false);
+    expect(s.stats).toMatchObject({ toolCalls: 3, tokensIn: 100, tokensOut: 20 });
+  });
+
+  it('plan vira a lista de tarefas; linha inválida não quebra', () => {
+    const s = createGrokState();
+    const ctx = { idPrefix: 'k', now: 0 };
+    parseGrokLine(s, line({ sessionUpdate: 'plan', entries: [{ content: 'Ler o código', status: 'completed' }, { content: 'Corrigir', status: 'in_progress' }] }, 1_000), ctx);
+    expect(s.tasks).toEqual([
+      { id: '1', title: 'Ler o código', status: 'completed' },
+      { id: '2', title: 'Corrigir', status: 'in_progress' },
+    ]);
+    expect(parseGrokLine(s, '{quebrado', ctx).activities).toEqual([]);
+  });
+
+  it('terminal: instrução, ferramenta com título no estilo do Claude Code, resultado e resposta; segredo mascarado', () => {
+    const t = createGrokTerminalParser(() => 0);
+    expect(t.push(prompt('rode os testes', 1_000))).toMatchObject([{ kind: 'user', text: 'rode os testes' }]);
+    expect(t.push(tool('c1', 'run_terminal_command', { command: 'npm test', variant: 'x' }, 2_000))).toMatchObject([{ kind: 'tool', id: 'c1', tool: 'Bash', title: 'Bash(npm test)', input: 'npm test' }]);
+    expect(t.push(toolDone('c1', 'ok', 3_000))).toMatchObject([{ kind: 'result', toolUseId: 'c1', text: 'ok' }]);
+    const [r] = t.push(reply('token ghp_abcdefghijklmnopqrstuvwxyz0123456789', 4_000));
+    expect(r.kind).toBe('assistant');
+    expect((r as { text: string }).text).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+  });
+});
+
+describe('Grok: arquivos', () => {
+  it('lê active_sessions.json, acha a pasta da sessão e o summary.json; sem sessions/ nem a lista = sem Grok', () => {
+    const home = grokHome();
+    home.active([{ id: S1, cwd: CWD }, { id: '../fora', cwd: CWD }]);
+    home.session(S1, CWD, [prompt('oi', 1_000)], { session_kind: 'subagent' });
+    expect(readActiveSessions(home.dir)?.map((s) => s.sessionId)).toEqual([S1]);
+    const d = findSessionDir(home.dir, S1, CWD);
+    expect(d).toBeDefined();
+    expect(findSessionDir(home.dir, S1)).toBe(d);
+    expect(readSummary(d!)).toMatchObject({ title: 'Revisão do pagamento', cwd: CWD, model: 'grok-4.7', kind: 'subagent' });
+    expect(discoverGrokDir({ GROK_HOME: home.dir }, '/nada')).toBe(home.dir);
+    expect(discoverGrokDir({ GROK_HOME: join(home.dir, 'nao-existe') }, '/nada')).toBeUndefined();
+  });
+});
+
+describe('Grok: fonte de agentes', () => {
+  it('sessão aberta entra na sala do projeto com título, modelo e status; atividade nova chega ao vivo; fechada sai', () => {
+    const ctx = setup();
+    const t0 = ctx.now();
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, CWD, [prompt('Revise o pagamento', t0 - 5_000), tool('c1', 'read_file', { target_file: `${CWD}/pay.ts` }, t0 - 4_000)]);
+    ctx.source.start();
+    const a = ctx.agent();
+    expect(a).toMatchObject({ provider: 'grok', roomId: CWD, status: 'working', title: 'Revisão do pagamento', model: 'grok-4.7', account: '.grok' });
+    expect(a?.activity?.tool).toBe('Read');
+    ctx.home.append(S1, CWD, [tool('c2', 'grep', { pattern: 'charge' }, t0 + 1_000), turnDone(t0 + 2_000)]);
+    ctx.advance(1_000);
+    ctx.poll();
+    expect(ctx.agent()?.status).toBe('idle');
+    expect(ctx.agent()?.recent.some((x) => x.tool === 'Grep')).toBe(true);
+    ctx.home.active([]);
+    ctx.poll();
+    ctx.advance(2_000);
+    ctx.poll();
+    const gone = ctx.agent();
+    expect(gone === undefined || gone.status === 'offline').toBe(true);
+    expect(ctx.source.sources()[0]).toMatchObject({ provider: 'grok', sessions: 0, ok: true });
+  });
+
+  it('Docker: presença pela conversa modificada há pouco (sem active_sessions.json)', () => {
+    const ctx = setup({ inDocker: true });
+    const d = ctx.home.session(S1, CWD, [prompt('oi', ctx.now())]);
+    ctx.home.session(S2, OTHER, [prompt('velha', ctx.now())]);
+    const old = new Date(ctx.now() - 2 * 3600_000);
+    utimesSync(join(d, '..', '..', encodeURIComponent(OTHER), S2, 'updates.jsonl'), old, old);
+    ctx.source.start();
+    expect(ctx.agent()).toMatchObject({ roomId: CWD });
+    expect(ctx.agent(`.grok:${S2}`)).toBeUndefined();
+  });
+
+  it('pid morto não conta (fora do Docker); subagente fica de fora', () => {
+    const ctx = setup({ alive: new Set([1]) });
+    ctx.home.active([{ id: S1, cwd: CWD, pid: 2 }, { id: S2, cwd: CWD, pid: 1 }]);
+    ctx.home.session(S1, CWD, [prompt('oi', ctx.now())]);
+    ctx.home.session(S2, CWD, [prompt('oi', ctx.now())], { session_kind: 'subagent' });
+    ctx.source.start();
+    expect(ctx.agent()).toBeUndefined();
+    expect(ctx.agent(`.grok:${S2}`)).toBeUndefined();
+  });
+
+  it('escopo por pasta: sessão de fora não entra; linha nova de outra pasta tira a sessão; terminal com o parser do Grok', () => {
+    const ctx = setup({ projectRoots: ['/work/acme'] });
+    const t0 = ctx.now();
+    ctx.home.active([{ id: S1, cwd: CWD }, { id: S2, cwd: OTHER }]);
+    ctx.home.session(S1, CWD, [prompt('dentro', t0)]);
+    ctx.home.session(S2, OTHER, [prompt('fora', t0)]);
+    ctx.source.start();
+    expect(ctx.agent()).toBeDefined();
+    expect(ctx.agent(`.grok:${S2}`)).toBeUndefined();
+    expect(ctx.source.transcriptPathOf(KEY)).toContain('updates.jsonl');
+    expect(ctx.source.terminalParser(KEY)).toBeDefined();
+    const bg = line({ sessionUpdate: 'task_backgrounded', task_id: 't1', command: 'ls', cwd: OTHER }, t0 + 1_000);
+    ctx.home.append(S1, CWD, [bg]);
+    ctx.advance(1_000);
+    ctx.poll();
+    expect(ctx.agent()).toBeUndefined();
+  });
+
+  it('escopo por pasta: arquivo que já passou por outra pasta não entra', () => {
+    const ctx = setup({ projectRoots: ['/work/acme'] });
+    const t0 = ctx.now();
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, CWD, [line({ sessionUpdate: 'task_backgrounded', cwd: OTHER }, t0), prompt('dentro', t0)]);
+    ctx.source.start();
+    expect(ctx.agent()).toBeUndefined();
+  });
+});
+
+describe('Grok: histórico do terminal', () => {
+  it('lista as sessões recentes (sem subagentes) e resolve a conversa; com escopo, a pasta do summary.json decide', async () => {
+    const home = grokHome();
+    const t0 = Date.now();
+    home.session(S1, CWD, [prompt('dentro', t0)]);
+    home.session(S2, OTHER, [prompt('fora', t0)]);
+    home.session('01a12b72-2b94-7dd0-a593-d4ddc796b9ef', CWD, [prompt('sub', t0)], { session_kind: 'subagent' });
+    const account = () => ({ id: '.grok', dir: home.dir });
+    const all = new GrokHistory({ account, openAgentOf: () => undefined });
+    expect((await all.list()).map((s) => s.sessionId).sort()).toEqual([S2, S1].sort());
+    const inScope = (p: string) => p.startsWith('/work/acme/') || p === '/work/acme';
+    const set = new HistorySet([new GrokHistory({ account, openAgentOf: () => undefined, inScope })], undefined, inScope);
+    const listed = await set.list();
+    expect(listed.map((s) => [s.sessionId, s.provider, s.project, s.title])).toEqual([[S1, 'grok', CWD, 'Revisão do pagamento']]);
+    expect('path' in set.resolve('.grok', S1)).toBe(true);
+    expect(set.resolve('.grok', S2)).toEqual({ status: 404, error: 'sessão não encontrada' });
+    expect(set.resolve('.grok', '../x')).toMatchObject({ status: 400 });
+  });
+});

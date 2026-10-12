@@ -9,7 +9,7 @@ import type { UiComponent, UiContext } from './context';
 import { h, iconButton, setAttr, setHidden, setText, setTitle } from './dom';
 import { calendarDayDiff, formatClock, formatDateTime, normalizeSearch, plural, shortPath } from './format';
 import { ICONS } from './icons';
-import { isCodex } from './provider';
+import { isOtherTool, PROVIDER_NAME } from './provider';
 import { sessionProjectName, TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
 import { createAccountChip, updateAccountChip } from './widgets';
 
@@ -47,7 +47,7 @@ export function parseRecentSessions(raw: unknown): RecentSession[] {
     const firstAt = num(o.firstAt);
     const agentId = str(o.agentId);
     // Ausente = Claude Code (nunca grava 'claude').
-    if (o.provider === 'codex') s.provider = 'codex';
+    if (o.provider === 'codex' || o.provider === 'grok') s.provider = o.provider;
     if (project) s.project = project;
     if (title) s.title = title;
     if (firstAt !== undefined) s.firstAt = firstAt;
@@ -65,7 +65,7 @@ export function filterSessions(list: readonly RecentSession[], query: string, ac
   const terms = normalizeSearch(query).split(/\s+/).filter(Boolean);
   if (!terms.length) return list.slice();
   return list.filter((s) => {
-    const hay = normalizeSearch([s.title ?? '', s.project ?? '', s.projectDir, accountLabel(s.account), isCodex(s) ? 'Codex' : ''].join(' '));
+    const hay = normalizeSearch([s.title ?? '', s.project ?? '', s.projectDir, accountLabel(s.account), isOtherTool(s.provider) ? PROVIDER_NAME[s.provider] : ''].join(' '));
     return terms.every((t) => hay.includes(t));
   });
 }
@@ -315,11 +315,11 @@ export class HistoryPopover implements UiComponent {
     const title = s.title?.trim() || 'Sessão sem título';
     const project = sessionProjectName(s);
     const live = s.open && !!s.agentId && !!this.ctx.agent(s.agentId);
-    const codex = isCodex(s);
+    const tool = isOtherTool(s.provider) ? PROVIDER_NAME[s.provider] : undefined;
     const meta = h(
       'span',
       { class: 'ui-hist__meta' },
-      codex ? h('span', { class: 'ui-prov ui-prov--xs', text: 'Codex' }) : null,
+      tool ? h('span', { class: 'ui-prov ui-prov--xs', text: tool }) : null,
       h('span', { class: 'ui-hist__project', text: project }),
       h('span', { class: 'ui-hist__time', text: formatClock(s.lastAt, false) }),
     );
@@ -329,9 +329,9 @@ export class HistoryPopover implements UiComponent {
     const when = s.firstAt !== undefined && calendarDayDiff(s.firstAt, s.lastAt) !== 0 ? `${formatDateTime(s.firstAt)} → ${formatDateTime(s.lastAt)}` : s.firstAt !== undefined ? `${formatDateTime(s.firstAt)} → ${formatClock(s.lastAt, false)}` : formatDateTime(s.lastAt);
     setTitle(
       btn,
-      [title, shortPath(s.project ?? s.projectDir), `${account?.name ?? s.account}${codex ? ' (Codex)' : ''} · ${when} · ${formatSize(s.size)}`, live ? 'Ainda aberta: abre o terminal ao vivo do agente' : 'Encerrada: abre a conversa no terminal'].join('\n'),
+      [title, shortPath(s.project ?? s.projectDir), `${account?.name ?? s.account}${tool ? ` (${tool})` : ''} · ${when} · ${formatSize(s.size)}`, live ? 'Ainda aberta: abre o terminal ao vivo do agente' : 'Encerrada: abre a conversa no terminal'].join('\n'),
     );
-    setAttr(btn, 'aria-label', `${title}, ${project}, ${account?.name ?? s.account}${codex ? ', Codex' : ''}, ${live ? 'aberta' : `última atividade ${dayLabel(s.lastAt, now).toLowerCase()} às ${formatClock(s.lastAt, false)}`}`);
+    setAttr(btn, 'aria-label', `${title}, ${project}, ${account?.name ?? s.account}${tool ? `, ${tool}` : ''}, ${live ? 'aberta' : `última atividade ${dayLabel(s.lastAt, now).toLowerCase()} às ${formatClock(s.lastAt, false)}`}`);
     btn.addEventListener('click', () => {
       this.hide();
       this.terminal.openSession(s, this.button);

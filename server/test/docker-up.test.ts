@@ -13,6 +13,7 @@ import {
   hostTimeZone,
   parseArgs,
   planCodexMounts,
+  planGrokMount,
   planMounts,
   planUp,
   projectRootsOf,
@@ -136,6 +137,21 @@ describe('docker-up', () => {
     const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
     expect(renderOverride(mounts, new Date(0), undefined, undefined, [], roots)).toContain('HABBLAUD_PROJECT_ROOTS: "/Users/fulano/Claude/empresa-a,/srv/b"');
     expect(renderOverride(mounts)).not.toContain('HABBLAUD_PROJECT_ROOTS');
+  });
+
+  it('Grok: monta só <GROK_HOME>/sessions em /grok/sessions; HABBLAUD_GROK=0 desliga', () => {
+    const grok = planGrokMount({}, '/Users/fulano', (p) => (p === '/Users/fulano/.grok/sessions' ? p : undefined));
+    expect(grok).toEqual({ hostDir: '/Users/fulano/.grok', binds: [{ source: '/Users/fulano/.grok/sessions', target: '/grok/sessions' }] });
+    expect(planGrokMount({ HABBLAUD_GROK: '0' }, '/Users/fulano', (p) => p)).toBeUndefined();
+    expect(planGrokMount({ GROK_HOME: '~/g' }, '/Users/fulano', (p) => p)?.hostDir).toBe('/Users/fulano/g');
+    expect(planGrokMount({}, '/Users/fulano', () => undefined)).toBeUndefined();
+    const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
+    const yml = renderOverride(mounts, new Date(0), undefined, undefined, [], [], grok);
+    expect(yml).toContain('HABBLAUD_GROK_DIR: "/grok"');
+    expect(yml).toContain('HABBLAUD_GROK_HOST_DIR: "/Users/fulano/.grok"');
+    expect(yml).toContain('target: "/grok/sessions"');
+    expect(yml).not.toContain('auth.json');
+    expect(renderOverride(mounts)).not.toContain('HABBLAUD_GROK');
   });
 });
 

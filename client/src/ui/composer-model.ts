@@ -30,6 +30,7 @@ export function composerMode(agent: AgentInfo | undefined, env: ComposerEnv): Co
   if (env.replaying) return { kind: 'off', text: 'Sem mensagens no timelapse: o escritório mostrado é o de outro momento' };
   if (agent?.kind === 'sub') return { kind: 'off', text: 'Subagentes não recebem mensagens: escreva para o agente principal' };
   if (!agent || agent.status === 'offline' || agent.status === 'done') return { kind: 'off', text: 'Sessão encerrada' };
+  if (agent.provider === 'grok') return { kind: 'off', text: 'Para responder, use o Grok' };
   const codex = agent.provider === 'codex';
   if (!env.enabled) return { kind: 'off', text: codex ? 'Para responder, use o Codex' : 'Para responder, use o terminal do Claude Code' };
   if (!env.local) return { kind: 'off', text: 'Para mandar mensagens por aqui, abra o Habblaud por http://localhost (ou 127.0.0.1)' };

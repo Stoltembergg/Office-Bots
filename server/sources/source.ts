@@ -119,6 +119,8 @@ export interface HistorySession {
   path: string;
   /** Parser NOVO a cada chamada (o terminal cria outro quando o arquivo é truncado ou substituído). */
   createParser: () => TerminalParser;
+  /** Pasta da sessão segundo o índice da ferramenta (Grok): vale no escopo quando o arquivo não diz nenhuma. */
+  cwd?: string;
 }
 
 /** Resultado de resolve(): a sessão ou o erro HTTP. */
@@ -189,6 +191,8 @@ export class HistorySet implements SessionLookup {
     const owner = this.list_.find((p) => p.hasAccount(account)) ?? this.list_[0];
     const found: HistoryResolveResult = owner ? owner.resolve(account, sessionId) : { status: 404, error: 'conta desconhecida' };
     if (!this.inScope || !('path' in found)) return found;
-    return fileScope(found.path, this.inScope).status === 'in' ? found : { status: 404, error: 'sessão não encontrada' };
+    const st = fileScope(found.path, this.inScope).status;
+    const ok = st === 'in' || (st === 'unknown' && found.cwd !== undefined && this.inScope(found.cwd));
+    return ok ? found : { status: 404, error: 'sessão não encontrada' };
   }
 }

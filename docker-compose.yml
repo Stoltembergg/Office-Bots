@@ -7,7 +7,8 @@
 #     (uso de 5h/semanal capturado pelo tap de statusline) em /usage;
 #   - do Codex, SOMENTE <pasta>/sessions, <pasta>/archived_sessions e <pasta>/thread-writer-locks em
 #     /codex/<conta>/... (nunca auth.json, config.toml, history.jsonl, logs nem os bancos SQLite);
-#   - HABBLAUD_CLAUDE_DIRS, HABBLAUD_CODEX_DIRS, HABBLAUD_ACCOUNTS e HABBLAUD_USAGE_DIR.
+#   - do Grok, SOMENTE <GROK_HOME>/sessions em /grok/sessions (nunca auth.json nem config.toml);
+#   - HABBLAUD_CLAUDE_DIRS, HABBLAUD_CODEX_DIRS, HABBLAUD_GROK_DIR, HABBLAUD_ACCOUNTS e HABBLAUD_USAGE_DIR.
 # O Compose mescla o override automaticamente em qualquer `docker compose ...` rodado nesta pasta.
 name: habblaud
 
@@ -36,6 +37,8 @@ services:
       HABBLAUD_UPDATE_CHECK: ${HABBLAUD_UPDATE_CHECK:-}
       # 0 desliga as sessões do Codex no escritório.
       HABBLAUD_CODEX: ${HABBLAUD_CODEX:-}
+      # 0 desliga as sessões do Grok no escritório.
+      HABBLAUD_GROK: ${HABBLAUD_GROK:-}
     # Endurecimento: sistema de arquivos só leitura (exceto /data e /tmp), sem capabilities extras.
     read_only: true
     tmpfs:

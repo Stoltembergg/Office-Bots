@@ -355,6 +355,24 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   `/ack` (mesma trava das mensagens). `canMessage` = há entregador (binário achado, ou auxiliar visto há até 10 s).
   Retorno 0 = entrou na fila da sessão (`delivered`); o Codex consome a fila a cada ~10 s, quando a sessão fica ociosa.
 
+## Grok
+
+Fonte `sources/grok/` (`provider: 'grok'`), ligada quando há `GROK_HOME` (ou `~/.grok`) com `sessions/` ou
+`active_sessions.json`. Uma conta só (`.grok`). Ids: `<conta>:<sessionId>`.
+
+- **Sessões abertas** (`files.ts`, `source.ts`): `active_sessions.json` (`session_id`, `pid`, `cwd`), com o pid vivo.
+  No Docker (`HABBLAUD_GROK_DIR=/grok`, só `sessions/` montada): `updates.jsonl` modificado nos últimos 30 min, cwd do
+  `summary.json` (o Grok troca o `active_sessions.json` por rename; um bind de arquivo único ficaria velho).
+- **Conversa** (`updates.ts`): `sessions/<cwd codificado>/<id>/updates.jsonl` (updates do ACP). `user_message_chunk`
+  abre o turno, `turn_completed` fecha (e soma os tokens); `tool_call` vira atividade no vocabulário do Claude Code
+  (`read_file` = Read, `run_terminal_command` = Bash, `search_replace` = Edit...); `plan` = tarefas. Título e modelo
+  do `summary.json`; `session_kind: 'subagent'` fica de fora.
+- **Escopo por pasta:** o cwd da lista (ou do `summary.json`) precisa ser de dentro; `fileScope` no arquivo inteiro e
+  `cwdOutOfScope` em cada linha nova (uma tarefa em segundo plano grava o próprio `cwd`). Como a conversa nem sempre
+  tem `cwd`, o terminal aceita arquivo sem nenhum quando a sala do agente (ou o `cwd` do índice, no histórico) é de
+  dentro (`HistorySession.cwd`).
+- Sem permissões, mensagens nem uso de 5h/semanal.
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Uso |
@@ -364,6 +382,8 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | `HABBLAUD_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal |
 | `HABBLAUD_TERMINAL` | — | `0` desliga o terminal, as permissões e as mensagens pelo escritório (não liga com a porta exposta) |
 | `HABBLAUD_CODEX` | ligado | `0` desliga a fonte do Codex |
+| `HABBLAUD_GROK` | ligado | `0` desliga a fonte do Grok |
+| `HABBLAUD_GROK_DIR` | `GROK_HOME` ou `~/.grok` | pasta do Grok lida pelo servidor (o Docker usa `/grok`); `HABBLAUD_GROK_HOST_DIR` = a do host, para exibir |
 | `HABBLAUD_CODEX_DIRS` | — | pastas do Codex separadas por vírgula; substitui a detecção (`CODEX_HOME` e `~/.codex*`) |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0`, `false`, `off` ou `no` desligam só as mensagens pelo escritório |
