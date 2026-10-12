@@ -663,20 +663,19 @@ describe('saguão e WC do anexo (hubAreas)', () => {
     expect(hub.furniture.filter((f) => f.kind === 'glass_partition' && f.variant === 'h' && f.ty === 52).map((f) => f.tx)).toEqual([41, 42, 43, 52, 53, 54]);
   });
 
-  it('serviços do saguão: um café, uma água, uma pia, uma cabine, dois lugares no banco, dois de conversa; nada de lanche, geladeira, mesa ou janela', () => {
+  it('lounge do anexo = lounge do principal (sofá, poltronas, puffs, ping-pong, fliperamas, estante) mais o canto de café e água', () => {
     const hub = layoutHub(A1, 'north', true);
+    const main = core.layoutLounge({ x: 0, y: 0, w: 16, h: 12 });
+    const count = (a: AreaLayout, k: string) => kinds(a, k).length;
+    for (const k of ['sofa', 'armchair', 'beanbag', 'pingpong', 'arcade', 'shelf', 'talk', 'watch']) expect(count(hub, k), k).toBe(count(main, k));
     expect(kinds(hub, 'coffee')).toHaveLength(1);
     expect(kinds(hub, 'water')).toHaveLength(1);
-    expect(kinds(hub, 'sink')).toHaveLength(1);
-    expect(kinds(hub, 'stall')).toHaveLength(1);
-    expect(kinds(hub, 'bench')).toHaveLength(2);
-    expect(kinds(hub, 'talk')).toHaveLength(2);
-    for (const k of ['snack', 'fridge', 'cafe_seat', 'window', 'elevator']) expect(kinds(hub, k), k).toHaveLength(0);
     expect(kinds(hub, 'coffee')[0].furnitureId).toBeDefined();
-    expect(kinds(hub, 'stall')[0].furnitureId).toBeDefined();
-    expect(kinds(hub, 'talk').map((s) => s.group)).toEqual(['talk:anexo:0,1:saguao', 'talk:anexo:0,1:saguao']);
-    // o banheirinho fica atrás de vidro (divisória vertical em lx 10, linhas 2–5)
-    expect(hub.furniture.filter((f) => f.kind === 'glass_partition' && f.tx === 50).map((f) => [f.ty, f.variant])).toEqual([[43, 'v'], [44, 'v'], [45, 'v'], [46, 'end']]);
+    for (const k of ['sink', 'stall', 'snack', 'fridge', 'cafe_seat', 'elevator']) expect(kinds(hub, k), k).toHaveLength(0);
+    expect(count(main, 'coffee') + count(main, 'water')).toBe(0);
+    // grupos próprios (não colidem com os do lounge principal)
+    expect(kinds(hub, 'talk').map((s) => s.group)).toEqual(['talk:lounge:anexo:0,1:saguao', 'talk:lounge:anexo:0,1:saguao']);
+    expect(hub.furniture.some((f) => f.kind === 'pingpong_table')).toBe(true);
   });
 
   it('nada fica fora do retângulo da área (saguão com e sem porta, WC)', () => {

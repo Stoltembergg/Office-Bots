@@ -232,8 +232,23 @@ export function layoutLounge(rect: TileRect, open = true): AreaLayout {
     b.area.exit = { x: b.x0 + DOOR_LX, y: b.y0 + 11, w: BRIDGE_W, h: LOUNGE_EXIT_H };
   }
 
-  b.wall('tv', 4.5, undefined, { order: 0.4 });
-  b.wall('painting', 1.75, undefined, { order: 0.5 });
+  furnishLounge(b, null);
+  return b.build();
+}
+
+/**
+ * Mobília do lounge, a mesma no principal e nos anexos. `cafe` (só nos anexos) troca o quadro e a planta do canto
+ * oeste por um canto de café e água, e `tv` diz onde pendurar a TV (nulo = não pendura, como no principal que a põe
+ * em 4,5). Os grupos de spots levam o id da área quando não é o lounge principal, para não colidirem.
+ */
+export function furnishLounge(b: AreaBuilder, cafe: { tv: number | null } | null): void {
+  const sfx = b.area.id === LOUNGE_ID ? '' : `:${b.area.id}`;
+  if (cafe) {
+    if (cafe.tv !== null) b.wall('tv', cafe.tv, undefined, { order: 0.4 });
+  } else {
+    b.wall('tv', 4.5, undefined, { order: 0.4 });
+    b.wall('painting', 1.75, undefined, { order: 0.5 });
+  }
 
   // sofá de costas para a câmera, de frente para a TV
   const sofa = b.furn('sofa', 3, 6, 'up', { order: 0.5 });
@@ -247,8 +262,8 @@ export function layoutLounge(rect: TileRect, open = true): AreaLayout {
   b.furn('pingpong_table', 10, 6, undefined, { order: 0.4 });
   const ppY = b.py(7) + 5;
   const ppSort = b.py(8) + SEATED_SORT_BIAS;
-  b.spot('pingpong', 9, 7, 'right', { x: b.px(10) - 8, y: ppY, group: 'pingpong', sortY: ppSort });
-  b.spot('pingpong', 13, 7, 'left', { x: b.px(13) + 8, y: ppY, group: 'pingpong', sortY: ppSort });
+  b.spot('pingpong', 9, 7, 'right', { x: b.px(10) - 8, y: ppY, group: `pingpong${sfx}`, sortY: ppSort });
+  b.spot('pingpong', 13, 7, 'left', { x: b.px(13) + 8, y: ppY, group: `pingpong${sfx}`, sortY: ppSort });
 
   // fliperamas e estantes
   for (const lx of [13, 14]) {
@@ -259,7 +274,15 @@ export function layoutLounge(rect: TileRect, open = true): AreaLayout {
   b.spot('shelf', 10, 3, 'up', { dx: 8, dy: -2 });
   b.furn('binder_shelf', 12, 2, undefined, { order: 0.31 });
   // planta baixa sob o quadro (uma alta cobriria a pintura)
-  b.furn('plant_small', 1, 2, 'fern', { order: 0.2 });
+  if (cafe) {
+    b.furn('counter', 1, 2, 'drawers', { order: 0.3 });
+    const machine = b.furn('coffee_machine', 2, 2, undefined, { order: 0.35 });
+    b.spot('coffee', 2, 3, 'up', { dy: -3, furnitureId: machine });
+    b.furn('counter', 3, 2, 'plain', { order: 0.3 });
+    b.furn('water_cooler', 4, 2, undefined, { order: 0.4 });
+    b.spot('water', 4, 3, 'up', { dy: -3 });
+  }
+  b.furn('plant_small', cafe ? 5 : 1, 2, 'fern', { order: 0.2 });
   b.furn('plant_tall', 6, 2, 'palm', { order: 0.21 });
   b.furn('printer', 1, 10, undefined, { order: 0.3 });
   b.furn('floor_lamp', 1, 7, undefined, { order: 0.32 });
@@ -270,12 +293,11 @@ export function layoutLounge(rect: TileRect, open = true): AreaLayout {
   (['red', 'yellow'] as const).forEach((c, i) => {
     b.seat('beanbag', 'beanbag', 6 + i * 4, 9, 'down', c, { order: 0.6 + i * 0.02 });
   });
-  b.spot('talk', 11, 9, 'right', { group: 'talk:lounge', dx: -1 });
-  b.spot('talk', 12, 9, 'left', { group: 'talk:lounge', dx: 1 });
+  b.spot('talk', 11, 9, 'right', { group: `talk:lounge${sfx}`, dx: -1 });
+  b.spot('talk', 12, 9, 'left', { group: `talk:lounge${sfx}`, dx: 1 });
   // torcida do ping-pong: atrás da mesa, de frente para a câmera
-  b.spot('watch', 10, 5, 'down', { group: 'watch:pingpong', dx: 2 });
-  b.spot('watch', 12, 5, 'down', { group: 'watch:pingpong', dx: -2 });
-  return b.build();
+  b.spot('watch', 10, 5, 'down', { group: `watch:pingpong${sfx}`, dx: 2 });
+  b.spot('watch', 12, 5, 'down', { group: `watch:pingpong${sfx}`, dx: -2 });
 }
 
 const coreCache = new Map<string, AreaLayout[]>();

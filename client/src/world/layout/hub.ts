@@ -1,9 +1,9 @@
 // Miolo dos anexos (spec 3.1, D1): saguão e WC na coluna do miolo, um de cada lado do corredor. O saguão fica do lado
 // por onde a passarela própria chega (norte na fileira 1, sul nos demais) e o WC do outro. O saguão reúne, em menor,
-// o que o principal espalha: um canto de café e água, um banheirinho atrás de vidro, banco de espera e um ponto de
-// conversa. A planta do WC é a mesma do banheiro do principal, com outro id.
+// a mobília do lounge do principal (sofá, poltronas, ping-pong, fliperamas, estante, puffs) mais um canto de café e água.
+// A planta do WC é a mesma do banheiro do principal, com outro id.
 import { AreaBuilder } from './builder';
-import { CORE_WALLS, layoutRestroom } from './core';
+import { CORE_WALLS, furnishLounge, layoutRestroom } from './core';
 import { blockColumnRect, blockKey, BRIDGE_W, coreColumns, DOOR_LX, HUB_DOOR_H, hubSide, LOUNGE_EXIT_H, type BlockId, type Side } from './geometry';
 import type { AreaLayout } from './types';
 
@@ -26,8 +26,9 @@ export function layoutHub(block: BlockId, side: Side, door: boolean): AreaLayout
   const id = hubId(block);
   const b = new AreaBuilder(id, 'hub', blockColumnRect(block, coreColumns(block)[0], side));
   const wall = CORE_WALLS.reception;
-  b.floor('marble', 0, 0, 16, 12, 601);
-  b.rug(5, 5.2, 6, 2.6, '#3d5a80', 602);
+  b.floor('wood', 0, 0, 16, 12, 601);
+  b.rug(1.5, 3.2, 7, 5.2, '#4f8a5b', 602);
+  b.rug(9.2, 4.6, 5.6, 4.4, '#d7c8a8', 603);
   b.cap(0, 0, 0.5, 12, wall);
   b.cap(15.5, 0, 0.5, 12, wall);
   if (side === 'north') {
@@ -54,36 +55,7 @@ export function layoutHub(block: BlockId, side: Side, door: boolean): AreaLayout
     }
     b.walk(1, 2, 14, 9);
   }
-  b.wall('clock', 5.5);
-  // pôster entre a pia e a cabine: a face do saguão não tem trecho sem móvel embaixo para um quadro de 2 tiles
-  b.wall('poster', 12.5, 'coffee', { order: 0.6 });
-
-  // canto de café e água (oeste)
-  b.furn('counter', 1, 2, 'drawers', { order: 0.3 });
-  const machine = b.furn('coffee_machine', 2, 2, undefined, { order: 0.35 });
-  b.spot('coffee', 2, 3, 'up', { dy: -3, furnitureId: machine });
-  b.furn('counter', 3, 2, 'plain', { order: 0.3 });
-  b.furn('water_cooler', 4, 2, undefined, { order: 0.4 });
-  b.spot('water', 4, 3, 'up', { dy: -3 });
-  b.furn('plant_small', 5, 2, 'fern', { order: 0.4 });
-
-  // banheirinho (leste) atrás de uma divisória de vidro: pia com espelho e uma cabine
-  for (const ly of [2, 3, 4]) b.furn('glass_partition', 10, ly, 'v', { order: 0.2 });
-  b.furn('glass_partition', 10, 5, 'end', { order: 0.2 });
-  b.wall('mirror', 11.5);
-  b.furn('sink', 11, 2, undefined, { order: 0.3 });
-  b.spot('sink', 11, 3, 'up', { dy: -3 });
-  const stall = b.furn('toilet_stall', 13, 2, undefined, { order: 0.3 });
-  b.spot('stall', 13, 4, 'up', { furnitureId: stall, x: b.px(14), y: b.py(4) - 3, sortY: b.py(4) - 0.5 });
-
-  // espera e conversa
-  const bench = b.furn('bench', 6, 8, undefined, { order: 0.5 });
-  for (let i = 0; i < 2; i++) b.seat('bench', 'bench', 6 + i, 8, 'down', undefined, { noFurniture: true, furnitureId: bench });
-  b.spot('talk', 10, 8, 'right', { group: `talk:${id}`, dx: -1 });
-  b.spot('talk', 11, 8, 'left', { group: `talk:${id}`, dx: 1 });
-  b.furn('plant_tall', 1, 9, 'palm', { order: 0.5 });
-  b.furn('plant_tall', 14, 9, 'ficus', { order: 0.5 });
-  b.furn('trash_bin', 14, 6, undefined, { order: 0.4 });
+  furnishLounge(b, { tv: side === 'south' ? 8.5 : null });
   return b.build();
 }
 
