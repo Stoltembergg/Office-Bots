@@ -496,6 +496,48 @@ export function carSprite(variant: number, flip: boolean): PropSprite {
   return s;
 }
 
+/** Carro visto por trás ou pela frente (ruas norte–sul), 20×36: `down` = indo para o sul (frente para a câmera). */
+export function carSpriteV(variant: number, down: boolean): PropSprite {
+  const key = `carv:${variant % CAR_COLORS.length}:${down ? 1 : 0}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const [body, dark, light] = CAR_COLORS[variant % CAR_COLORS.length];
+  const [c, ctx] = makeCanvas(20, 36);
+  shadowEllipse(ctx, 10, 33, 9, 2, 0.3);
+  const o = '#2e3648';
+  // rodas (para fora da carroceria)
+  for (const wy of [7, 24]) {
+    ctx.fillStyle = o;
+    ctx.fillRect(1, wy, 3, 6);
+    ctx.fillRect(16, wy, 3, 6);
+  }
+  // carroceria e teto
+  ctx.fillStyle = o;
+  ctx.fillRect(3, 2, 14, 31);
+  ctx.fillStyle = body;
+  ctx.fillRect(4, 3, 12, 29);
+  ctx.fillStyle = light;
+  ctx.fillRect(4, 3, 12, 1);
+  ctx.fillRect(4, 3, 1, 29);
+  ctx.fillStyle = dark;
+  ctx.fillRect(15, 3, 1, 29);
+  ctx.fillRect(4, 31, 12, 1);
+  // vidros: para-brisa do lado da frente, vidro traseiro do outro
+  ctx.fillStyle = '#3a5f86';
+  ctx.fillRect(5, down ? 21 : 9, 10, 5);
+  ctx.fillRect(5, down ? 10 : 22, 10, 3);
+  ctx.fillStyle = '#9cc7ec';
+  ctx.fillRect(6, down ? 22 : 10, 3, 1);
+  // faróis na frente, lanternas atrás
+  ctx.fillStyle = '#fff3c4';
+  for (const lx of [4, 14]) ctx.fillRect(lx, down ? 31 : 2, 2, 2);
+  ctx.fillStyle = '#e04a3a';
+  for (const lx of [4, 14]) ctx.fillRect(lx, down ? 2 : 31, 2, 1);
+  const s = { canvas: c, ax: 10, ay: 33 };
+  cache.set(key, s);
+  return s;
+}
+
 /** Sombra de contato sob os personagens. */
 export function shadowSprite(): PropSprite {
   const hit = cache.get('shadow');

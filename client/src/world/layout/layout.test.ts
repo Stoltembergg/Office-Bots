@@ -1160,9 +1160,9 @@ describe('área externa por blocos', () => {
     // props com 1, 4 e 8 salas; qualquer mudança que tire ou mova um prop do principal quebra aqui e exige re-pinar
     const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
     for (const [n, count, dg] of [
-      [1, 311, 504912],
-      [4, 353, -466083],
-      [8, 446, -831433],
+      [1, 88, 171157],
+      [4, 109, -905702],
+      [8, 141, -95388],
     ] as const) {
       const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
       expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);
@@ -1220,7 +1220,7 @@ describe('exterior da fase 3 (D5): ruas, props por posição, cercas e pátios p
     const e9 = ext(9).e;
     expect(e9.streets.map((s) => [s.axis, s.rect.x, s.rect.y, s.rect.w, s.rect.h, s.cars])).toEqual([['h', e9.bounds.x, 29, e9.bounds.w, 12, true]]);
     const e17 = ext(17).e;
-    expect(e17.streets.filter((s) => s.axis === 'v').map((s) => [s.rect.x, s.rect.w, s.cars])).toEqual([[96, 12, false]]);
+    expect(e17.streets.filter((s) => s.axis === 'v').map((s) => [s.rect.x, s.rect.w, s.cars])).toEqual([[96, 12, true]]);
     expect(e17.streets.find((s) => s.axis === 'v')!.rect).toMatchObject({ y: e17.bounds.y, h: e17.bounds.h });
     const e33 = ext(33).e;
     expect(e33.streets.filter((s) => s.axis === 'v').map((s) => s.rect.x).sort((a, b) => a - b)).toEqual([-12, 96]);
@@ -1253,15 +1253,18 @@ describe('exterior da fase 3 (D5): ruas, props por posição, cercas e pátios p
         expect(bridges.some((br) => br.rects.some((r) => inRect(r, tx, ty))), `${p.kind} em ${tx},${ty} sob passarela (${n} salas)`).toBe(false);
       }
       expect(e.lanes).toHaveLength(2);
-      expect(e.streets.filter((s) => s.cars)).toHaveLength(1);
+      const v = e.streets.filter((s) => s.axis === 'v').length;
+      expect(e.streets.filter((s) => s.cars)).toHaveLength(1 + v); // a principal e as norte–sul; a rua norte não
+      expect(e.vlanes).toHaveLength(2 * v);
     }
   });
 
-  it('árvores por posição: as que existem com 9 salas continuam no mesmo lugar com 17 (a oeste da rua nova)', () => {
+  it('árvores por posição: as que existem com 9 salas continuam no mesmo lugar com 17 (na fileira do principal, a oeste da rua nova)', () => {
     const trees = (e: ExteriorLayout) => e.props.filter((p) => p.kind === 'tree' || p.kind === 'pine' || p.kind === 'bush');
     const a = trees(ext(9).e);
     const set = new Set(trees(ext(17).e).map((p) => `${p.x},${p.y}`));
-    const kept = a.filter((p) => p.x < 90 * TILE);
+    // com 17 salas o anexo A1 cresce para oeste e engole as árvores da fileira dele; a fileira do principal fica
+    const kept = a.filter((p) => p.x < 90 * TILE && p.y < BUILDING_H * TILE);
     expect(kept.length).toBeGreaterThan(20);
     for (const p of kept) expect(set.has(`${p.x},${p.y}`), `${p.kind} em ${p.x},${p.y}`).toBe(true);
   });

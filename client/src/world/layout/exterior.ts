@@ -4,6 +4,7 @@ import type { WallStyle } from '../../art/api';
 import { mulberry32 } from '../../../../shared/hash';
 import { BUILDING_H, COL_W, EXT_EAST, EXT_NORTH, EXT_SOUTH, EXT_WEST, ROOM_H, TILE } from '../constants';
 import { blockColumnRect, blockRect, BRIDGE_W, bridgesFor, DOOR_LX, inRect, isCoreColumn, PRINCIPAL, slotAddress, slotAt, STREET_W, streetX, worldBounds, type BlockId, type BlockLayout, type BridgeLayout, type Side } from './geometry';
+import { cellTouches, fieldCells, fieldProp } from '../render/field';
 import type { ExteriorProp, FloorPatch, TileRect, WallItemPlacement, WallSegment } from './types';
 
 export const EXTERIOR_WALL: WallStyle = { base: '#cfc8bd', trim: '#8a8174', pattern: 'brick', exterior: true };
@@ -22,7 +23,7 @@ export const SIDEWALK_TY = ENTRANCE_DOOR.ty + 1 + ENTRANCE_DEPTH + 1;
 export interface Street {
   axis: 'h' | 'v';
   rect: TileRect;
-  /** Só a rua principal tem carros (lanes). */
+  /** Tem carros: a principal (lanes) e as norte–sul (vlanes); a rua norte não. */
   cars: boolean;
 }
 
@@ -33,6 +34,8 @@ export interface ExteriorLayout {
   props: ExteriorProp[];
   /** Faixas da rua principal (y em px) e sentido (+1 = leste, -1 = oeste). */
   lanes: { y: number; dir: 1 | -1 }[];
+  /** Faixas das ruas norte–sul (x do centro do carro, px) e sentido (+1 = sul, -1 = norte): mão direita. */
+  vlanes: { x: number; dir: 1 | -1 }[];
   /** Linha central da rua principal (px), para as faixas tracejadas. */
   streetY: number;
   streetH: number;
@@ -78,7 +81,6 @@ export function streetSides(b: BlockId, northStreet: boolean): readonly Side[] {
 }
 
 /** Gerador determinístico por posição (tiles): a mesma árvore sai no mesmo lugar não importa o tamanho do mundo. */
-const at = (x: number, y: number, salt: number) => mulberry32(((x * 73856093) ^ (y * 19349663) ^ salt) >>> 0);
 
 export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly BridgeLayout[] = bridgesFor(blocks)): ExteriorLayout {
   const world = worldBounds(blocks, bridges);
@@ -86,8 +88,6 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   const px = (t: number) => t * TILE;
   const floors: FloorPatch[] = [];
   const props: ExteriorProp[] = [];
-  const west = world.x;
-  const east = world.x + world.w;
   // a rua principal fica ao sul do PRINCIPAL (não do retângulo de pé): com anexos ao sul, o mundo cresce e a rua não desce
   const main = blockRect(PRINCIPAL);
   const south = main.y + main.h;
@@ -95,7 +95,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   const streets: Street[] = [{ axis: 'h', rect: { x: bounds.x, y: south, w: bounds.w, h: STREET_W }, cars: true }];
   if (northStreet) streets.push({ axis: 'h', rect: { x: bounds.x, y: main.y - STREET_W, w: bounds.w, h: STREET_W }, cars: false });
   for (const bx of [...new Set(blocks.map((b) => b.id.bx))].filter((bx) => bx !== 0).sort((a, b) => a - b)) {
-    streets.push({ axis: 'v', rect: { x: streetX(bx), y: bounds.y, w: STREET_W, h: bounds.h }, cars: false });
+    streets.push({ axis: 'v', rect: { x: streetX(bx), y: bounds.y, w: STREET_W, h: bounds.h }, cars: true });
   }
   const paved = streets.map(pavedRect);
   /** Meia-largura (px) dos sprites com copa: a base pode ficar fora do bloco e a copa invadir a parede lateral. */
@@ -107,7 +107,9 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   const place = (p: ExteriorProp, onStreet = false) => {
     const tx = Math.floor(p.x / TILE);
     const ty = Math.floor(p.y / TILE);
-    if (blocks.some((b) => inRect(b.rect, tx, ty))) return;
+    // plantas do campo ficam a 1 tile de qualquer bloco; a cerca viva e o resto encostam
+    const m = p.kind === 'tree' || p.kind === 'pine' || p.kind === 'bush' ? 1 : 0;
+    if (blocks.some((b) => inRect({ x: b.rect.x - m, y: b.rect.y - m, w: b.rect.w + 2 * m, h: b.rect.h + 2 * m }, tx, ty))) return;
     if (bridges.some((br) => br.rects.some((r) => inRect(r, tx, ty)))) return;
     if (!onStreet && paved.some((r) => inRect(r, tx, ty))) return;
     if ((p.kind === 'tree' || p.kind === 'pine') && streets.some((s) => canopyOverlapsStreet(p.x, p.y, s))) return;
@@ -135,47 +137,21 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   // caminho de pedra da entrada: da porta sul da recepção (y 29) até a calçada (y 31), atravessando a cerca viva
   floors.push({ kind: 'sidewalk', x: px(ENTRANCE_X), y: px(south), w: px(ENTRANCE_W), h: px(ENTRANCE_DEPTH), seed: 15 });
 
-  // árvores e arbustos por posição (D5): candidatos de 4 em 4 tiles em x (grade alinhada a múltiplos de 4 do mundo),
-  // cada um com o seu gerador semeado por (x, fileira). Faixas relativas ao retângulo de pé do mundo.
-  const x0 = Math.floor(bounds.x / 4) * 4;
-  const x1 = bounds.x + bounds.w;
-  /** Uma fileira horizontal de árvores: `density` por candidato, `kinds` chance de pinheiro, `yJitter` px para cima. */
-  const row = (ty: number, density: number, pine: number, yJitter: number, bush?: { chance: number; dy: number }) => {
-    for (let x = x0; x < x1; x += 4) {
-      const r = at(x, ty, 0x7a);
-      if (r() >= density) continue;
-      place({ kind: r() < pine ? 'pine' : 'tree', x: px(x) + Math.floor(r() * 8), y: px(ty) - Math.floor(r() * yJitter), seed: Math.floor(r() * 1e9) });
-      if (bush && r() < bush.chance) place({ kind: 'bush', x: px(x + 2), y: px(ty + bush.dy) - 2, seed: Math.floor(r() * 1e9) });
-    }
-  };
-  // norte: fileira cheia junto ao topo do mundo e bosque cada vez mais esparso
-  const top = world.y;
-  row(top - 3, 0.85, 0.25, 20, { chance: 0.6, dy: 2 });
-  row(top - 6, 0.75, 0.3, 12);
-  row(top - 9, 0.7, 0.3, 12);
-  row(top - 12, 0.65, 0.3, 12);
-  row(top - 15, 0.55, 0.3, 12);
-  // sul: abaixo da rua principal ou do fundo do mundo, o que for mais ao sul
-  const bottom = Math.max(world.y + world.h, south + STREET_W);
-  for (const dy of [4, 7, 10, 13]) {
-    const ty = bottom + dy;
-    for (let x = x0; x < x1; x += 4) {
-      const r = at(x, ty, 0x5b);
-      if (r() >= 0.7) continue;
-      place({ kind: r() < 0.2 ? 'pine' : 'tree', x: px(x) + Math.floor(r() * 10), y: px(ty) + Math.floor(r() * 10), seed: Math.floor(r() * 1e9) });
-      if (r() < 0.3) place({ kind: 'bush', x: px(x + 3), y: px(ty + 1), seed: Math.floor(r() * 1e9) });
-    }
-  }
-  // laterais: três bandas a oeste e a leste do mundo, candidatos em y múltiplos de 3
-  for (const side of [-1, 1] as const) {
-    for (const band of [0, 5, 10, 15]) {
-      const baseX = side < 0 ? west - 6 - band : east + 4 + band;
-      for (let y = Math.ceil((world.y + 1) / 3) * 3; y < world.y + world.h; y += 3) {
-        const r = at(baseX, y, 0x3c);
-        if (r() >= 0.8) continue;
-        place({ kind: r() < 0.3 ? 'pine' : 'tree', x: px(baseX + Math.floor(r() * 5)), y: px(y + 1), seed: Math.floor(r() * 1e9) });
-        if (band === 0 && r() < 0.5) place({ kind: 'bush', x: px(side < 0 ? west - 2 : east + 1), y: px(y + 2), seed: Math.floor(r() * 1e9) });
-      }
+  // árvores e arbustos (D1 do campo único): as mesmas células de 8×8 tiles do campo que o renderer desenha além da
+  // base, aqui as que encostam nos bounds (o renderer pula exatamente essas). Como a célula é do mundo, uma árvore
+  // nunca muda de lugar quando um bloco nasce. Ficam de fora (place) blocos, passarelas, ruas, jardins e entrada.
+  const gardens = blocks.flatMap((b) => streetSides(b.id, northStreet).map((side): TileRect => (side === 'south' ? { x: b.rect.x, y: b.envelope.y + BUILDING_H, w: b.rect.w, h: 3 } : { x: b.rect.x, y: b.envelope.y - 3, w: b.rect.w, h: 3 })));
+  const entrance: TileRect = { x: ENTRANCE_X - 4, y: south - 1, w: ENTRANCE_W + 9, h: ENTRANCE_DEPTH + 2 };
+  const { cx0, cy0, cx1, cy1 } = fieldCells(px(bounds.x) - TILE, px(bounds.y) - TILE, px(bounds.x + bounds.w) + TILE, px(bounds.y + bounds.h) + TILE);
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      if (!cellTouches(cx, cy, px(bounds.x), px(bounds.y), px(bounds.x + bounds.w), px(bounds.y + bounds.h))) continue;
+      const p = fieldProp(cx, cy);
+      if (!p) continue;
+      const tx = Math.floor(p.x / TILE);
+      const ty = Math.floor(p.y / TILE);
+      if (gardens.some((g) => inRect(g, tx, ty)) || inRect(entrance, tx, ty)) continue;
+      place(p);
     }
   }
   // cerca viva + flores diante de cada bloco, de cada lado com rua (D5), ao longo do retângulo de pé; diante de cada
@@ -244,6 +220,11 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
       { y: streetY + Math.round(streetH * 0.36), dir: 1 },
       { y: streetY + Math.round(streetH * 0.86), dir: -1 },
     ],
+    // mão direita: quem vai para o sul na metade oeste do asfalto (colunas 3–7), quem vai para o norte na leste
+    vlanes: streets.filter((s) => s.axis === 'v').flatMap((s) => [
+      { x: px(s.rect.x + 3) + 20, dir: 1 as const },
+      { x: px(s.rect.x + 3) + 60, dir: -1 as const },
+    ]),
     streetY,
     streetH,
     streets,

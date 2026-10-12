@@ -17,13 +17,13 @@ import type { Sim } from '../sim/sim';
 import { buildAnim, furnitureScale, NO_ANIM, sweepDelay, type BuildAnim } from './anim';
 import { daylightModeOf, parseHourParam } from './daylight';
 import { charRect, promoteOverlapping } from './elevated';
-import { FIELD_CELL, fieldCells, fieldProp } from './field';
+import { cellTouches, FIELD_CELL, fieldCells, fieldProp } from './field';
 import { RoomFxRenderer } from './github-fx';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
-import { carSprite, propSprite, shadowSprite, trafficLightSprite } from './props';
+import { carSprite, carSpriteV, propSprite, shadowSprite, trafficLightSprite } from './props';
 import { drawPixelText, pixelTextWidth } from './pixel-font';
-import { StreetLife, streetGeometry, type Car } from './street-life';
+import { CAR_HALF_L, StreetLife, streetGeometry, type Car } from './street-life';
 import { countBadge, fallbackIcon } from './shell-sprites';
 import { buildAreaVis, furnitureSprites, opaqueBounds, paintShell, toWallVis, WALL_MARGIN, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
 
@@ -269,9 +269,10 @@ export class Renderer {
   }
 
   /**
-   * Cruzamentos de cidade: faixas de pedestres nos quatro lados (as da rua leste–oeste nas calçadas da rua norte–sul,
-   * as da norte–sul antes e depois da rua leste–oeste), linha de parada e o texto STOP no chão em cada aproximação da
-   * rua norte–sul (a via secundária); as placas ficam por conta dos props do exterior.
+   * Cruzamentos de cidade: faixas de pedestres nos quatro lados, cada uma alinhada à calçada que ela continua (as da
+   * rua leste–oeste nas calçadas da rua norte–sul e vice-versa: quem anda pela calçada cruza em cima da faixa), linha
+   * de parada 1 tile antes da faixa e o texto STOP no chão depois dela, em cada aproximação da rua norte–sul (a via
+   * secundária); as placas ficam por conta dos props do exterior.
    */
   private paintIntersections(ctx: CanvasRenderingContext2D): void {
     const white = 'rgba(245,245,240,0.85)';
@@ -281,16 +282,17 @@ export class Renderer {
       ctx.fillStyle = white;
       // atravessando a rua leste–oeste: barras empilhadas no asfalto dela, uma faixa de 2 tiles de cada lado
       for (const tx of [i.x - 2, i.x + 5]) for (let y = y0 + 3; y + 4 <= y0 + i.h * TILE - 2; y += 8) ctx.fillRect(tx * TILE + 2, y, 2 * TILE - 4, 4);
-      // atravessando a rua norte–sul: barras lado a lado no asfalto dela, antes e depois do cruzamento
-      for (const ty of [i.y - 4, i.y + 7]) for (let x = x0 + 3; x + 4 <= x0 + i.w * TILE - 2; x += 8) ctx.fillRect(x, ty * TILE + 2, 4, 2 * TILE - 4);
-      // linha de parada e STOP: quem vem do norte (mão oeste) e quem vem do sul (mão leste)
+      // atravessando a rua norte–sul: barras lado a lado no asfalto dela, nas calçadas da rua leste–oeste (linhas
+      // 2–3 e 9–10 do retângulo dela = i.y−2 e i.y+5)
+      for (const ty of [i.y - 2, i.y + 5]) for (let x = x0 + 3; x + 4 <= x0 + i.w * TILE - 2; x += 8) ctx.fillRect(x, ty * TILE + 2, 4, 2 * TILE - 4);
+      // linha de parada 1 tile antes da faixa e STOP depois: quem vem do norte (mão oeste) e quem vem do sul (mão leste)
       const lane = (i.w * TILE) / 2;
       const textW = pixelTextWidth('STOP', 2);
       ctx.fillStyle = white;
-      ctx.fillRect(x0 + 1, (i.y - 4) * TILE - 6, lane - 2, 3);
-      ctx.fillRect(x0 + lane + 1, (i.y + 9) * TILE + 3, lane - 2, 3);
-      drawPixelText(ctx, 'STOP', x0 + Math.floor((lane - textW) / 2), (i.y - 4) * TILE - 22, white, 2);
-      drawPixelText(ctx, 'STOP', x0 + lane + Math.floor((lane - textW) / 2), (i.y + 9) * TILE + 11, white, 2);
+      ctx.fillRect(x0 + 1, (i.y - 2) * TILE - 6, lane - 2, 3);
+      ctx.fillRect(x0 + lane + 1, (i.y + 7) * TILE + 3, lane - 2, 3);
+      drawPixelText(ctx, 'STOP', x0 + Math.floor((lane - textW) / 2), (i.y - 2) * TILE - 22, white, 2);
+      drawPixelText(ctx, 'STOP', x0 + lane + Math.floor((lane - textW) / 2), (i.y + 7) * TILE + 11, white, 2);
     }
   }
 
@@ -540,7 +542,7 @@ export class Renderer {
     }
     // carros e pedestres de uma borda à outra da união (base ∪ visão): nunca fora do asfalto ou da calçada,
     // mesmo com a câmera afastada
-    this.street.update(now, dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60);
+    this.street.update(now, dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60, Math.min(vy0, this.baseY) - 60, Math.max(vy1, this.baseY + (this.base?.height ?? 0)) + 60);
     const visible = (x: number, y: number, w: number, h: number) => x < vx1 && x + w > vx0 && y < vy1 && y + h > vy0;
 
     // ---- camada base (só a parte visível)
@@ -664,7 +666,7 @@ export class Renderer {
       }
     }
     this.pushField(push, vx0, vy0, vx1, vy1);
-    for (const car of this.cars) if (visible(car.x - 24, car.y - 24, 48, 28)) push(K.Car, car.y, car, null, 1);
+    for (const car of this.cars) if (visible(car.x - 24, car.y - 24, 48, 48)) push(K.Car, car.axis === 'v' ? car.y + CAR_HALF_L : car.y, car, null, 1);
     ents.sort((a, b) => a.y - b.y || a.k - b.k);
 
     this.iconCount = 0;
@@ -1390,6 +1392,11 @@ export class Renderer {
   }
 
   private drawCar(car: Car): void {
+    if (car.axis === 'v') {
+      const s = carSpriteV(car.variant, car.dir > 0);
+      this.ctx.drawImage(s.canvas, Math.round(car.x - s.ax), Math.round(car.y + CAR_HALF_L - s.ay));
+      return;
+    }
     const s = carSprite(car.variant, car.dir < 0);
     this.ctx.drawImage(s.canvas, Math.round(car.x - s.ax), Math.round(car.y - s.ay));
   }
@@ -1407,8 +1414,8 @@ export class Renderer {
       for (let cx = cx0; cx <= cx1; cx++) {
         const x = cx * s;
         const y = cy * s;
-        // célula que encosta na base (com 1 tile de folga): o jardim dela já vem da camada base
-        if (x + s > bx0 - TILE && x < bx1 + TILE && y + s > by0 - TILE && y < by1 + TILE) continue;
+        // célula que encosta na base (com 1 tile de folga): as árvores dela já vêm da área externa (D1 do campo único)
+        if (cellTouches(cx, cy, bx0, by0, bx1, by1)) continue;
         let onStreet = false;
         for (const st of this.strips) {
           const r = st.rect;
