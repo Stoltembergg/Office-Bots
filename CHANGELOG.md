@@ -13,8 +13,9 @@ do meio (0.**3**.0).
 ### Adicionado
 
 - **Anexo do outro lado da rua.** A nona sala abre um segundo prédio ao sul da rua, ligado ao lounge por uma
-  passarela em Z com guarda-corpo, por cima da rua. No lugar do núcleo, o anexo tem um lounge (balcão com café,
-  água e pia, e um banheirinho) e banheiros; as salas se abrem dos dois lados dele, na mesma ordem do principal
+  passarela em Z com guarda-corpo, por cima da rua. No lugar do núcleo, o anexo tem um lounge igual ao do principal
+  (sofá, poltronas, ping-pong, fliperamas, estante) mais um balcão com café e água, e banheiros; as salas se abrem
+  dos dois lados dele, na mesma ordem do principal
   (da nona à décima sexta sala; nos números do depurador, vagas 8 a 15). Quem está no anexo toma café, bebe água e vai ao banheiro no próprio anexo, e a roda do espelho se
   forma no banheiro mais perto de quem puxa. O anexo e a passarela só são desmontados quando a última sala do anexo
   sai e ninguém mais está lá nem na passarela. No console do navegador, `habblaud.world.debug.state()` mostra
@@ -30,7 +31,10 @@ do meio (0.**3**.0).
 - **Vida na rua.** Em frente à entrada há uma faixa de pedestres com semáforo: os carros param no amarelo e no
   vermelho (fazendo fila) e seguem no verde; pedestres passeiam pelas duas calçadas, atravessam na faixa quando o
   sinal fecha para os carros e, quando se cruzam, às vezes param para conversar. Eles são figurantes: não são
-  clicáveis nem entram no escritório.
+  clicáveis nem entram no escritório. Cada rua norte–sul cruza a principal num cruzamento de cidade: faixas de
+  pedestres nos quatro lados alinhadas às calçadas, linha de parada e STOP no chão e na placa para quem vem pela rua
+  norte–sul. Os carros dela param de verdade no STOP, só entram no cruzamento com a principal livre e cedem a quem
+  está na faixa; os da principal cedem a quem já está atravessando. Pedestres esperam na borda do asfalto.
 - **Terreno sem fim.** Além da área externa calculada, o gramado, as ruas (com calçadas, asfalto e faixa tracejada)
   e as árvores continuam até onde a câmera for, em qualquer zoom; os carros nunca andam fora do asfalto.
 - **Demonstração com número de sessões.** O cartão "O escritório está vazio" pergunta quantas sessões a
@@ -51,15 +55,16 @@ do meio (0.**3**.0).
   ponta oeste do corredor (calçada, banco, totem e capacho) saiu. O corredor tem vidro nas pontas fechadas e os pátios
   das vagas vazias fecham do lado que for ponta, a leste ou a oeste.
 - **Ruas e jardim.** Cada coluna de anexos traz uma rua norte–sul e o anexo ao norte traz a rua norte, com calçadas,
-  postes e faixa tracejada; carros só na rua principal. Árvores e arbustos não mudam de lugar quando um bloco nasce,
+  postes e faixa tracejada, e carros nas ruas norte–sul (a rua norte não tem). As árvores vêm de um campo
+  procedural único, dentro e fora da área externa, e não mudam de lugar quando um bloco nasce;
   e a cerca viva de cada bloco fica só do lado que dá para uma rua. A câmera pode andar até a borda da área externa e
   afastar mais (zoom mínimo 0,15).
 - **Chegada e saída pela porta.** Ninguém mais usa o elevador: quem chega surge na calçada, sobe o caminho de pedra
   e entra pela porta da recepção; quem vai embora sai pela porta, desce até a calçada, vira para um lado e some
   andando. O elevador ficou de decoração, com a porta fechada, e o "ding" (Configurações › Sons › Porta de entrada) toca na
   porta quando alguém entra ou sai.
-- **Porta nos fundos do lounge.** O lounge ganhou uma porta na parede sul, de onde sai a passarela do anexo; enquanto
-  o anexo não existe, ela dá para o jardim e ninguém passa por ela.
+- **Porta nos fundos do lounge.** O lounge ganha uma porta na parede sul quando sai dali a passarela do anexo (e a
+  copa, na parede norte, para o anexo ao norte); sem passarela, a parede é inteira.
 - A câmera, a luz das janelas, os pátios e os balões da visão geral acompanham o prédio quando ele cresce para o
   oeste. No console do navegador, `habblaud.world.debug.state()` mostra `blocks` (as colunas de pé de cada bloco)
   no lugar de `cols`.
