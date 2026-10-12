@@ -64,7 +64,7 @@ const LOSS_COLOR = '#ff8a8a';
 const KIND_LIST = Object.keys(KINDS) as GatherKind[];
 const PLACES: Readonly<Record<string, string>> = { [LOUNGE_ID]: 'Lounge', [CAFE_ID]: 'Copa', [RECEPTION_ID]: 'Recepção', [RESTROOM_ID]: 'Banheiros' };
 /** Lugar do evento para as áreas sem id fixo (as dos anexos), por kind. */
-const KIND_PLACES: Partial<Record<AreaKind, string>> = { hub: 'Saguão', restroom: 'Banheiros' };
+const KIND_PLACES: Partial<Record<AreaKind, string>> = { hub: 'Lounge', restroom: 'Banheiros' };
 /** O que se perde/ganha em cada jogo (texto do extrato: "Perdeu no jokenpô para Rafaela"). */
 const MATCH_WHAT: Partial<Record<GatherKind, string>> = {
   rps: 'no jokenpô',

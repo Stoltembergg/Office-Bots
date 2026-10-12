@@ -56,9 +56,9 @@ para dar a letra de cada conta). Nada sai do computador: o Habblaud não lê cre
 recepção, que dá no caminho de pedra até a calçada: é por ali que todo mundo chega e vai embora. Cada projeto com uma sessão aberta ganha a sua sala ao longo do
 corredor, de um lado ou do outro do núcleo — a primeira a leste, a segunda a oeste, e assim por diante, até quatro
 salas de cada lado. A nona sala abre um anexo do outro lado da rua, ligado ao lounge por uma passarela: no lugar do
-núcleo, um saguão com café, água e pia, e banheiros; as salas se abrem dos dois lados dele, como no principal. Da
+núcleo, um lounge com café, água e pia, e banheiros; as salas se abrem dos dois lados dele, como no principal. Da
 décima sétima em diante, abrem-se anexos novos: a leste e a oeste, ligados pela ponta do corredor por passarelas, e
-ao sul de cada um deles, ligados ao saguão de cima, com ruas entre todos; da quadragésima nona, um anexo ao norte da
+ao sul de cada um deles, ligados ao lounge de cima, com ruas entre todos; da quadragésima nona, um anexo ao norte da
 rua norte, ligado à copa. No topo, os contadores e o uso
 de cada conta; à esquerda, as salas e os agentes; embaixo, o feed de atividade.
 

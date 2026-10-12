@@ -13,7 +13,7 @@ do meio (0.**3**.0).
 ### Adicionado
 
 - **Anexo do outro lado da rua.** A nona sala abre um segundo prédio ao sul da rua, ligado ao lounge por uma
-  passarela em Z com guarda-corpo, por cima da rua. No lugar do núcleo, o anexo tem um saguão (balcão com café,
+  passarela em Z com guarda-corpo, por cima da rua. No lugar do núcleo, o anexo tem um lounge (balcão com café,
   água e pia, e um banheirinho) e banheiros; as salas se abrem dos dois lados dele, na mesma ordem do principal
   (da nona à décima sexta sala; nos números do depurador, vagas 8 a 15). Quem está no anexo toma café, bebe água e vai ao banheiro no próprio anexo, e a roda do espelho se
   forma no banheiro mais perto de quem puxa. O anexo e a passarela só são desmontados quando a última sala do anexo
@@ -22,9 +22,9 @@ do meio (0.**3**.0).
 - **Anexos laterais e ao norte.** Da décima sétima sala em diante, os anexos seguem a ordem do quarteirão: a leste do
   principal, ao sul desse anexo, a oeste, ao sul do anexo oeste, ao norte da rua norte e assim por diante, em anéis.
   Os anexos laterais se ligam ao pai pela ponta do corredor, com uma passarela reta na altura do corredor (a ponta
-  perde o vidro e fica aberta), por cima de uma rua norte–sul sem carros; os do sul se ligam ao saguão do anexo de
+  perde o vidro e fica aberta), por cima de uma rua norte–sul sem carros; os do sul se ligam ao lounge do anexo de
   cima por uma passarela em Z, como o primeiro anexo ao lounge; o anexo ao norte se liga à copa, que ganhou uma porta
-  na parede norte, por uma passarela em Z por cima da rua norte. O saguão de cada anexo fica do lado da passarela e
+  na parede norte, por uma passarela em Z por cima da rua norte. O lounge de cada anexo fica do lado da passarela e
   tem a porta larga para ela; os banheiros ficam do outro lado do corredor.
 
 - **Vida na rua.** Em frente à entrada há uma faixa de pedestres com semáforo: os carros param no amarelo e no

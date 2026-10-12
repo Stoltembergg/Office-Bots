@@ -5,7 +5,7 @@ import { mulberry32 } from '../../../../shared/hash';
 import { Character } from '../sim/character';
 import { CAR_GAP, CROSS_MIN_RED_MS, EMOTIONS, GREEN_MS, lightAt, MAX_PEDS, RED_MS, redLeft, StreetLife, YELLOW_MS, type Pedestrian, type StreetGeometry } from './street-life';
 
-const GEO: StreetGeometry = { crossX0: 624, crossX1: 672, northY: 523, southY: 635, lanes: [{ y: 560, dir: 1 }, { y: 600, dir: -1 }], stopEast: 612, stopWest: 684 };
+const GEO: StreetGeometry = { crossX0: 624, crossX1: 672, zebras: [{ x0: 624, x1: 672, light: true }, { x0: 1000, x1: 1032, light: false }], northY: 523, southY: 635, lanes: [{ y: 560, dir: 1 }, { y: 600, dir: -1 }], stopEast: 612, stopWest: 684 };
 
 function makeChar(seed: number): Character {
   const info: AgentInfo = {
@@ -23,7 +23,7 @@ function ped(l: StreetLife, x: number, dir: 1 | -1, row: 'n' | 's', wantsCross =
   const ch = makeChar(x);
   ch.x = x;
   ch.y = row === 'n' ? GEO.northY : GEO.southY;
-  const p: Pedestrian = { ch, dir, row, state: 'walk', speed: 40, wantsCross, crossed: false, until: 0, nextIconAt: 0, talked: false };
+  const p: Pedestrian = { ch, dir, row, state: 'walk', speed: 40, wantsCross, crossed: false, until: 0, nextIconAt: 0, talked: false, zebra: null };
   l.peds.push(p);
   return p;
 }
@@ -227,5 +227,48 @@ describe('pedestres', () => {
       expect([GEO.northY, GEO.southY]).toContain(p.ch.y === GEO.northY || p.ch.y === GEO.southY ? p.ch.y : p.row === 'n' ? GEO.northY : GEO.southY);
       expect(p.ch.alpha).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('faixas sem sinal (cruzamentos)', () => {
+  const Z = GEO.zebras[1];
+
+  it('o pedestre que quer atravessar para na primeira faixa que encontra e, com a rua livre, atravessa', () => {
+    const l = life();
+    const p = ped(l, Z.x0 - 30, 1, 'n', true);
+    run(l, 0, 3000, 0);
+    expect(p.zebra).toBe(Z);
+    expect(['cross', 'walk']).toContain(p.state);
+    expect(p.crossed || p.state === 'cross').toBe(true);
+  });
+
+  it('com um carro perto da faixa (sem distância para frear) o pedestre espera na calçada', () => {
+    const l = life();
+    const p = ped(l, (Z.x0 + Z.x1) / 2, 1, 'n', true);
+    l.cars.push({ x: Z.x0 - 50, y: 560, dir: 1, speed: 50, v: 50, variant: 0 });
+    l.update(0, 0.05, 0, 1400);
+    expect(p.state).toBe('wait');
+    // o carro passa e a faixa fica livre: aí atravessa
+    l.cars.length = 0;
+    l.update(0, 0.05, 0, 1400);
+    expect(p.state).toBe('cross');
+  });
+
+  it('os carros param antes da linha enquanto há alguém atravessando e voltam a andar depois', () => {
+    const l = life();
+    const p = ped(l, (Z.x0 + Z.x1) / 2, 1, 'n', true);
+    p.state = 'cross';
+    const car = { x: Z.x0 - 12 - 90, y: 560, dir: 1 as const, speed: 50, v: 50, variant: 0 };
+    l.cars.push(car);
+    for (let i = 0; i < 300; i++) {
+      p.state = 'cross';
+      l.update(0, 0.05, 0, 1400);
+    }
+    expect(car.v).toBe(0);
+    expect(car.x).toBeLessThan(Z.x0 - 12);
+    p.state = 'walk';
+    p.crossed = true;
+    for (let i = 0; i < 20; i++) l.update(0, 0.05, 0, 1400);
+    expect(car.v).toBeGreaterThan(0);
   });
 });

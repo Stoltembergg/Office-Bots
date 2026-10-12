@@ -22,6 +22,7 @@ import { RoomFxRenderer } from './github-fx';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { carSprite, propSprite, shadowSprite, trafficLightSprite } from './props';
+import { drawPixelText, pixelTextWidth } from './pixel-font';
 import { StreetLife, streetGeometry, type Car } from './street-life';
 import { countBadge, fallbackIcon } from './shell-sprites';
 import { buildAreaVis, furnitureSprites, opaqueBounds, paintShell, toWallVis, WALL_MARGIN, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
@@ -72,6 +73,8 @@ const VIGNETTE_EDGE = `rgba(18,40,26,${VIGNETTE_ALPHA})`;
  * vinheta completa, então as duas ficam com o mesmo tom (dia e noite) e a emenda some. */
 const EDGE_BAND = 5;
 /** Lado (tiles) das células de grama além da base e teto do cache. */
+/** Quanto (px) as faixas das ruas além da base entram sob a base, para não deixar fresta em zoom fracionário. */
+const SEAM_OVERLAP = 2;
 const GRASS_CELL = 8;
 const GRASS_CELL_CACHE = 1024;
 
@@ -238,6 +241,7 @@ export class Renderer {
       ctx.fillStyle = 'rgba(245,245,240,0.85)';
       for (let y = y0 + 3; y + 4 <= y1 - 2; y += 8) ctx.fillRect(ENTRANCE_X * TILE + 2, y, ENTRANCE_W * TILE - 4, 4);
     }
+    this.paintIntersections(ctx);
     this.buildStrips(streets);
     this.shells = [];
     this.shellWindows = [];
@@ -262,6 +266,32 @@ export class Renderer {
     this.grassCells.clear();
     this.clearColor = this.grassAverage();
     this.base = c;
+  }
+
+  /**
+   * Cruzamentos de cidade: faixas de pedestres nos quatro lados (as da rua leste–oeste nas calçadas da rua norte–sul,
+   * as da norte–sul antes e depois da rua leste–oeste), linha de parada e o texto STOP no chão em cada aproximação da
+   * rua norte–sul (a via secundária); as placas ficam por conta dos props do exterior.
+   */
+  private paintIntersections(ctx: CanvasRenderingContext2D): void {
+    const white = 'rgba(245,245,240,0.85)';
+    for (const i of this.exterior.intersections) {
+      const x0 = i.x * TILE;
+      const y0 = i.y * TILE;
+      ctx.fillStyle = white;
+      // atravessando a rua leste–oeste: barras empilhadas no asfalto dela, uma faixa de 2 tiles de cada lado
+      for (const tx of [i.x - 2, i.x + 5]) for (let y = y0 + 3; y + 4 <= y0 + i.h * TILE - 2; y += 8) ctx.fillRect(tx * TILE + 2, y, 2 * TILE - 4, 4);
+      // atravessando a rua norte–sul: barras lado a lado no asfalto dela, antes e depois do cruzamento
+      for (const ty of [i.y - 4, i.y + 7]) for (let x = x0 + 3; x + 4 <= x0 + i.w * TILE - 2; x += 8) ctx.fillRect(x, ty * TILE + 2, 4, 2 * TILE - 4);
+      // linha de parada e STOP: quem vem do norte (mão oeste) e quem vem do sul (mão leste)
+      const lane = (i.w * TILE) / 2;
+      const textW = pixelTextWidth('STOP', 2);
+      ctx.fillStyle = white;
+      ctx.fillRect(x0 + 1, (i.y - 4) * TILE - 6, lane - 2, 3);
+      ctx.fillRect(x0 + lane + 1, (i.y + 9) * TILE + 3, lane - 2, 3);
+      drawPixelText(ctx, 'STOP', x0 + Math.floor((lane - textW) / 2), (i.y - 4) * TILE - 22, white, 2);
+      drawPixelText(ctx, 'STOP', x0 + lane + Math.floor((lane - textW) / 2), (i.y + 9) * TILE + 11, white, 2);
+    }
   }
 
   /**
@@ -411,12 +441,12 @@ export class Renderer {
       if (s.axis === 'h') {
         // origem do padrão na linha da rua (x em múltiplos de 96 a partir de 0, como o tracejado da base)
         ctx.translate(0, r.y * TILE);
-        if (vx0 < bx0) ctx.fillRect(vx0 - 1, 0, bx0 - vx0 + 1, r.h * TILE);
-        if (vx1 > bx1) ctx.fillRect(bx1, 0, vx1 - bx1 + 1, r.h * TILE);
+        if (vx0 < bx0) ctx.fillRect(vx0 - 1, 0, bx0 - vx0 + 1 + SEAM_OVERLAP, r.h * TILE);
+        if (vx1 > bx1) ctx.fillRect(bx1 - SEAM_OVERLAP, 0, vx1 - bx1 + 1 + SEAM_OVERLAP, r.h * TILE);
       } else {
         ctx.translate(r.x * TILE, 0);
-        if (vy0 < by0) ctx.fillRect(0, vy0 - 1, r.w * TILE, by0 - vy0 + 1);
-        if (vy1 > by1) ctx.fillRect(0, by1, r.w * TILE, vy1 - by1 + 1);
+        if (vy0 < by0) ctx.fillRect(0, vy0 - 1, r.w * TILE, by0 - vy0 + 1 + SEAM_OVERLAP);
+        if (vy1 > by1) ctx.fillRect(0, by1 - SEAM_OVERLAP, r.w * TILE, vy1 - by1 + 1 + SEAM_OVERLAP);
       }
       ctx.restore();
     }

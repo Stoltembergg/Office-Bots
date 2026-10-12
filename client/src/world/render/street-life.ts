@@ -28,10 +28,24 @@ export function redLeft(now: number, t0 = 0): number {
   return t < GREEN_MS + YELLOW_MS ? 0 : CYCLE_MS - t;
 }
 
+/** Faixa de pedestres atravessando a rua principal (px de mundo): `light` = com semáforo (a da entrada); sem ele, quem manda é o pedestre (carros cedem). */
+export interface Zebra {
+  x0: number;
+  x1: number;
+  light: boolean;
+}
+
+/** Distância (px) da linha de parada até a borda da faixa. */
+const STOP_GAP = 12;
+/** Um carro a menos que isto (px) da linha de parada já não consegue frear para quem vai atravessar numa faixa sem sinal. */
+export const YIELD_SAFE_DIST = 70;
+
 export interface StreetGeometry {
   /** Faixa de pedestres (px de mundo): bordas oeste e leste, na frente da entrada. */
   crossX0: number;
   crossX1: number;
+  /** Todas as faixas da rua principal: a da entrada (com semáforo) e as dos cruzamentos com as ruas norte–sul. */
+  zebras: readonly Zebra[];
   /** Linhas (y dos pés, px) por onde os pedestres andam: calçada norte e calçada sul da rua principal. */
   northY: number;
   southY: number;
@@ -47,14 +61,21 @@ export function streetGeometry(ex: ExteriorLayout): StreetGeometry {
   const south = main.rect.y;
   const crossX0 = ENTRANCE_X * TILE;
   const crossX1 = (ENTRANCE_X + ENTRANCE_W) * TILE;
+  // cruzamentos da rua principal: uma faixa de 2 tiles de cada lado da rua norte–sul (nas calçadas dela), sem sinal
+  const zebras: Zebra[] = [{ x0: crossX0, x1: crossX1, light: true }];
+  for (const i of ex.intersections) {
+    if (i.y !== south + 4) continue;
+    zebras.push({ x0: (i.x - 2) * TILE, x1: i.x * TILE, light: false }, { x0: (i.x + 5) * TILE, x1: (i.x + 7) * TILE, light: false });
+  }
   return {
     crossX0,
     crossX1,
+    zebras,
     northY: SIDEWALK_TY * TILE + FOOT_DY,
     southY: (south + 10) * TILE + FOOT_DY,
     lanes: ex.lanes,
-    stopEast: crossX0 - 12,
-    stopWest: crossX1 + 12,
+    stopEast: crossX0 - STOP_GAP,
+    stopWest: crossX1 + STOP_GAP,
   };
 }
 
@@ -84,6 +105,8 @@ export interface Pedestrian {
   nextIconAt: number;
   /** Já conversou (ou cruzou com alguém sem parar): não para de novo. */
   talked: boolean;
+  /** Faixa em que espera e atravessa. */
+  zebra: Zebra | null;
 }
 
 /** Emoções das conversas de rua (ícones sobre a cabeça). */
@@ -142,12 +165,15 @@ export class StreetLife {
     const light = this.light(now);
     const step = Math.min(dt, 0.1);
     for (const c of this.cars) {
-      const stop = c.dir > 0 ? this.geo.stopEast : this.geo.stopWest;
-      // distância até a linha de parada (positiva = ainda não chegou; quem já passou segue)
-      const toStop = (stop - c.x) * c.dir;
       let want = c.speed;
-      const mustStop = light === 'red' || (light === 'yellow' && toStop > 30);
-      if (mustStop && toStop > 0 && toStop < BRAKE_DIST) want = Math.min(want, Math.max(0, (toStop - 2) * 1.2));
+      for (const z of this.geo.zebras) {
+        const stop = c.dir > 0 ? z.x0 - STOP_GAP : z.x1 + STOP_GAP;
+        // distância até a linha de parada (positiva = ainda não chegou; quem já passou segue)
+        const toStop = (stop - c.x) * c.dir;
+        // sinal fechado, ou alguém atravessando a faixa: o carro para antes da linha
+        const mustStop = z.light ? light === 'red' || (light === 'yellow' && toStop > 30) || this.pedOn(z) : this.pedOn(z);
+        if (mustStop && toStop > 0 && toStop < BRAKE_DIST) want = Math.min(want, Math.max(0, (toStop - 2) * 1.2));
+      }
       // fila: não encosta no carro da frente na mesma faixa
       for (const o of this.cars) {
         if (o === c || o.y !== c.y) continue;
@@ -167,7 +193,6 @@ export class StreetLife {
       this.spawnPed(x0, x1);
     }
     const light = this.light(now);
-    const cx = (this.geo.crossX0 + this.geo.crossX1) / 2;
     for (const p of this.peds) {
       const ch = p.ch;
       ch.animT += dt * 1000;
@@ -178,8 +203,10 @@ export class StreetLife {
           ch.setPose('walk');
           ch.dir = p.dir > 0 ? 'right' : 'left';
           const s = p.speed * dt;
-          if (p.wantsCross && !p.crossed && Math.abs(ch.x - cx) <= s + 1) {
-            ch.x = cx;
+          const z = p.wantsCross && !p.crossed ? this.geo.zebras.find((q) => Math.abs(ch.x - (q.x0 + q.x1) / 2) <= s + 1) : undefined;
+          if (z) {
+            ch.x = (z.x0 + z.x1) / 2;
+            p.zebra = z;
             p.state = 'wait';
             break;
           }
@@ -195,7 +222,9 @@ export class StreetLife {
           ch.dir = p.row === 'n' ? 'down' : 'up';
           const target = p.row === 'n' ? this.geo.southY : this.geo.northY;
           const need = Math.max(CROSS_MIN_RED_MS, (Math.abs(target - ch.y) / p.speed) * 1000 + CROSS_SLACK_MS);
-          if (light === 'red' && redLeft(now, this.t0) >= need && this.crossingClear()) p.state = 'cross';
+          const z = p.zebra ?? this.geo.zebras[0];
+          const go = z.light ? light === 'red' && redLeft(now, this.t0) >= need && this.crossingClear(z) : this.crossingClear(z, YIELD_SAFE_DIST);
+          if (go) p.state = 'cross';
           break;
         }
         case 'cross': {
@@ -231,15 +260,22 @@ export class StreetLife {
   }
 
   /** Dois que se cruzam na mesma calçada podem parar frente a frente por 3–6 s, trocando emoções. */
-  /** Nenhum carro em cima da faixa (com margem) nem prestes a passar por ela: só quem já passou ou ainda vai parar na linha. */
-  crossingClear(): boolean {
-    const { crossX0, crossX1 } = this.geo;
+  /** Alguém atravessando a faixa agora (os carros cedem). */
+  pedOn(z: Zebra): boolean {
+    return this.peds.some((p) => p.state === 'cross' && p.ch.x >= z.x0 - 4 && p.ch.x <= z.x1 + 4);
+  }
+
+  /**
+   * Nenhum carro em cima da faixa (com margem) nem prestes a passar por ela: só quem já passou ou ainda vai parar na
+   * linha. Numa faixa sem sinal, `minStop` é a distância mínima (px) que o carro precisa ter da linha para conseguir frear.
+   */
+  crossingClear(z: Zebra = this.geo.zebras[0], minStop = 0): boolean {
     return this.cars.every((c) => {
-      if (c.x >= crossX0 - CROSS_CLEAR_PX && c.x <= crossX1 + CROSS_CLEAR_PX) return false;
-      const passed = c.dir > 0 ? c.x > crossX1 : c.x < crossX0;
+      if (c.x >= z.x0 - CROSS_CLEAR_PX && c.x <= z.x1 + CROSS_CLEAR_PX) return false;
+      const passed = c.dir > 0 ? c.x > z.x1 : c.x < z.x0;
       if (passed) return true;
-      const stop = c.dir > 0 ? this.geo.stopEast : this.geo.stopWest;
-      return (stop - c.x) * c.dir > 0;
+      const stop = c.dir > 0 ? z.x0 - STOP_GAP : z.x1 + STOP_GAP;
+      return (stop - c.x) * c.dir > minStop;
     });
   }
 
@@ -279,6 +315,6 @@ export class StreetLife {
     ch.alpha = 0;
     ch.dir = dir > 0 ? 'right' : 'left';
     ch.setPose('walk');
-    this.peds.push({ ch, dir, row, state: 'walk', speed: WALK_SPEED * 0.8 * ch.speedK, wantsCross: this.rng() < 0.35, crossed: false, until: 0, nextIconAt: 0, talked: false });
+    this.peds.push({ ch, dir, row, state: 'walk', speed: WALK_SPEED * 0.8 * ch.speedK, wantsCross: this.rng() < 0.35, crossed: false, until: 0, nextIconAt: 0, talked: false, zebra: null });
   }
 }

@@ -3,6 +3,7 @@
 // cinza-azulado escuro, 3–4 tons por material, luz vinda de cima/esquerda.
 import { mulberry32 } from '../../../../shared/hash';
 import type { ExteriorProp } from '../layout/types';
+import { drawPixelText } from './pixel-font';
 import type { Light } from './street-life';
 
 export interface PropSprite {
@@ -255,6 +256,30 @@ export function trafficLightSprite(state: Light): PropSprite {
   return s;
 }
 
+/** Placa de PARE: octógono vermelho com borda branca e o texto STOP, em um poste. */
+function stopSignSprite(): PropSprite {
+  const [c, ctx] = makeCanvas(22, 38);
+  shadowEllipse(ctx, 11, 36, 4, 1, 0.25);
+  ctx.fillStyle = '#2e3648';
+  ctx.fillRect(10, 19, 2, 17);
+  ctx.fillStyle = '#4a5468';
+  ctx.fillRect(10, 19, 1, 17);
+  // octógono de n px com os cantos cortados em `cut`
+  const octagon = (x0: number, y0: number, n: number, cut: number, color: string) => {
+    ctx.fillStyle = color;
+    for (let y = 0; y < n; y++) {
+      const inset = y < cut ? cut - y : y >= n - cut ? y - (n - cut - 1) : 0;
+      ctx.fillRect(x0 + inset, y0 + y, n - 2 * inset, 1);
+    }
+  };
+  octagon(0, 0, 20, 6, '#f4f4f0');
+  octagon(1, 1, 18, 5, '#c8322e');
+  drawPixelText(ctx, 'STOP', 3, 7, '#ffffff');
+  ctx.fillStyle = '#3a4152';
+  ctx.fillRect(9, 34, 4, 2);
+  return { canvas: c, ax: 11, ay: 36 };
+}
+
 function benchSprite(): PropSprite {
   const [c, ctx] = makeCanvas(26, 14);
   shadowEllipse(ctx, 13, 12, 11, 2, 0.22);
@@ -362,7 +387,7 @@ function totemSprite(): PropSprite {
 }
 
 export function propSprite(prop: ExteriorProp): PropSprite {
-  const key = prop.kind === 'lamp' || prop.kind === 'bench' || prop.kind === 'totem' ? prop.kind : `${prop.kind}:${prop.seed % 7}`;
+  const key = prop.kind === 'lamp' || prop.kind === 'bench' || prop.kind === 'totem' || prop.kind === 'stop_sign' ? prop.kind : `${prop.kind}:${prop.seed % 7}`;
   let s = cache.get(key);
   if (s) return s;
   switch (prop.kind) {
@@ -395,6 +420,9 @@ export function propSprite(prop: ExteriorProp): PropSprite {
       break;
     case 'totem':
       s = totemSprite();
+      break;
+    case 'stop_sign':
+      s = stopSignSprite();
       break;
     case 'traffic_light':
       // o renderer desenha o estado atual do sinal; aqui só o padrão

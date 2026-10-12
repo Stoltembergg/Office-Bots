@@ -54,7 +54,7 @@ const CORE_NAMES: Record<string, string> = {
   'core:lounge': 'Lounge',
 };
 /** Nomes das áreas sem id fixo (as dos anexos), por kind. */
-const KIND_NAMES: Partial<Record<AreaKind, string>> = { hub: 'Saguão', restroom: 'Banheiros' };
+const KIND_NAMES: Partial<Record<AreaKind, string>> = { hub: 'Lounge', restroom: 'Banheiros' };
 
 /** 'shell' = espera de shell: balão escuro de terminal com texto verde. 'say' = fala das rodas (papo, torcida, apostas). */
 type Tone = 'info' | 'alert' | 'deliver' | 'shell' | 'say';

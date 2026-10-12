@@ -38,6 +38,8 @@ export interface ExteriorLayout {
   streetH: number;
   /** Todas as ruas (D5): principal, norte (com bloco em by = −1) e norte–sul (uma por coluna de blocos |bx| ≥ 1). */
   streets: Street[];
+  /** Cruzamentos (tiles): o asfalto comum de cada rua norte–sul com cada rua leste–oeste (5×5). */
+  intersections: TileRect[];
 }
 
 /** Fechamento do corredor e pátio de um slot sem sala. */
@@ -55,6 +57,17 @@ export interface SlotShell {
 /** Calçada + asfalto de uma rua (tiles): onde nada de jardim entra (D5). */
 function pavedRect(s: Street): TileRect {
   return s.axis === 'h' ? { x: s.rect.x, y: s.rect.y + 2, w: s.rect.w, h: 9 } : { x: s.rect.x + 1, y: s.rect.y, w: 9, h: s.rect.h };
+}
+
+/** Meia-largura e altura (px) da copa de árvores e pinheiros: nenhuma copa entra em calçada ou asfalto. */
+export const CANOPY_HALF_W = 18;
+export const CANOPY_UP = 50;
+
+/** A copa de um prop com base em (x, y) (px) encosta na calçada ou no asfalto de `s` (linhas 2–10 de uma rua h; colunas 1–9 de uma v)? */
+export function canopyOverlapsStreet(x: number, y: number, s: Street): boolean {
+  const r = s.rect;
+  const [x0, x1, y0, y1] = s.axis === 'h' ? [r.x * TILE, (r.x + r.w) * TILE, (r.y + 2) * TILE, (r.y + 11) * TILE] : [(r.x + 1) * TILE, (r.x + 10) * TILE, r.y * TILE, (r.y + r.h) * TILE];
+  return x + CANOPY_HALF_W > x0 && x - CANOPY_HALF_W < x1 && y > y0 && y - CANOPY_UP < y1;
 }
 
 /** Lados de um bloco que dão para uma rua (D5): a cerca viva e o paving dos pátios ficam só deles. */
@@ -97,6 +110,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
     if (blocks.some((b) => inRect(b.rect, tx, ty))) return;
     if (bridges.some((br) => br.rects.some((r) => inRect(r, tx, ty)))) return;
     if (!onStreet && paved.some((r) => inRect(r, tx, ty))) return;
+    if ((p.kind === 'tree' || p.kind === 'pine') && streets.some((s) => canopyOverlapsStreet(p.x, p.y, s))) return;
     const h = HALF_W[p.kind] ?? 0;
     if (h && blocks.some((b) => ty >= b.rect.y && ty < b.rect.y + b.rect.h && p.x + h > b.rect.x * TILE && p.x - h < (b.rect.x + b.rect.w) * TILE)) return;
     props.push(p);
@@ -136,28 +150,29 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   };
   // norte: fileira cheia junto ao topo do mundo e bosque cada vez mais esparso
   const top = world.y;
-  row(top - 3, 0.8, 0.25, 20, { chance: 0.6, dy: 2 });
-  row(top - 6, 0.6, 0.3, 12);
-  row(top - 10, 0.5, 0.3, 12);
-  row(top - 14, 0.4, 0.3, 12);
+  row(top - 3, 0.85, 0.25, 20, { chance: 0.6, dy: 2 });
+  row(top - 6, 0.75, 0.3, 12);
+  row(top - 9, 0.7, 0.3, 12);
+  row(top - 12, 0.65, 0.3, 12);
+  row(top - 15, 0.55, 0.3, 12);
   // sul: abaixo da rua principal ou do fundo do mundo, o que for mais ao sul
   const bottom = Math.max(world.y + world.h, south + STREET_W);
-  for (const dy of [1, 5, 9]) {
+  for (const dy of [4, 7, 10, 13]) {
     const ty = bottom + dy;
     for (let x = x0; x < x1; x += 4) {
       const r = at(x, ty, 0x5b);
-      if (r() >= 0.55) continue;
+      if (r() >= 0.7) continue;
       place({ kind: r() < 0.2 ? 'pine' : 'tree', x: px(x) + Math.floor(r() * 10), y: px(ty) + Math.floor(r() * 10), seed: Math.floor(r() * 1e9) });
       if (r() < 0.3) place({ kind: 'bush', x: px(x + 3), y: px(ty + 1), seed: Math.floor(r() * 1e9) });
     }
   }
   // laterais: três bandas a oeste e a leste do mundo, candidatos em y múltiplos de 3
   for (const side of [-1, 1] as const) {
-    for (const band of [0, 7, 13]) {
+    for (const band of [0, 5, 10, 15]) {
       const baseX = side < 0 ? west - 6 - band : east + 4 + band;
       for (let y = Math.ceil((world.y + 1) / 3) * 3; y < world.y + world.h; y += 3) {
         const r = at(baseX, y, 0x3c);
-        if (r() >= 0.7) continue;
+        if (r() >= 0.8) continue;
         place({ kind: r() < 0.3 ? 'pine' : 'tree', x: px(baseX + Math.floor(r() * 5)), y: px(y + 1), seed: Math.floor(r() * 1e9) });
         if (band === 0 && r() < 0.5) place({ kind: 'bush', x: px(side < 0 ? west - 2 : east + 1), y: px(y + 2), seed: Math.floor(r() * 1e9) });
       }
@@ -180,18 +195,41 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
       }
     }
   }
-  // postes: calçada norte da rua principal e calçada sul da rua norte, de 10 em 10 tiles numa grade fixa do mundo (não
-  // mudam de lugar quando o mundo cresce para oeste); nenhum no asfalto das ruas norte–sul
+  // postes: de 6 em 6 tiles numa grade fixa do mundo (não mudam de lugar quando o mundo cresce para oeste), nas duas
+  // calçadas da rua principal (a do sul é deslocada de 3 tiles), na calçada sul da rua norte e ao longo da calçada leste
+  // de cada rua norte–sul; nenhum no asfalto das ruas norte–sul, junto à entrada (caminho de pedra, totem, banco e
+  // semáforos) nem nos cruzamentos
   const asphaltV = streets.filter((s) => s.axis === 'v').map((s) => ({ x0: s.rect.x + 3, x1: s.rect.x + 8 }));
-  // (x ≡ 4 mod 10: no principal ficam em 34 e 44, longe do totem em 36 e do banco em 46)
-  for (let x = Math.floor(bounds.x / 10) * 10 + 4; x < bounds.x + bounds.w; x += 10) {
-    if (x < bounds.x || asphaltV.some((a) => x >= a.x0 && x < a.x1)) continue;
-    place({ kind: 'lamp', x: px(x), y: px(south + 3) + 6, seed: x }, true);
-    if (northStreet) place({ kind: 'lamp', x: px(x), y: px(main.y - 3) + 6, seed: x + 1 }, true);
+  const nearEntrance = (x: number) => x >= ENTRANCE_X - 4 && x < ENTRANCE_X + ENTRANCE_W + 5;
+  const lampRow = (offset: number, y: number, seed: number) => {
+    for (let x = Math.floor(bounds.x / 6) * 6 + offset; x < bounds.x + bounds.w; x += 6) {
+      if (x < bounds.x || nearEntrance(x) || asphaltV.some((a) => x >= a.x0 - 1 && x < a.x1 + 1)) continue;
+      place({ kind: 'lamp', x: px(x), y, seed: x + seed }, true);
+    }
+  };
+  lampRow(2, px(south + 3) + 6, 0);
+  lampRow(5, px(south + 10) + 6, 2);
+  if (northStreet) lampRow(2, px(main.y - 3) + 6, 1);
+  const hStreets = streets.filter((s) => s.axis === 'h');
+  for (const v of streets.filter((s) => s.axis === 'v')) {
+    for (let y = Math.ceil(bounds.y / 6) * 6 + 2; y < bounds.y + bounds.h; y += 6) {
+      if (hStreets.some((h) => y >= h.rect.y - 1 && y < h.rect.y + STREET_W + 2)) continue;
+      place({ kind: 'lamp', x: px(v.rect.x + 8) + 8, y: px(y) + 6, seed: y + 7 }, true);
+    }
   }
   // banco e totem com a marca na calçada, dos dois lados do caminho de pedra (longe dos postes em x 34 e 44)
   place({ kind: 'bench', x: px(ENTRANCE_X + ENTRANCE_W + 4), y: px(south + 2) + 4, seed: 1 }, true);
   place({ kind: 'totem', x: px(ENTRANCE_X - 3) + 8, y: px(south + 2) + 4, seed: 2 }, true);
+  // cruzamentos: a rua norte–sul é a via secundária, então cada aproximação tem uma placa de PARE na calçada à direita
+  // de quem chega (a que vai para o sul pela calçada oeste, a que vai para o norte pela calçada leste)
+  const intersections: TileRect[] = [];
+  for (const v of streets.filter((s) => s.axis === 'v')) {
+    for (const h of streets.filter((s) => s.axis === 'h')) {
+      intersections.push({ x: v.rect.x + 3, y: h.rect.y + 4, w: 5, h: 5 });
+      place({ kind: 'stop_sign', x: px(v.rect.x + 1) + 16, y: px(h.rect.y + 1) + 14, seed: 5 }, true);
+      place({ kind: 'stop_sign', x: px(v.rect.x + 8) + 16, y: px(h.rect.y + 12) - 2, seed: 6 }, true);
+    }
+  }
   // semáforos da faixa de pedestres na frente da entrada: um em cada calçada, nas pontas opostas da faixa
   place({ kind: 'traffic_light', x: px(ENTRANCE_X) - 6, y: px(south + 3) + 6, seed: 3 }, true);
   place({ kind: 'traffic_light', x: px(ENTRANCE_X + ENTRANCE_W) + 6, y: px(south + 9) + 6, seed: 4 }, true);
@@ -209,6 +247,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
     streetY,
     streetH,
     streets,
+    intersections,
   };
 }
 
