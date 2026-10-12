@@ -72,7 +72,7 @@ interface Tracker {
   inOffice: boolean;
   /** Mexeu em outra pasta (escopo): não volta mais. */
   outOfScope: boolean;
-  /** Sessão de subagente: fica de fora. */
+  /** Sessão de subagente ou do `grok -p`: fica de fora. */
   internal: boolean;
   status: AgentStatus;
   statusAt: number;
@@ -250,7 +250,8 @@ export class GrokSource implements AgentSource {
     if (mtime !== undefined && mtime !== t.summaryMtime) {
       t.summaryMtime = mtime;
       t.summary = readSummary(t.sessionDir);
-      if (t.summary.kind === 'subagent') {
+      // Subagente, ou `grok -p` (headless: fora do Docker ele nem entra na lista das sessões abertas).
+      if (t.summary.kind === 'subagent' || t.summary.kind === 'headless') {
         t.internal = true;
         if (t.inOffice) this.opts.office.closeMain(t.key);
         t.inOffice = false;

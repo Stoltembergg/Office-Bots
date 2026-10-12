@@ -191,11 +191,13 @@ describe('Grok: fonte de agentes', () => {
     const ctx = setup({ inDocker: true });
     const d = ctx.home.session(S1, CWD, [prompt('oi', ctx.now())]);
     ctx.home.session(S2, OTHER, [prompt('velha', ctx.now())]);
+    ctx.home.session('01a12b72-2b94-7dd0-a593-d4ddc796b9ef', CWD, [prompt('grok -p', ctx.now())], { session_kind: 'headless' });
     const old = new Date(ctx.now() - 2 * 3600_000);
     utimesSync(join(d, '..', '..', encodeURIComponent(OTHER), S2, 'updates.jsonl'), old, old);
     ctx.source.start();
     expect(ctx.agent()).toMatchObject({ roomId: CWD });
     expect(ctx.agent(`.grok:${S2}`)).toBeUndefined();
+    expect(ctx.agent('.grok:01a12b72-2b94-7dd0-a593-d4ddc796b9ef')).toBeUndefined();
   });
 
   it('pid morto não conta (fora do Docker); subagente fica de fora', () => {
