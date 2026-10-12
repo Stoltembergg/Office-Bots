@@ -194,7 +194,7 @@ describe('DemoSimulator: Codex', () => {
     expect(['done', 'communicate']).toContain(statusAtDelivery);
   });
 
-  it('setSessions com now abre de uma vez as sess�es que faltam', () => {
+  it('setSessions com now abre de uma vez as sessões que faltam', () => {
     const sim = new DemoSimulator({ seed: 3, idPrefix: 'demo:', sessions: 4 }, 1_000);
     const mains = () => sim.snapshot(1_000).agents.filter((a) => a.kind === 'main').length;
     const antes = mains();
@@ -204,5 +204,14 @@ describe('DemoSimulator: Codex', () => {
     expect(antes).toBeLessThan(12);
     sim.setSessions(5, 1_000);
     expect(mains()).toBe(12);
+  });
+
+  it('cada sessão abre a sua sala (só a 2ª da abertura divide a da 1ª): 40 sessões, 39 salas diferentes', () => {
+    const sim = new DemoSimulator({ seed: 5, idPrefix: 'demo:', sessions: 4 }, 1_000);
+    sim.setSessions(40, 1_000);
+    const snap = sim.snapshot(1_000);
+    expect(snap.agents.filter((a) => a.kind === 'main')).toHaveLength(40);
+    expect(snap.rooms).toHaveLength(39);
+    expect(new Set(snap.rooms.map((r) => r.name)).size).toBe(39);
   });
 });
