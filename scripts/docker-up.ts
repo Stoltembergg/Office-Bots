@@ -802,7 +802,9 @@ async function up(opts: Options, port: number): Promise<void> {
   const projectRoots = projectRootsOf(process.env, HOME);
   if (projectRoots.length) say(`Escopo: só as sessões abertas em ${projectRoots.map(tildify).join(', ')}.`);
   const registry = readRegistry();
-  const problem = instanceProblem(names, port, projectRoots, registry.ok ? registry.value : undefined, !!existing);
+  // O container desta instância já no ar (registro perdido, por exemplo) não conta como "outro Habblaud na porta".
+  const ownRunning = !!names.instance && dockerQuiet(['container', 'inspect', '--format', '{{.State.Running}}', names.container]).out.trim() === 'true';
+  const problem = instanceProblem(names, port, projectRoots, registry.ok ? registry.value : undefined, !!existing && !ownRunning);
   if (problem) fail(problem);
 
   migrateStateDir();

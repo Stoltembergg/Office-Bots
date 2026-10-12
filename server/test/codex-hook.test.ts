@@ -4,6 +4,7 @@
 // terminal, tempo esgotado, Habblaud fora do ar). HOME e CODEX_HOME sempre em pastas temporárias; stdin sintético.
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -196,6 +197,26 @@ describe('hook.mjs do Codex (processo)', () => {
     const run = runHook(JSON.stringify(permission()), { CODEX_HOME: codexHome });
     srv.registry!.decide(await pendingId(srv), { behavior: 'allow' });
     expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'allow' });
+  });
+
+  it('instância da pasta aceita o evento mas não responde ao pedido de permissão: o pedido vai para a porta de sempre', async () => {
+    srv = await servePermissions({ codex: true, codexLive: live });
+    // "Instância" que responde ao evento e trava no registro do pedido.
+    const stuck = createHttpServer((req, res) => {
+      if (req.url === '/api/codex/events') res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    });
+    await new Promise<void>((ok) => stuck.listen(0, '127.0.0.1', ok));
+    try {
+      const stuckPort = (stuck.address() as { port: number }).port;
+      writeConfig({ port: srv.port });
+      writeFileSync(join(home, '.habblaud', 'instances.json'), JSON.stringify({ instances: [{ name: 'p', port: stuckPort, roots: ['/p'] }] }));
+      const run = runHook(JSON.stringify(permission()), { CODEX_HOME: codexHome });
+      srv.registry!.decide(await pendingId(srv), { behavior: 'allow' });
+      expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'allow' });
+    } finally {
+      stuck.closeAllConnections();
+      stuck.close();
+    }
   });
 
   it('HABBLAUD_PORT vale como reserva quando o arquivo não tem a porta', async () => {

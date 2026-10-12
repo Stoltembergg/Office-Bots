@@ -268,7 +268,14 @@ export async function run(env = process.env, stdinText) {
 
     // A espera conta desde o início do hook (o Codex só mostra a aprovação no terminal quando ele termina).
     const deadline = startedAt + cfg.waitMs;
-    const reg = await call(base, 'POST', '/api/permissions', permissionBody(input, account, codexHome, Math.max(0, deadline - Date.now())), REGISTER_TIMEOUT_MS);
+    const register = () => call(base, 'POST', '/api/permissions', permissionBody(input, account, codexHome, Math.max(0, deadline - Date.now())), REGISTER_TIMEOUT_MS);
+    let reg = await register();
+    // A instância da pasta aceitou o evento mas não respondeu ao pedido: vale a porta de sempre.
+    const fallback = `http://127.0.0.1:${cfg.port}`;
+    if (!reg && base !== fallback) {
+      base = fallback;
+      reg = await register();
+    }
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {
       debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Habblaud fora do ar'})`);
       return undefined;
