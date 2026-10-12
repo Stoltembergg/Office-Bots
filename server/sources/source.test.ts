@@ -188,3 +188,24 @@ describe('HistorySet', () => {
     expect(new HistorySet().resolve('.claude', 'abc')).toEqual({ status: 404, error: 'conta desconhecida' });
   });
 });
+
+describe('HistorySet: escopo por pasta', () => {
+  const withProject = (id: string, lastAt: number, project?: string): RecentSession => ({ ...session(undefined, '.claude', id, lastAt), ...(project ? { project } : {}) });
+
+  it('lista só as sessões do escopo (sem projeto conhecido fica de fora) e só resolve as listadas', async () => {
+    const found: HistoryResolveResult = { path: '/t.jsonl', createParser: () => tagged('c') };
+    const claude = fakeHistory('claude', ['.claude'], async () => [
+      withProject('dentro', 30, '/p/empresa-a/app'),
+      withProject('fora', 20, '/p/empresa-b'),
+      withProject('sem-projeto', 10),
+    ], found);
+    const set = new HistorySet([claude], undefined, (project) => project === '/p/empresa-a/app');
+    // Antes de listar, nada resolve: o terminal só abre o que a listagem mostrou.
+    expect(set.resolve('.claude', 'dentro')).toEqual({ status: 404, error: 'sessão desconhecida' });
+    expect((await set.list()).map((s) => s.sessionId)).toEqual(['dentro']);
+    expect(set.resolve('.claude', 'dentro')).toBe(found);
+    expect(set.resolve('.claude', 'fora')).toEqual({ status: 404, error: 'sessão desconhecida' });
+    // Sem escopo: tudo, como antes.
+    expect((await new HistorySet([claude]).list()).map((s) => s.sessionId)).toEqual(['dentro', 'fora', 'sem-projeto']);
+  });
+});

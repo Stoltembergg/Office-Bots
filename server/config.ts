@@ -4,7 +4,7 @@ import { isIP } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { discoverClaudeDirs } from './accounts/detect';
+import { discoverClaudeDirs, expandHome, splitList } from './accounts/detect';
 import { parseAllowedHosts } from './http/guard';
 import { parseGithubRepo } from './updates/checker';
 
@@ -29,6 +29,11 @@ export interface ServerConfig {
   usageDir: string;
   /** Nomes extras aceitos no cabeçalho Host/Origin (HABBLAUD_ALLOWED_HOSTS); localhost e IPs sempre valem. */
   allowedHosts: Set<string>;
+  /**
+   * Só mostra sessões cujo cwd esteja numa destas pastas (HABBLAUD_PROJECT_ROOTS, separadas por vírgula, `~` vale).
+   * Vazio = todas. No Docker são caminhos do host: o docker-up já os repassa expandidos.
+   */
+  projectRoots: string[];
   /**
    * Terminal (GET /api/agents/:id/terminal) ligado: só com bind local, isto é, com o Habblaud acessível apenas
    * pelo próprio computador (ver terminalOffReason). É a trava de tudo o que mostra ou age sobre as sessões.
@@ -161,6 +166,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     dataDir: resolve(env.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))),
     usageDir: resolve(env.HABBLAUD_USAGE_DIR?.trim() || join(home, '.habblaud', 'usage')),
     allowedHosts: parseAllowedHosts(env.HABBLAUD_ALLOWED_HOSTS),
+    projectRoots: splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home)),
     terminal: terminalOffReason(env, host, inDocker) === undefined,
     messages: messagesOffReason(env, host, inDocker) === undefined,
     timeline: !env.HABBLAUD_TIMELINE?.trim() || isTruthy(env.HABBLAUD_TIMELINE),

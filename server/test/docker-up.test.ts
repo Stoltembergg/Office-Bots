@@ -15,6 +15,7 @@ import {
   planCodexMounts,
   planMounts,
   planUp,
+  projectRootsOf,
   renderOverride,
   sanitizeCachedUsage,
   yamlString,
@@ -124,6 +125,15 @@ describe('docker-up', () => {
     expect(hostTimeZone({ TZ: ':Europe/Lisbon' })).toBe('Europe/Lisbon');
     expect(hostTimeZone({ TZ: 'x"; rm -rf' })).toBeUndefined();
     expect(hostTimeZone({})).toMatch(/^[A-Za-z]/);
+  });
+
+  it('escopo por pasta: HABBLAUD_PROJECT_ROOTS expandido no host (no container o ~ seria outro) e repassado', () => {
+    const roots = projectRootsOf({ HABBLAUD_PROJECT_ROOTS: '~/Claude/empresa-a, /srv/b/' }, '/Users/fulano');
+    expect(roots).toEqual(['/Users/fulano/Claude/empresa-a', '/srv/b']);
+    expect(projectRootsOf({}, '/Users/fulano')).toEqual([]);
+    const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
+    expect(renderOverride(mounts, new Date(0), undefined, undefined, [], roots)).toContain('HABBLAUD_PROJECT_ROOTS: "/Users/fulano/Claude/empresa-a,/srv/b"');
+    expect(renderOverride(mounts)).not.toContain('HABBLAUD_PROJECT_ROOTS');
   });
 });
 

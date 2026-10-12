@@ -10,6 +10,11 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- `HABBLAUD_PROJECT_ROOTS`: o escritório mostra só as sessões abertas nas pastas escolhidas (ex.: a de uma empresa ou cliente).
+  O histórico do terminal segue o mesmo filtro. No Docker, o `docker:up` repassa as pastas já expandidas.
+
 ## [0.8.0] - 2026-10-09
 
 Para atualizar: `git pull` e `npm run docker:up`. Renomear salas e editar o personagem funcionam só pelo próprio

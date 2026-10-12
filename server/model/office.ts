@@ -28,7 +28,7 @@ import { describeGitHubEvent, githubEventKey, RoomEffects, type GitHubEvent } fr
 import { hash32 } from '../../shared/hash';
 import { applyPermission } from '../permissions/registry';
 import type { NameStore, StoredCharacter } from './names';
-import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
+import { inRoots, normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 
 export const OFFLINE_GRACE_MS = 20_000;
 export const DONE_GRACE_MS = 25_000;
@@ -50,6 +50,8 @@ const FEED_LIMIT = 200;
 
 export interface OfficeDeps {
   names: NameStore;
+  /** Só entram agentes com cwd dentro destas pastas (HABBLAUD_PROJECT_ROOTS); vazio ou ausente = todos. */
+  projectRoots?: readonly string[];
   /** Nome escolhido pelo usuário para a sala da pasta (model/room-aliases.ts), se houver. */
   roomAlias?: (path: string) => string | undefined;
   version: string;
@@ -305,6 +307,11 @@ export class Office {
 
   // ---------------------------------------------------------------- agentes principais
 
+  /** O cwd está no escopo (OfficeDeps.projectRoots)? As fontes perguntam antes, para nem ler a sessão de fora. */
+  inScope(cwd: string): boolean {
+    return inRoots(cwd, this.deps.projectRoots ?? []);
+  }
+
   addMain(p: MainInput): void {
     const now = this.now();
     const existing = this.agents.get(p.id);
@@ -314,6 +321,9 @@ export class Office {
       this.setStatus(p.id, p.status, p.waitingFor);
       return;
     }
+    // Fora do escopo: o agente nunca existe aqui, então subagentes, atividades, terminal, permissões e mensagens dele
+    // também ficam de fora (todos procuram o agente no Office).
+    if (!this.inScope(p.cwd)) return;
     const roomId = normalizeCwd(p.cwd);
     this.ensureRoom(roomId, now);
     const chosen = this.roomCharacter(roomId, p.id, p.sessionId);

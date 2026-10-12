@@ -261,10 +261,12 @@ export class ClaudeWatcher implements AgentSource {
         this.watchDir(join(acc.dir, 'sessions'));
       }
       const res = reader.poll();
-      const info: SourceInfo = { label: acc.id, path: acc.detected.configDir, sessions: res.entries.length, ok: res.ok };
+      const info: SourceInfo = { label: acc.id, path: acc.detected.configDir, sessions: res.entries.filter((e) => this.opts.office.inScope(e.cwd)).length, ok: res.ok };
       if (res.error) info.error = res.error;
       this.sourceInfo.set(acc.dir, info);
       for (const entry of res.entries) {
+        // Fora do escopo por pasta: nem abre o transcript.
+        if (!this.opts.office.inScope(entry.cwd)) continue;
         const key = `${acc.id}:${entry.pid}`;
         seen.add(key);
         try {

@@ -9,7 +9,7 @@ import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
 import { NameStore } from './names';
 import { DONE_GRACE_MS, Office, OFFLINE_GRACE_MS, SNAPSHOT_RECENT } from './office';
-import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
+import { inRoots, normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 
 setQuiet(true);
 
@@ -37,6 +37,17 @@ describe('salas', () => {
   it('normaliza o cwd', () => {
     expect(normalizeCwd('/a//b/')).toBe('/a/b');
     expect(normalizeCwd('/')).toBe('/');
+  });
+
+  it('inRoots: a pasta ou algo dentro dela; sem raízes, tudo vale', () => {
+    const roots = ['/Users/eu/Claude/empresa-a/', '/srv//b'];
+    expect(inRoots('/Users/eu/Claude/empresa-a', roots)).toBe(true);
+    expect(inRoots('/Users/eu/Claude/empresa-a/app/', roots)).toBe(true);
+    expect(inRoots('/srv/b/x', roots)).toBe(true);
+    // Mesmo prefixo de texto, outra pasta.
+    expect(inRoots('/Users/eu/Claude/empresa-ab', roots)).toBe(false);
+    expect(inRoots('/Users/eu/Claude', roots)).toBe(false);
+    expect(inRoots('/qualquer', [])).toBe(true);
   });
 
   it('desambigua basenames repetidos com o diretório pai', () => {
@@ -200,10 +211,11 @@ describe('NameStore: personagem de cada sala', () => {
   });
 });
 
-function makeOffice(names = new NameStore(null)) {
+function makeOffice(names = new NameStore(null), projectRoots?: string[]) {
   let clock = 1_000_000;
   const office = new Office({
     names,
+    projectRoots,
     version: 't',
     startedAt: clock,
     accounts: (s) => [{ id: 'acc', short: 'C', name: 'Conta C', color: '#f08a3c', configDir: '/x', sessions: s.get('acc') ?? 0, usageStatus: 'disabled' }],
@@ -795,5 +807,20 @@ describe('Office: personagem do projeto', () => {
     expect(names.character('/p/api')?.owner).toBe('s2');
     office.switchSession('acc:2', 's2b');
     expect(names.character('/p/api')?.owner).toBe('s2b');
+  });
+});
+
+describe('Office: escopo por pasta (HABBLAUD_PROJECT_ROOTS)', () => {
+  it('só entram agentes com cwd dentro das raízes; os subagentes seguem o principal', () => {
+    const { office, now } = makeOffice(new NameStore(null), ['/p/empresa-a']);
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/empresa-a/loja', role: 'x', startedAt: now(), status: 'working' });
+    office.addMain({ id: 'acc:2', account: 'acc', sessionId: 's2', cwd: '/p/empresa-b/api', role: 'x', startedAt: now(), status: 'working' });
+    expect(office.has('acc:1')).toBe(true);
+    expect(office.has('acc:2')).toBe(false);
+    expect(office.addSub({ id: 's2:x', parentId: 'acc:2', sessionId: 's2', role: 'Explore', background: false, startedAt: now() })).toBe(false);
+    const snap = office.commit().snapshot;
+    expect(snap.agents.map((a) => a.id)).toEqual(['acc:1']);
+    expect(snap.rooms.map((r) => r.path)).toEqual(['/p/empresa-a/loja']);
+    expect(snap.accounts[0].sessions).toBe(1);
   });
 });

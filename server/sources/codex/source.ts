@@ -418,6 +418,8 @@ export class CodexSource implements AgentSource, CodexLive {
     // Sem o projeto (sessão aberta ainda sem prompt, só com o lock) não há sala para o principal: espera o rollout ou um
     // hook dizer o cwd. Isso também segura um lock de subagente até o rollout dele dizer de quem ele é.
     if (t.kind === 'main' && !this.cwdOf(t)) return false;
+    // Fora do escopo por pasta (HABBLAUD_PROJECT_ROOTS): não entra, e o Office recusaria de qualquer jeito.
+    if (t.kind === 'main' && !this.opts.office.inScope(this.cwdOf(t)!)) return false;
     if (t.kind === 'sub') {
       const parent = this.parentKey(t);
       if (!parent || !this.opts.office.has(parent) || this.opts.office.isSubDone(parent) || this.opts.office.get(parent)?.status === 'offline') return false;

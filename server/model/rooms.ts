@@ -6,6 +6,19 @@ export function normalizeCwd(cwd: string): string {
   return p.length > 1 ? p.replace(/\/+$/, '') : p;
 }
 
+/**
+ * O cwd está numa das raízes (a própria pasta ou algo dentro dela)? Sem raízes, tudo vale. Compara só o texto
+ * (normalizado): no Docker os caminhos são do host e não existem no container, então não dá para usar realpath.
+ */
+export function inRoots(cwd: string, roots: readonly string[]): boolean {
+  if (!roots.length) return true;
+  const c = normalizeCwd(cwd);
+  return roots.some((root) => {
+    const r = normalizeCwd(root);
+    return c === r || c.startsWith(r === '/' ? r : `${r}/`);
+  });
+}
+
 function segments(path: string): string[] {
   return path.split(/[\\/]+/).filter(Boolean);
 }

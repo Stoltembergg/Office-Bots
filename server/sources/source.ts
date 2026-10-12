@@ -148,10 +148,17 @@ export interface HistoryProvider extends SessionLookup {
  */
 export class HistorySet implements SessionLookup {
   private readonly list_: HistoryProvider[] = [];
+  /** Com escopo: as sessões (`conta:id`) que a última listagem mostrou, as únicas que resolve() abre. */
+  private listed = new Set<string>();
 
+  /**
+   * `inScope`: escopo por pasta (HABBLAUD_PROJECT_ROOTS). Sessão sem projeto conhecido fica de fora, e resolve() só
+   * abre o que a listagem mostrou: sem isso dava para ler a conversa de outra pasta pelo id.
+   */
   constructor(
     providers: readonly HistoryProvider[] = [],
     private readonly limit = HISTORY_LIMIT,
+    private readonly inScope?: (project: string) => boolean,
   ) {
     for (const p of providers) this.add(p);
   }
@@ -173,10 +180,15 @@ export class HistorySet implements SessionLookup {
     for (const f of failures) {
       log.warnOnce(`history-list:${f.provider}:${errMsg(f.err)}`, `Histórico de sessões (${f.provider}): falha ao listar (${errMsg(f.err)}).`);
     }
-    return out.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
+    const inScope = this.inScope;
+    const scoped = inScope ? out.filter((s) => s.project !== undefined && inScope(s.project)) : out;
+    const result = scoped.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
+    if (inScope) this.listed = new Set(result.map((s) => `${s.account}:${s.sessionId}`));
+    return result;
   }
 
   resolve(account: string, sessionId: string): HistoryResolveResult {
+    if (this.inScope && !this.listed.has(`${account}:${sessionId}`)) return { status: 404, error: 'sessão desconhecida' };
     const owner = this.list_.find((p) => p.hasAccount(account)) ?? this.list_[0];
     return owner ? owner.resolve(account, sessionId) : { status: 404, error: 'conta desconhecida' };
   }
