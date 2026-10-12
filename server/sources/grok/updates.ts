@@ -65,8 +65,13 @@ export function readUpdate(line: string, now: number): GrokUpdate | undefined {
  * pode ser o próprio comando (com um token no meio) e não serve de nome.
  */
 export function toolName(u: Rec): string {
-  const name = str(rec(rec(u._meta)?.['x.ai/tool'])?.name);
-  return name && /^[A-Za-z0-9_.:-]{1,64}$/.test(name) ? name : 'ferramenta';
+  return safeToolName(rec(rec(u._meta)?.['x.ai/tool'])?.name) ?? 'ferramenta';
+}
+
+/** Nome de ferramenta que pode ir ao cliente: identificador curto e que a máscara de segredos não mexeria. */
+export function safeToolName(v: unknown): string | undefined {
+  const name = str(v);
+  return name && /^[A-Za-z0-9_.:-]{1,64}$/.test(name) && maskSecrets(name) === name ? name : undefined;
 }
 
 /** Ferramentas do Grok no vocabulário do Claude Code (o que describeTool e o terminal já sabem descrever). */
@@ -103,7 +108,7 @@ export function describeGrokTool(name: string, input: Rec): { desc: ActivityDesc
     case 'search_tool':
       return { desc: describeTool('ToolSearch', input), tool: 'ToolSearch' };
     case 'use_tool': {
-      const inner = str(input.tool_name) ?? str(input.name);
+      const inner = safeToolName(input.tool_name) ?? safeToolName(input.name);
       return { desc: describeTool(inner ?? name, rec(input.arguments) ?? rec(input.input) ?? {}), tool: inner ?? name };
     }
     default:

@@ -16,7 +16,7 @@
 // Escopo por pasta (HABBLAUD_PROJECT_ROOTS): o cwd da sessão precisa ser de dentro, o arquivo inteiro também
 // (fileScope; uma tarefa em segundo plano grava o próprio cwd) e uma linha nova de outra pasta tira a sessão.
 import { execFileSync } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { lstatSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { AgentStatus, SourceInfo } from '../../../shared/types';
 import type { AccountsService } from '../../accounts/service';
@@ -49,26 +49,39 @@ const UNKNOWN_TURN_WORKING_MS = 90_000;
 /** Quanto tempo vale a conferência de que um pid é mesmo um processo do Grok. */
 const PID_CHECK_MS = 60_000;
 
-const grokPids = new Map<number, { ok: boolean; at: number }>();
+const grokPids = new Map<string, { ok: boolean; at: number }>();
+
+/** Executável do Grok: `grok` ou o binário versionado que o instalador baixa (`grok-1.0.50-macos-aarch64`). */
+export function isGrokExecutable(comm: string): boolean {
+  const name = basename(comm.trim());
+  return name === 'grok' || /^grok-\d+\.\d+\.\d+(?:-[A-Za-z0-9_.-]+)?$/.test(name);
+}
 
 /**
- * O pid está vivo e é um processo do Grok? Um pid de uma sessão que caiu pode ter sido reaproveitado por outro
- * programa. Confere o nome do executável (`ps -o comm=`), com cache de PID_CHECK_MS. Sem `ps` (Windows), só a
+ * O pid está vivo e é a sessão do Grok registrada? Um pid de uma sessão que caiu pode ter sido reaproveitado por
+ * outro programa. Confere o executável (`ps -o comm=`, nome exato) e que o processo começou antes da abertura
+ * registrada (`ps -o lstart=`, com 2 min de folga). Cache de PID_CHECK_MS por pid e abertura. Sem `ps` (Windows), só a
  * existência do pid.
  */
-export function grokPidAlive(pid: number, now = Date.now()): boolean {
+export function grokPidAlive(pid: number, now = Date.now(), openedAt?: number): boolean {
   if (!pidAlive(pid)) return false;
   if (process.platform === 'win32') return true;
-  const hit = grokPids.get(pid);
+  const key = `${pid}:${openedAt ?? ''}`;
+  const hit = grokPids.get(key);
   if (hit && now - hit.at < PID_CHECK_MS) return hit.ok;
   let ok: boolean;
   try {
-    ok = /grok/i.test(basename(execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: 2_000 }).trim()));
+    const ps = (field: string) => execFileSync('ps', ['-o', `${field}=`, '-p', String(pid)], { encoding: 'utf8', timeout: 2_000 }).trim();
+    ok = isGrokExecutable(ps('comm'));
+    if (ok && openedAt !== undefined) {
+      const started = Date.parse(ps('lstart'));
+      if (Number.isFinite(started) && started > openedAt + 120_000) ok = false;
+    }
   } catch {
     ok = false;
   }
   if (grokPids.size > 1_000) grokPids.clear();
-  grokPids.set(pid, { ok, at: now });
+  grokPids.set(key, { ok, at: now });
   return ok;
 }
 
@@ -80,7 +93,7 @@ export interface GrokSourceOptions {
   /** Pasta para exibir (no Docker, a do host); padrão = `dir`. */
   hostDir?: string;
   inDocker: boolean;
-  isAlive?: (pid: number) => boolean;
+  isAlive?: (pid: number, openedAt?: number) => boolean;
   now?: () => number;
   pollMs?: number;
   /** Quanto do fim da conversa é lido ao abrir a sessão (padrão 1 MB). */
@@ -122,12 +135,12 @@ export class GrokSource implements AgentSource {
   private error?: string;
   private readonly now: () => number;
   private readonly tailBytes: number;
-  private readonly isAlive: (pid: number) => boolean;
+  private readonly isAlive: (pid: number, openedAt?: number) => boolean;
 
   constructor(private readonly opts: GrokSourceOptions) {
     this.now = opts.now ?? Date.now;
     this.tailBytes = opts.tailBytes ?? 1024 * 1024;
-    this.isAlive = opts.isAlive ?? ((pid) => grokPidAlive(pid, this.now()));
+    this.isAlive = opts.isAlive ?? ((pid, openedAt) => grokPidAlive(pid, this.now(), openedAt));
     this.hostDir = opts.hostDir ?? opts.dir;
     const others = [...opts.accounts.entries(), ...opts.accounts.entriesOf('codex')];
     const usedColors = new Set(others.map((e) => e.detected.color));
@@ -200,11 +213,10 @@ export class GrokSource implements AgentSource {
       const key = `${this.accountId}:${a.sessionId}`;
       let t = this.trackers.get(key);
       // A mesma sessão numa pasta nova: começa do zero (pasta, conversa e escopo); fora do escopo, sai já.
+      // leaveScope (e não closeMain): sem o período de graça, o agente sai de verdade e volta na sala nova, sem as
+      // atividades, tarefas e números da pasta antiga.
       if (t && t.cwd !== a.cwd) {
-        if (t.inOffice) {
-          if (this.opts.office.scoped && !this.opts.office.inScope(a.cwd)) this.opts.office.leaveScope(key);
-          else this.opts.office.closeMain(key);
-        }
+        if (t.inOffice) this.opts.office.leaveScope(key);
         this.trackers.delete(key);
         t = undefined;
       }
@@ -230,7 +242,7 @@ export class GrokSource implements AgentSource {
 
   /** A entrada vale como sessão aberta? Fora do Docker, pelo pid; no Docker, pela última escrita na conversa. */
   private present(a: ActiveSession, now: number): boolean {
-    if (!this.opts.inDocker) return a.pid === undefined || this.isAlive(a.pid);
+    if (!this.opts.inDocker) return a.pid === undefined || this.isAlive(a.pid, a.openedAt);
     const t = this.trackers.get(`${this.accountId}:${a.sessionId}`);
     return now - Math.max(t?.lastWriteAt ?? 0, a.openedAt ?? 0) <= RECENT_MS;
   }
@@ -268,7 +280,7 @@ export class GrokSource implements AgentSource {
     this.pump(t);
     if (t.outOfScope) return;
     // No Docker a presença vem só da conversa: sem o summary.json não dá para saber se é um `grok -p` (fica de fora).
-    if (this.opts.inDocker && t.summaryMtime === undefined) return;
+    if (this.opts.inDocker && !t.summary.ok) return;
     if (!t.inOffice) this.enter(t, now);
     if (!t.inOffice) return;
     this.quietCheck(t, now);
@@ -307,8 +319,10 @@ export class GrokSource implements AgentSource {
   /** Lê a janela do fim da conversa (como histórico, sem feed) depois de conferir o arquivo inteiro no escopo. */
   private load(t: Tracker, path: string): void {
     const office = this.opts.office;
+    // Reaberta (reset) também: virou link ou saiu de sessions/ = não se lê mais nada dela.
+    if (!t.sessionDir || updatesPathOf(this.opts.dir, t.sessionDir) !== path) return this.outOfScope(t);
     if (office.scoped) {
-      const scan = fileScope(path, office.inScope);
+      const scan = fileScope(path, office.inScope, true);
       if (scan.status === 'out') return this.outOfScope(t);
     }
     const tail = new FileTail(path);
@@ -333,6 +347,14 @@ export class GrokSource implements AgentSource {
   /** O que for novo na conversa. Arquivo apagado: espera ele voltar; reescrito no lugar: relê. */
   private pump(t: Tracker): void {
     if (!t.tail) return;
+    // A cada leitura: o arquivo aberto pode ter sido trocado por um link (para fora de sessions/ ou outro grupo).
+    if (!t.sessionDir || updatesPathOf(this.opts.dir, t.sessionDir) !== t.tail.path) {
+      if (exists(t.tail.path)) return this.outOfScope(t);
+      delete t.tail;
+      delete t.path;
+      t.nextResolveAt = 0;
+      return;
+    }
     for (let i = 0; i < 4; i++) {
       let r;
       try {
@@ -358,7 +380,7 @@ export class GrokSource implements AgentSource {
   private lines(t: Tracker, lines: readonly string[], live: boolean): boolean {
     const office = this.opts.office;
     for (const line of lines) {
-      if (office.scoped && cwdOutOfScope(line, office.inScope) !== undefined) {
+      if (office.scoped && cwdOutOfScope(line, office.inScope, true) !== undefined) {
         this.outOfScope(t);
         return false;
       }
@@ -452,5 +474,15 @@ export class GrokSource implements AgentSource {
       firstAt: s.firstAt,
       lastAt: s.lastAt,
     });
+  }
+}
+
+/** Existe algo no caminho (arquivo, link quebrado ou não): distingue "apagado" de "trocado". */
+function exists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
   }
 }

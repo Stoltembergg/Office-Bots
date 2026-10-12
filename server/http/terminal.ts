@@ -83,9 +83,9 @@ interface ConversationSource {
  * por pasta), para na primeira linha de outra pasta e devolve false: dali em diante a conversa não é mais desta
  * instância.
  */
-function parseInto(parser: TerminalParser, lines: readonly string[], out: TerminalEntry[], scope?: (cwd: string) => boolean): boolean {
+function parseInto(parser: TerminalParser, lines: readonly string[], out: TerminalEntry[], scope?: (cwd: string) => boolean, grok = false): boolean {
   for (const line of lines) {
-    if (scope && cwdOutOfScope(line, scope) !== undefined) return false;
+    if (scope && cwdOutOfScope(line, scope, grok) !== undefined) return false;
     let entries: TerminalEntry[];
     try {
       entries = parser.push(line);
@@ -108,6 +108,8 @@ interface ScopeGuard {
    * `cwd` (o Grok nem sempre grava a pasta na conversa) vale se ela for de dentro.
    */
   cwd?: string;
+  /** Conversa do Grok: o escopo conta também o `current_dir`. */
+  grok?: boolean;
 }
 
 /**
@@ -134,7 +136,7 @@ class TranscriptSource implements ConversationSource {
     this.parser = this.o.createParser();
     // Escopo por pasta: o arquivo inteiro precisa ser de dentro (uma troca de pasta antes da janela lida passaria).
     if (this.o.scope) {
-      const st = fileScope(this.tail.path, this.o.scope).status;
+      const st = fileScope(this.tail.path, this.o.scope, this.o.grok).status;
       if (st === 'out' || (st === 'unknown' && !(this.o.cwd !== undefined && this.o.scope(this.o.cwd)))) this.closed = true;
     }
     if (this.closed) return { agentId: this.agentId, entries: [], truncated: false };
@@ -144,7 +146,7 @@ class TranscriptSource implements ConversationSource {
     let dropped = false;
     for (let i = 0; i < MAX_INIT_READS && !this.closed; i++) {
       const r = this.tail.read();
-      if (!parseInto(this.parser, r.lines, entries, this.o.scope)) this.closed = true;
+      if (!parseInto(this.parser, r.lines, entries, this.o.scope, this.o.grok)) this.closed = true;
       // Descarta o excesso pelo caminho (transcript com muitas entradas pequenas).
       if (entries.length > keep * 2) {
         entries = entries.slice(-keep);
@@ -175,7 +177,7 @@ class TranscriptSource implements ConversationSource {
       // Arquivo sumido: `missing`, sem linhas; continua tentando nos próximos ciclos.
       const r = this.tail.read();
       if (r.reset) return { init: this.load() };
-      if (!parseInto(this.parser, r.lines, fresh, this.o.scope)) {
+      if (!parseInto(this.parser, r.lines, fresh, this.o.scope, this.o.grok)) {
         this.closed = true;
         return { append: fresh, stop: true };
       }
@@ -274,8 +276,8 @@ export class TerminalStreams {
    * `streamId` vai no `init` (ex.: "session:<conta>:<sessionId>"); `createParser` é o da ferramenta da sessão
    * (HistorySession.createParser; padrão: o do Claude Code). Mesmos erros de attach (429/500).
    */
-  attachSession(req: IncomingMessage, res: ServerResponse, streamId: string, path: string, createParser?: () => TerminalParser, cwd?: string): void {
-    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries, scope: this.scope(), cwd };
+  attachSession(req: IncomingMessage, res: ServerResponse, streamId: string, path: string, createParser?: () => TerminalParser, cwd?: string, grok?: boolean): void {
+    const o = { transcriptPathOf: () => undefined, createParser: createParser ?? this.createParser, initTailBytes: this.initTailBytes, initEntries: this.initEntries, scope: this.scope(), cwd, grok };
     this.serve(req, res, streamId, new TranscriptSource(streamId, path, o, this.sessionPollMs));
   }
 
@@ -350,6 +352,7 @@ export class TerminalStreams {
         scope: this.scope(),
         alive: office.scoped ? () => office.has(agentId) : undefined,
         cwd: this.agentCwd(agentId),
+        grok: this.opts.office.get(agentId)?.provider === 'grok',
       };
       return new TranscriptSource(agentId, path, o, this.pollMs);
     }

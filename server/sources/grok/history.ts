@@ -72,7 +72,7 @@ export class GrokHistory implements HistoryProvider {
         const inScope = this.opts.inScope;
         if (inScope && !(project && inScope(project))) continue;
         // A conversa inteira também: uma que passou por outra pasta não entra nem com título.
-        if (inScope && fileScope(updatesPath, inScope).status === 'out') continue;
+        if (inScope && fileScope(updatesPath, inScope, true).status === 'out') continue;
         const agentId = this.opts.openAgentOf(acc.id, id);
         const s: RecentSession = { account: acc.id, provider: 'grok', sessionId: id, projectDir: g, lastAt: updates.mtimeMs, size: updates.size, open: !!agentId };
         if (project) s.project = project;
@@ -92,7 +92,7 @@ export class GrokHistory implements HistoryProvider {
     const dir = findSessionDir(acc.dir, sessionId);
     const path = dir && updatesPathOf(acc.dir, dir);
     if (!dir || !path) return { status: 404, error: 'sessão não encontrada' };
-    const found: HistoryResolveResult = { path, createParser: () => createGrokTerminalParser(this.now) };
+    const found: HistoryResolveResult = { path, createParser: () => createGrokTerminalParser(this.now), grok: true };
     // A pasta da sessão nem sempre aparece no updates.jsonl: o escopo confere a do summary.json (ou a do grupo), a
     // mesma que a listagem mostra.
     const groupDir = dirname(dir);

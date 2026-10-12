@@ -361,9 +361,11 @@ Fonte `sources/grok/` (`provider: 'grok'`), ligada quando há `GROK_HOME` (ou `~
 `active_sessions.json`. Uma conta só (`.grok`). Ids: `<conta>:<sessionId>`.
 
 - **Sessões abertas** (`files.ts`, `source.ts`): `active_sessions.json` (`session_id`, `pid`, `cwd` absoluto), com o
-  pid vivo e de um processo `grok` (`ps -o comm=`, cache de 60 s). Pasta mudou no registro = sessão nova. Tudo lido
-  fica dentro do realpath de `sessions/`, sem links; o mesmo id em outra pasta não serve (e sem cwd, id ambíguo = 404).
-  No Docker a sessão só entra com o `summary.json` lido (para separar o `grok -p`).
+  pid vivo, do executável `grok` (nome exato, `ps -o comm=`) e iniciado antes do `opened_at` (`ps -o lstart=`, 2 min
+  de folga; cache de 60 s). Pasta mudou no registro = sessão nova. Tudo lido
+  fica dentro do realpath de `sessions/`, sem link em nenhum componente (grupo, sessão, arquivo), conferido de novo a
+  cada leitura; o mesmo id em outra pasta não serve (e sem cwd, id ambíguo = 404). No Docker a sessão só entra com
+  um `summary.json` válido (para separar o `grok -p`). Pasta mudou no registro: sai sem graça e volta na sala nova.
   No Docker (`HABBLAUD_GROK_DIR=/grok`, só `sessions/` montada): `updates.jsonl` modificado nos últimos 30 min, cwd do
   `summary.json` (o Grok troca o `active_sessions.json` por rename; um bind de arquivo único ficaria velho).
 - **Conversa** (`updates.ts`): `sessions/<cwd codificado>/<id>/updates.jsonl` (updates do ACP). `user_message_chunk`
@@ -372,7 +374,8 @@ Fonte `sources/grok/` (`provider: 'grok'`), ligada quando há `GROK_HOME` (ou `~
   do `summary.json`; `session_kind: 'subagent'` fica de fora.
 - **Escopo por pasta:** o cwd da lista (ou do `summary.json`) precisa ser de dentro; `fileScope` no arquivo inteiro e
   `cwdOutOfScope` em cada linha nova (uma tarefa em segundo plano grava o próprio `cwd`; um resultado de Bash, o
-  `current_dir`, que `cwdsInText` também conta para todas as ferramentas). Como a conversa nem sempre tem `cwd`, o
+  `current_dir`, que `cwdsInText(…, true)` conta só na conversa do Grok: no Claude Code e no Codex esse nome pode
+  ser dado de uma ferramenta). Como a conversa nem sempre tem `cwd`, o
   terminal aceita arquivo sem nenhum só para agentes do Grok, pela sala (e o histórico, pelo `cwd` do índice,
   `HistorySession.cwd`); Claude Code e Codex continuam exigindo a pasta no arquivo.
 - Sem permissões, mensagens nem uso de 5h/semanal.

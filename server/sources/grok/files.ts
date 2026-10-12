@@ -9,7 +9,7 @@
 // Privacidade: NUNCA lê auth.json, config.toml nem nada fora de active_sessions.json e sessions/.
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { maskSecrets, truncate } from '../../../shared/activity';
 import { expandHome } from '../../accounts/detect';
 
@@ -98,13 +98,24 @@ function realRoot(dir: string): string | undefined {
 }
 
 /**
- * `p` existe, é do tipo pedido, não é link simbólico e o caminho real fica dentro de `root` (a raiz real de sessions/):
- * um link ou um `..` nunca leva a leitura para fora das conversas.
+ * `p` existe, é do tipo pedido, nenhum componente entre sessions/ e ele é link simbólico (nem o grupo, nem a pasta da
+ * sessão, nem o arquivo) e o caminho real fica dentro de `root` (a raiz real de sessions/): um link ou um `..` nunca
+ * leva a leitura para fora das conversas nem para a conversa de outro grupo.
  */
-function inside(root: string, p: string, kind: 'dir' | 'file'): boolean {
+function inside(root: string, base: string, p: string, kind: 'dir' | 'file'): boolean {
   try {
-    const st = lstatSync(p);
-    if (st.isSymbolicLink() || (kind === 'dir' ? !st.isDirectory() : !st.isFile())) return false;
+    const rel = relative(base, p);
+    if (!rel || rel.startsWith('..') || isAbsolute(rel)) return false;
+    let cur = base;
+    const parts = rel.split(sep);
+    for (let i = 0; i < parts.length; i++) {
+      cur = join(cur, parts[i]);
+      const st = lstatSync(cur);
+      if (st.isSymbolicLink()) return false;
+      const last = i === parts.length - 1;
+      if (!last && !st.isDirectory()) return false;
+      if (last && (kind === 'dir' ? !st.isDirectory() : !st.isFile())) return false;
+    }
     return realpathSync(p).startsWith(`${root}${sep}`);
   } catch {
     return false;
@@ -132,7 +143,7 @@ export function findSessionDir(dir: string, sessionId: string, cwd?: string): st
   const base = join(dir, SESSIONS_DIR);
   if (cwd) {
     const direct = join(base, encodeURIComponent(cwd), sessionId);
-    if (inside(root, direct, 'dir')) return direct;
+    if (inside(root, base, direct, 'dir')) return direct;
   }
   let groups: string[];
   try {
@@ -143,7 +154,7 @@ export function findSessionDir(dir: string, sessionId: string, cwd?: string): st
   const found: string[] = [];
   for (const g of groups) {
     const p = join(base, g, sessionId);
-    if (!inside(root, p, 'dir')) continue;
+    if (!inside(root, base, p, 'dir')) continue;
     if (cwd && sessionCwd(p) !== cwd) continue;
     found.push(p);
   }
@@ -154,7 +165,7 @@ export function findSessionDir(dir: string, sessionId: string, cwd?: string): st
 export function updatesPathOf(dir: string, sessionDir: string): string | undefined {
   const root = realRoot(dir);
   const p = join(sessionDir, UPDATES_FILE);
-  return root && inside(root, p, 'file') ? p : undefined;
+  return root && inside(root, join(dir, SESSIONS_DIR), p, 'file') ? p : undefined;
 }
 
 /** Pasta de trabalho de um grupo de sessions/: o `.cwd` de um nome longo demais, ou o nome decodificado. */
@@ -227,6 +238,8 @@ export interface GrokSummary {
   updatedAt?: number;
   /** `session_kind` ('subagent', 'headless'); ausente = sessão do TUI. Subagentes ficam fora do histórico. */
   kind?: string;
+  /** O summary.json foi lido e é um objeto JSON (ausente, ilegível ou link = false): só então `kind` ausente é TUI. */
+  ok?: boolean;
 }
 
 /** summary.json da sessão (o índice que o próprio Grok usa no /resume). */
@@ -240,7 +253,7 @@ export function readSummary(sessionDir: string): GrokSummary {
     return {};
   }
   if (!raw || typeof raw !== 'object') return {};
-  const out: GrokSummary = {};
+  const out: GrokSummary = { ok: true };
   const info = raw.info && typeof raw.info === 'object' ? (raw.info as Record<string, unknown>) : {};
   const title = str(raw.generated_title) ?? str(raw.session_summary);
   if (title) out.title = truncate(maskSecrets(title.slice(0, 1_000)), 120);

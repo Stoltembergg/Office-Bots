@@ -12,7 +12,8 @@ import { Office } from '../../model/office';
 import { HistorySet } from '../source';
 import { discoverGrokDir, findSessionDir, readActiveSessions, readSummary } from './files';
 import { GrokHistory } from './history';
-import { grokPidAlive, GrokSource } from './source';
+import { grokPidAlive, GrokSource, isGrokExecutable } from './source';
+import { cwdsInText } from '../../model/rooms';
 import { createGrokState, createGrokTerminalParser, parseGrokLine } from './updates';
 
 setQuiet(true);
@@ -381,5 +382,76 @@ describe('Grok: verificação cruzada (achados do Codex)', () => {
     const done = turnDone(2_000);
     for (const l of [tc, tc, done, done]) parseGrokLine(s, l, ctx);
     expect(s.stats).toMatchObject({ toolCalls: 1, tokensIn: 100, tokensOut: 20 });
+  });
+});
+
+describe('Grok: segunda rodada da verificação', () => {
+  it('conversa trocada por um link depois de aberta: a sessão sai e nada do link aparece', () => {
+    const ctx = setup();
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    const d = ctx.home.session(S1, CWD, [prompt('dentro', ctx.now())]);
+    ctx.source.start();
+    expect(ctx.agent()).toBeDefined();
+    const outside = join(ctx.home.dir, 'fora.jsonl');
+    writeFileSync(outside, `${prompt('PRIVADO_LINK', ctx.now())}\n`);
+    rmSync(join(d, 'updates.jsonl'));
+    symlinkSync(outside, join(d, 'updates.jsonl'));
+    ctx.advance(4_000);
+    ctx.poll();
+    expect(JSON.stringify(ctx.office.commit().snapshot)).not.toContain('PRIVADO_LINK');
+    expect(ctx.source.transcriptPathOf(KEY)).toBeUndefined();
+  });
+
+  it('grupo que é link para o grupo de outra pasta não serve', () => {
+    const home = grokHome();
+    home.session(S1, OTHER, [prompt('PRIVADO_ALIAS', Date.now())], { info: { id: S1 } });
+    symlinkSync(join(home.dir, 'sessions', encodeURIComponent(OTHER)), join(home.dir, 'sessions', encodeURIComponent(CWD)));
+    expect(findSessionDir(home.dir, S1, CWD)).toBeUndefined();
+  });
+
+  it('nome de ferramenta com cara de token ou vindo do use_tool sai como rótulo fixo', () => {
+    const token = `ghp_${'C'.repeat(36)}`;
+    const t = createGrokTerminalParser(() => 0);
+    const a = line({ sessionUpdate: 'tool_call', toolCallId: 'n1', rawInput: {}, _meta: { 'x.ai/tool': { name: token } } }, 1_000);
+    const b = tool('n2', 'use_tool', { tool_name: `curl ${token}` }, 2_000);
+    const s = createGrokState();
+    const out = JSON.stringify([...t.push(a), ...t.push(b), parseGrokLine(s, a, { idPrefix: 'k', now: 0 }), parseGrokLine(s, b, { idPrefix: 'k', now: 0 })]);
+    expect(out).not.toContain(token);
+  });
+
+  it('current_dir só conta na conversa do Grok (no Claude Code e no Codex é dado de ferramenta)', () => {
+    const l = JSON.stringify({ cwd: '/work/acme/app', input: { current_dir: 'archive' } });
+    expect(cwdsInText(l)).toEqual(['/work/acme/app']);
+    expect(cwdsInText(l, true)).toEqual(['/work/acme/app', 'archive']);
+  });
+
+  it('mudança de pasta dentro do escopo: o agente vai para a sala nova, sem as atividades da antiga', () => {
+    const ctx = setup({ projectRoots: ['/work/acme'] });
+    const NEW = '/work/acme/outra';
+    ctx.home.active([{ id: S1, cwd: CWD }]);
+    ctx.home.session(S1, CWD, [prompt('ANTIGA', ctx.now())]);
+    ctx.source.start();
+    ctx.home.active([{ id: S1, cwd: NEW }]);
+    ctx.home.session(S1, NEW, [prompt('nova', ctx.now())]);
+    ctx.advance(4_000);
+    ctx.poll();
+    const a = ctx.agent();
+    expect(a?.roomId).toBe(NEW);
+    expect(JSON.stringify(a?.recent)).not.toContain('ANTIGA');
+  });
+
+  it('Docker: summary.json ilegível não classifica a sessão (pode ser um grok -p)', () => {
+    const ctx = setup({ inDocker: true });
+    const d = ctx.home.session(S1, CWD, [prompt('oi', ctx.now())]);
+    writeFileSync(join(d, 'summary.json'), '{');
+    ctx.source.start();
+    expect(ctx.agent()).toBeUndefined();
+  });
+
+  it('executável do Grok pelo nome exato', () => {
+    expect(isGrokExecutable('grok')).toBe(true);
+    expect(isGrokExecutable('/Users/x/.grok/downloads/grok-1.0.50-macos-aarch64')).toBe(true);
+    expect(isGrokExecutable('/tmp/not-grok')).toBe(false);
+    expect(isGrokExecutable('grokker')).toBe(false);
   });
 });
