@@ -10,6 +10,14 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- Hermes: o perfil só levanta a mão ("Precisa de você") quando o bloqueio é para o Victor. Bloqueio de roteamento
+  interno que o kanban-nanny resolve sozinho (PR aprovado esperando merge, correção que volta ao dev, conflito com a
+  main, SOUL.md.proposto, espera de tag/release; mesma regra do `kanban-nanny.py`) vira a placa amarela
+  "Manager resolvendo", sem mão.
+- Hermes: o alerta da gaveta diz "Responda ao Hermes no Telegram" em vez de "Vá ao terminal … para responder".
+
 ## [0.8.0] - 2026-10-09
 
 Para atualizar: `git pull` e `npm run docker:up`. Renomear salas e editar o personagem funcionam só pelo próprio

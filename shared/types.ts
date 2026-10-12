@@ -23,9 +23,12 @@ export type Provider = 'claude' | 'codex' | 'hermes';
  * - blocked: bloqueado esperando humano (levantou a mão; `reason` = 1ª linha do motivo);
  * - guarded: placa vermelha (respawn_guarded repetido, 3+ falhas seguidas, running sem heartbeat >60 min ou bloqueio
  *   por erro do sistema);
- * - delivering: acabou de entregar ao revisor (review_requested / reatribuído a reviewer, judge, qa ou auditor).
+ * - delivering: acabou de entregar ao revisor (review_requested / reatribuído a reviewer, judge, qa ou auditor);
+ * - internal: placa amarela "Manager resolvendo" — bloqueado, mas de roteamento interno que o kanban-nanny/Manager
+ *   resolve sozinho (PR aprovado esperando merge, correção que volta ao dev, conflito com a main, SOUL.md.proposto,
+ *   espera de tag/release). Não levanta a mão.
  */
-export type HermesCardState = 'running' | 'blocked' | 'guarded' | 'delivering';
+export type HermesCardState = 'running' | 'blocked' | 'guarded' | 'delivering' | 'internal';
 
 export interface HermesCard {
   board: string;

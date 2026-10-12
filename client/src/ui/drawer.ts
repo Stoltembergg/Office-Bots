@@ -40,7 +40,7 @@ import {
 } from './model';
 import { isLocalHostname, PermissionCard } from './permission';
 import { canRenameRoom } from './roomrename';
-import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, providerOf } from './provider';
+import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, providerOf, waitingAlertText } from './provider';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
@@ -506,10 +506,7 @@ class AgentView {
     this.perm.render(live);
     setHidden(this.alert, !waiting || this.perm.visible);
     if (waiting) {
-      const accName = account?.name ?? a.account;
-      // Codex: "Vá ao Codex (Conta X)"; sem repetir quando a conta já se chama "Codex".
-      const where = codex ? `ao Codex${/codex/i.test(accName) ? '' : ` (${accName})`}` : `ao terminal da ${accName}`;
-      setText(this.alertText, `Vá ${where} em ${room?.name ?? 'seu projeto'} para responder${a.waitingFor ? `: ${a.waitingFor}` : '.'}`);
+      setText(this.alertText, waitingAlertText(provider, account?.name ?? a.account, room?.name, a.waitingFor));
     }
     // Perguntas do AskUserQuestion (só leitura): o Codex não pergunta pelo escritório.
     const asking = waiting && !codex && a.activity?.kind === 'ask' ? a.activity : undefined;

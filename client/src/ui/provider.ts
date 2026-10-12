@@ -78,6 +78,18 @@ export function hasCodexPermission(snap: Pick<OfficeSnapshot, 'agents'> | null):
 /** Como ver o Codex ao vivo e aprovar pelo escritório (gaveta de um agente do Codex e ajuda). */
 export const CODEX_LIVE_HINT = 'Para ver o Codex ao vivo e aprovar pelo escritório: `npm run codex:install` e aprove os hooks em `/hooks` no Codex.';
 
+/**
+ * Texto do alerta de um agente esperando você (gaveta). Hermes: o pedido chega pelo Telegram (kanban-nanny), não há
+ * terminal para ir. Codex: "Vá ao Codex (Conta X)", sem repetir quando a conta já se chama "Codex". Claude Code: o
+ * terminal da conta.
+ */
+export function waitingAlertText(provider: Provider, accountName: string, roomName: string | undefined, waitingFor: string | undefined): string {
+  const tail = waitingFor ? `: ${waitingFor}` : '.';
+  if (provider === 'hermes') return `Responda ao Hermes no Telegram${tail}`;
+  const where = provider === 'codex' ? `ao Codex${/codex/i.test(accountName) ? '' : ` (${accountName})`}` : `ao terminal da ${accountName}`;
+  return `Vá ${where} em ${roomName ?? 'seu projeto'} para responder${tail}`;
+}
+
 /** Políticas de aprovação do Codex (`approval_policy`), quando o servidor as manda no lugar do modo de permissão. */
 const CODEX_APPROVALS: Record<string, string> = {
   untrusted: 'Pergunta antes de quase tudo',

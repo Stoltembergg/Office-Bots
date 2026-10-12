@@ -8,11 +8,14 @@
 //
 // Bancos: <HERMES_ROOT>/kanban.db (board "default") e <HERMES_ROOT>/kanban/boards/<board>/kanban.db.
 //
-// Estado de cada cartão aberto (prioridade quando um perfil tem vários: guarded > blocked > delivering > running):
+// Estado de cada cartão aberto (prioridade quando um perfil tem vários: guarded > blocked > internal > delivering >
+// running):
 // - guarded (placa vermelha), mesmas regras do pl-opens-coleta.py: >=5 respawn_guarded do mesmo motivo em 10 min,
 //   consecutive_failures >= 3, running sem heartbeat há mais de 60 min, ou blocked cujo último evento de bloqueio é
 //   erro do sistema (gave_up, spawn_failed, crashed, timed_out — mesma regra do kanban-nanny);
 // - blocked: blocked esperando humano (levanta a mão; balão = 1ª linha do motivo, sem o "O que travou:");
+// - internal (placa amarela "Manager resolvendo", sem mão): blocked de roteamento interno que o kanban-nanny resolve
+//   sozinho (ver internalBlock: mesma regra do kanban-nanny.py);
 // - delivering: review_requested há menos de DELIVER_MS (vale para o `implementer` do evento) ou reatribuição para
 //   reviewer/judge/qa/auditor (vale para o `from`);
 // - running: status running do assignee.
@@ -34,7 +37,7 @@ export const IDLE_DAYS = 7;
 const SYSTEM_BLOCK = new Set(['gave_up', 'spawn_failed', 'crashed', 'timed_out']);
 const BLOCK_EVENTS = ['blocked', ...SYSTEM_BLOCK];
 const REVIEWERS = new Set(['reviewer', 'judge', 'qa', 'auditor']);
-const RANK: Record<HermesCardState, number> = { running: 1, delivering: 2, blocked: 3, guarded: 4 };
+const RANK: Record<HermesCardState, number> = { running: 1, delivering: 2, internal: 3, blocked: 4, guarded: 5 };
 const ROLE = 'Perfil do Hermes';
 
 /** Um kanban.db achado. */
@@ -92,6 +95,38 @@ function payloadOf(raw: unknown): Record<string, unknown> {
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+}
+
+/** Boards em que "esperar merge de PR aprovado" é do opens-automerge, não do Victor (mesma lista do kanban-nanny). */
+const AUTOMERGE_BOARDS = new Set(['openfinance', 'openhealth', 'openinfra', 'hermes-lab']);
+
+/**
+ * Bloqueio que NÃO é com o Victor: roteamento interno que o kanban-nanny / o Manager resolvem sozinhos. Mesma regra do
+ * ~/.hermes/scripts/kanban-nanny.py (regexes copiadas de lá) mais conflito com a main e espera de tag/release.
+ * Devolve o rótulo curto do caso, ou undefined quando é para humano (aí levanta a mão).
+ */
+export function internalBlock(board: string, reason: string | undefined): string | undefined {
+  const txt = (reason ?? '').replace(/\\n/g, '\n');
+  if (!txt.trim()) return undefined;
+  // 09/10 (nanny): PR aprovado esperando merge — o opens-automerge mergeia e desbloqueia.
+  if (AUTOMERGE_BOARDS.has(board) && /merg\w*\s+(o\s+)?PR\s*#?\d+|PR\s*#?\d+.{0,80}(sem merge|não foi mergeado|ainda não (entrou|foi))/i.test(txt)) {
+    return 'PR aprovado esperando merge';
+  }
+  // 10/10 (nanny): correção do judge cai no reviewer; o nanny reatribui ao dev.
+  if (/reatribu\w*\s+(\S+\s+){0,3}(para|ao)\s+(o\s+)?(perfil\s+)?dev\b|(conserto|corre[cç][aã]o)\s+(é|e)\s+do\s+dev|n[aã]o escreve c[oó]digo/i.test(txt)) {
+    return 'correção volta para o dev';
+  }
+  // Conflito do PR com a main: quem resolve é o dev (o Manager reatribui).
+  if (/conflit\w*\s+com\s+(a\s+)?(origin\/)?(main|master)\b|PR\s*#?\d+.{0,120}conflit|conflit\w*.{0,120}quem resolve\s+(é|e)\b/is.test(txt)) {
+    return 'conflito com a main';
+  }
+  // 10–11/10 (nanny): SOUL.md.proposto — o nanny renomeia sozinho.
+  if (/SOUL\.md\.proposto/i.test(txt)) return 'SOUL.md.proposto';
+  // Espera de tag/release: anda sozinho quando a tag/release sai.
+  if (/(esper\w*|aguard\w*)\s+(\S+\s+){0,4}(tag|release)\b|(tag|release)\s+(\S+\s+){0,4}(sair|ser publicad\w*|ser criad\w*)/i.test(txt)) {
+    return 'esperando tag/release';
+  }
+  return undefined;
 }
 
 /** 1ª linha útil do motivo, sem o rótulo "O que travou:", até 160 caracteres. */
@@ -180,8 +215,11 @@ export function readBoard(db: DatabaseSync, board: string, now: number): BoardRe
       const ev = lastBlock.get(t.id, ...BLOCK_EVENTS) as { kind: string; payload: string | null; created_at: number } | undefined;
       const at = ev?.created_at ?? t.created_at;
       if (!guard && ev && SYSTEM_BLOCK.has(ev.kind)) guard = `erro do sistema (${ev.kind})`;
+      const why = str(payloadOf(ev?.payload).reason);
+      const internal = guard ? undefined : internalBlock(board, why);
       if (guard) add(t.assignee, t, 'guarded', at, guard);
-      else add(t.assignee, t, 'blocked', at, firstLine(str(payloadOf(ev?.payload).reason)) ?? '(bloqueou sem escrever o motivo)');
+      else if (internal) add(t.assignee, t, 'internal', at, internal);
+      else add(t.assignee, t, 'blocked', at, firstLine(why) ?? '(bloqueou sem escrever o motivo)');
     } else if (guard) {
       add(t.assignee, t, 'guarded', t0, guard);
     }
@@ -243,8 +281,14 @@ function waitingOf(card: ProfileCard | undefined): string | undefined {
   return undefined;
 }
 
-const ICON: Record<HermesCardState, string> = { running: '⌨️', blocked: '✋', guarded: '🛑', delivering: '📦' };
-const VERB: Record<HermesCardState, string> = { running: 'Trabalhando', blocked: 'Precisa de você', guarded: 'Placa vermelha', delivering: 'Entregando' };
+const ICON: Record<HermesCardState, string> = { running: '⌨️', blocked: '✋', guarded: '🛑', delivering: '📦', internal: '🟡' };
+const VERB: Record<HermesCardState, string> = {
+  running: 'Trabalhando',
+  blocked: 'Precisa de você',
+  guarded: 'Placa vermelha',
+  delivering: 'Entregando',
+  internal: 'Manager resolvendo',
+};
 
 /** Pasta-sala de um board (vira a sala no escritório). */
 export function roomCwd(board: string): string {
@@ -368,7 +412,7 @@ export class HermesSource implements AgentSource {
           id,
           {
             id: `${id}#${card.board}:${card.taskId}:${card.state}:${card.at}`,
-            kind: card.state === 'delivering' ? 'communicate' : card.state === 'running' ? 'other' : 'wait',
+            kind: card.state === 'delivering' ? 'communicate' : card.state === 'running' || card.state === 'internal' ? 'other' : 'wait',
             icon: ICON[card.state],
             text: `${VERB[card.state]}: ${card.title}`.slice(0, 46),
             detail: `${card.board} · ${card.taskId}${card.reason ? ` · ${card.reason}` : ''}`,

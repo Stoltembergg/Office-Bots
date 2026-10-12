@@ -11,6 +11,7 @@ import {
   looksLikeCodexId,
   providerOf,
   showsProviderTag,
+  waitingAlertText,
 } from './provider';
 
 describe('ferramenta (Claude Code ou Codex)', () => {
@@ -86,5 +87,15 @@ describe('ferramenta (Claude Code ou Codex)', () => {
     expect(codexApprovalLabel('never')).toBe('Nunca pergunta');
     expect(codexApprovalLabel('outra')).toBe('outra');
     expect(codexApprovalLabel(undefined)).toBe('—');
+  });
+
+  it('alerta de quem espera você: Hermes = Telegram (nunca "Vá ao terminal"); Codex e Claude Code como antes', () => {
+    const hermes = waitingAlertText('hermes', 'hermes', 'hermes-lab', 'falta escolher a porta.');
+    expect(hermes).toBe('Responda ao Hermes no Telegram: falta escolher a porta.');
+    expect(hermes).not.toMatch(/terminal/i);
+    expect(waitingAlertText('hermes', 'hermes', 'hermes-lab', undefined)).toBe('Responda ao Hermes no Telegram.');
+    expect(waitingAlertText('claude', 'Conta C', 'escritorio', 'Bash')).toBe('Vá ao terminal da Conta C em escritorio para responder: Bash');
+    expect(waitingAlertText('codex', 'Conta X', undefined, undefined)).toBe('Vá ao Codex (Conta X) em seu projeto para responder.');
+    expect(waitingAlertText('codex', 'Codex', 'app', undefined)).toBe('Vá ao Codex em app para responder.');
   });
 });

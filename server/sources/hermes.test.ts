@@ -12,7 +12,7 @@ import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { tempDir } from '../test/fixtures';
-import { discoverBoards, firstLine, HermesSource, openReadOnly, pickCards, readBoard } from './hermes';
+import { discoverBoards, firstLine, HermesSource, internalBlock, openReadOnly, pickCards, readBoard } from './hermes';
 
 // Kanban SINTÉTICO, com as colunas do kanban.db do Hermes que a fonte lê (nada vem de um board real).
 const SCHEMA = `
@@ -180,6 +180,42 @@ describe('readBoard', () => {
     }
   });
 
+  it('bloqueio interno (mesma regra do kanban-nanny) = placa amarela "Manager resolvendo", sem mão', () => {
+    const path = join(tmp.dir, 'kanban', 'boards', 'hermes-lab', 'kanban.db');
+    const reasons: Record<string, string> = {
+      // o caso que o Victor viu
+      conflito:
+        'O que travou: o PR #38 (feat/x) está com conflito com a main e quem resolve é o dev.\nVocê faz: nada.',
+      merge: 'O que travou: PR #12 aprovado, falta mergear o PR #12.\nVocê faz: nada, o opens-automerge mergeia.',
+      reatribui: 'O que travou: judge pediu mudança e o cartão caiu no reviewer.\nVocê faz: reatribua o cartão ao dev.',
+      correcao: 'A correção é do dev; o reviewer não escreve código.',
+      soul: 'Não consigo gravar SOUL.md. Salvei SOUL.md.proposto em docs/.',
+      tag: 'O que travou: aguardando a tag v1.2.0 sair para publicar.',
+      humano: 'O que travou: falta a senha do banco.\nVocê faz: mande "senha ok" ao Hermes.',
+    };
+    const tasks = Object.keys(reasons).map((k) => ({ id: `t_${k}`, title: `cartão ${k}`, status: 'blocked', assignee: `p_${k}` }));
+    makeDb(
+      path,
+      tasks,
+      Object.entries(reasons).map(([k, reason]) => [`t_${k}`, 'blocked', { reason }, S - 120] as [string, string, unknown, number]),
+    );
+    const db = openReadOnly(path);
+    const by = pickCards(readBoard(db, 'hermes-lab', NOW).cards);
+    db.close();
+    for (const k of ['conflito', 'merge', 'reatribui', 'correcao', 'soul', 'tag']) expect(by.get(`p_${k}`), k).toMatchObject({ state: 'internal' });
+    expect(by.get('p_conflito')!.reason).toBe('conflito com a main');
+    expect(by.get('p_humano')).toMatchObject({ state: 'blocked', reason: 'falta a senha do banco.' });
+  });
+
+  it('internalBlock: PR esperando merge só é interno nos boards do automerge (como no nanny)', () => {
+    const r = 'O que travou: falta mergear o PR #7.\nVocê faz: clique em Merge.';
+    expect(internalBlock('openfinance', r)).toBe('PR aprovado esperando merge');
+    expect(internalBlock('default', r)).toBeUndefined();
+    expect(internalBlock('default', undefined)).toBeUndefined();
+    expect(internalBlock('default', 'O que travou: conflito com a origin/main no PR #3')).toBe('conflito com a main');
+    expect(internalBlock('default', 'O que travou: preciso que você escolha a cor.')).toBeUndefined();
+  });
+
   it('firstLine corta o rótulo e a linha', () => {
     expect(firstLine('O que travou: a porta.\nVocê faz: x')).toBe('a porta.');
     expect(firstLine('\n\n  só isto ')).toBe('só isto');
@@ -224,6 +260,20 @@ describe('HermesSource no escritório', () => {
     rmSync(join(tmp.dir, 'kanban'), { recursive: true });
     src.poll();
     expect(office.list().every((a) => a.status === 'offline')).toBe(true);
+  });
+
+  it('bloqueio interno: personagem trabalhando (sem mão), atividade "Manager resolvendo"', () => {
+    makeDb(
+      join(tmp.dir, 'kanban', 'boards', 'hermes-lab', 'kanban.db'),
+      [{ id: 't_pr', title: 'PR #38', status: 'blocked', assignee: 'reviewer' }],
+      [['t_pr', 'blocked', { reason: 'O que travou: o PR #38 está com conflito; quem resolve é o dev.' }, S - 60]],
+    );
+    const office = makeOffice();
+    new HermesSource({ office, root: tmp.dir, now: () => NOW }).poll();
+    const a = office.list().find((x) => x.name === 'reviewer')!;
+    expect(a).toMatchObject({ status: 'working', hermes: { state: 'internal', reason: 'conflito com a main' } });
+    expect(a.waitingFor).toBeUndefined();
+    expect(a.activity?.text).toMatch(/^Manager resolvendo/);
   });
 
   it('GET /api/snapshot mostra os 4 estados', async () => {
