@@ -1,6 +1,6 @@
 // Fontes de agentes (SourceSet) e histórico de várias ferramentas (HistorySet): o que o servidor vê como uma
 // fonte só, o parser escolhido por agente, a falha isolada de uma fonte e o boot contado no Office.
-import { writeFileSync } from 'node:fs';
+import { statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Provider, RecentSession, SourceInfo, TerminalEntry } from '../../shared/types';
@@ -9,6 +9,7 @@ import { tempDir } from '../test/fixtures';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { HistorySet, SourceSet, type AgentSource, type HistoryProvider, type HistoryResolveResult } from './source';
+import { fileScope } from './scope';
 import type { TerminalParser } from './terminal';
 
 setQuiet(true);
@@ -224,6 +225,42 @@ describe('HistorySet: escopo por pasta', () => {
       // Erro do provedor (id inválido etc.) passa como estava.
       const bad = fakeHistory('claude', ['.claude'], async () => [], { status: 400, error: 'id de sessão inválido' });
       expect(new HistorySet([bad], undefined, () => true).resolve('.claude', 'x')).toEqual({ status: 400, error: 'id de sessão inválido' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+});
+
+describe('fileScope', () => {
+  const inA = (cwd: string) => cwd.startsWith('/p/empresa-a');
+
+  it('arquivo trocado com o mesmo tamanho e o mesmo mtime: lido de novo (o ctime denuncia)', async () => {
+    const tmp = tempDir();
+    try {
+      const path = join(tmp.dir, 'a.jsonl');
+      const t = 1_700_000_000;
+      writeFileSync(path, `${JSON.stringify({ cwd: '/p/empresa-a/x' })}\n`);
+      utimesSync(path, t, t);
+      expect(fileScope(path, inA).status).toBe('in');
+      await new Promise((ok) => setTimeout(ok, 20));
+      writeFileSync(path, `${JSON.stringify({ cwd: '/p/empresa-b/x' })}\n`);
+      utimesSync(path, t, t);
+      expect(statSync(path).mtimeMs).toBe(t * 1000);
+      expect(fileScope(path, inA)).toEqual({ status: 'out', cwd: '/p/empresa-b/x' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('um "cwd" cortado na divisa dos blocos de leitura (mesmo com muito espaço antes do valor) ainda é achado', () => {
+    const tmp = tempDir();
+    try {
+      const path = join(tmp.dir, 'b.jsonl');
+      // O "cwd" de fora começa 15 KB antes do fim do primeiro bloco (4 MiB), e o valor só vem 20 KB depois.
+      const head = `${JSON.stringify({ cwd: '/p/empresa-a', pad: '' })}\n`;
+      const pad = 'x'.repeat(4 * 1024 * 1024 - 15_000 - head.length - 1);
+      writeFileSync(path, `${JSON.stringify({ cwd: '/p/empresa-a', pad })}\n{"cwd"${' '.repeat(20_000)}:"/p/empresa-b"}\n`);
+      expect(fileScope(path, inA)).toEqual({ status: 'out', cwd: '/p/empresa-b' });
     } finally {
       tmp.cleanup();
     }

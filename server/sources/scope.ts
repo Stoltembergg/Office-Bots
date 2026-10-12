@@ -10,7 +10,7 @@ const SCAN_CHUNK = 4 * 1024 * 1024;
 const SCAN_OVERLAP = 8 * 1024;
 /** ponytail: cache simples por caminho, zerado inteiro ao passar do teto (LRU se um dia fizer falta). */
 const SCAN_CACHE_MAX = 2_000;
-const scanCache = new Map<string, { size: number; mtimeMs: number; scope: (cwd: string) => boolean; result: FileScope }>();
+const scanCache = new Map<string, { size: number; mtimeMs: number; ctimeMs: number; scope: (cwd: string) => boolean; result: FileScope }>();
 
 /**
  * Escopo por pasta do arquivo inteiro: 'in' só se ele cita alguma pasta e todas estão no escopo; 'out' com a
@@ -20,13 +20,15 @@ const scanCache = new Map<string, { size: number; mtimeMs: number; scope: (cwd: 
 export function fileScope(path: string, scope: (cwd: string) => boolean): FileScope {
   let size: number;
   let mtimeMs: number;
+  // ctime também: o mtime dá para voltar com utimes, o ctime não.
+  let ctimeMs: number;
   try {
-    ({ size, mtimeMs } = statSync(path));
+    ({ size, mtimeMs, ctimeMs } = statSync(path));
   } catch {
     return { status: 'unknown' };
   }
   const hit = scanCache.get(path);
-  if (hit && hit.size === size && hit.mtimeMs === mtimeMs && hit.scope === scope) return hit.result;
+  if (hit && hit.size === size && hit.mtimeMs === mtimeMs && hit.ctimeMs === ctimeMs && hit.scope === scope) return hit.result;
   let result: FileScope = { status: 'unknown' };
   try {
     const fd = openSync(path, 'r');
@@ -46,7 +48,10 @@ export function fileScope(path: string, scope: (cwd: string) => boolean): FileSc
           result = { status: 'in' };
         }
         if (result.status === 'out') break;
-        carry = text.slice(-SCAN_OVERLAP);
+        // A sobra começa no último "cwd" se ele está perto do fim (o valor pode vir só no bloco seguinte, depois de
+        // espaços); senão, os últimos bytes, para uma chave cortada no meio.
+        const last = text.lastIndexOf('"cwd"');
+        carry = text.slice(last >= 0 && last >= text.length - SCAN_CHUNK / 4 ? Math.min(last, text.length - SCAN_OVERLAP) : -SCAN_OVERLAP);
       }
     } finally {
       closeSync(fd);
@@ -55,6 +60,6 @@ export function fileScope(path: string, scope: (cwd: string) => boolean): FileSc
     return { status: 'unknown' };
   }
   if (scanCache.size >= SCAN_CACHE_MAX) scanCache.clear();
-  scanCache.set(path, { size, mtimeMs, scope, result });
+  scanCache.set(path, { size, mtimeMs, ctimeMs, scope, result });
   return result;
 }
