@@ -2,6 +2,11 @@
 // As lacunas {0}, {1}... (e as nomeadas, como {sala}) precisam aparecer na tradução, em qualquer ordem.
 // Chave ausente = o texto fica em PT. `npm run i18n:check` lista os textos sem tradução e as chaves que sobraram.
 export const ES: Readonly<Record<string, string>> = {
+  // client/src/art/character/appearance.ts
+  "Não combina com este cabelo": "No combina con este cabello",
+  "Não combina com o boné ou o gorro": "No combina con la gorra o el gorro",
+  "Não combina com o laço": "No combina con el lazo",
+
   // client/src/main.ts
   "Escritório virtual em pixel art que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.": "Oficina virtual en pixel art que muestra, en tiempo real, lo que están haciendo tus agentes de Claude Code.",
 
