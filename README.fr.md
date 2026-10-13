@@ -512,6 +512,18 @@ test : si `node-pty` ou `claude` ne fonctionnent pas, la fonction reste désacti
 **Redémarrer Habblaud met fin aux sessions qu'il a ouvertes.**
 Le terminal en direct reste disponible dans l'historique des sessions, pour les sous-agents et quand le mode interactif est désactivé.
 
+### Architecte (salles et objets sur mesure)
+
+Le bouton crayon de la barre supérieure ouvre l'**Architecte** : un Claude Code qui travaille dans un dossier d'assets à
+vous et crée des salles, des meubles et des changements dans le bâtiment à la demande (ex. : « une salle de jeux avec des
+bornes d'arcade pour le projet dash », « un pouf en forme de chat »). Chaque fichier enregistré redessine le bureau
+aussitôt. Les objets sont du pixel art en texte (`items/<id>/item.json`) ou en PNG ; les salles, `rooms/<id>.json` ; et
+`office.json` indique quelle salle utilise chaque projet. Le serveur valide tout et écrit les problèmes et un plan de
+chaque salle dans le `STATUS.md` du dossier. **Exporter** télécharge une salle, un objet ou tout dans un paquet
+`.habblaud.json`, et **Importer** apporte un paquet d'un autre Habblaud sans rien écraser. Ouvrir l'Architecte nécessite
+le terminal interactif (`HABBLAUD_PTY=1`) ; sans lui, vous pouvez ouvrir Claude Code dans le dossier vous-même. Le
+dossier est `<HABBLAUD_DATA_DIR>/assets` (`HABBLAUD_ASSETS_DIR` pour un autre).
+
 ### Timelapse de la journée
 
 Le bouton **Timelapse** (une horloge avec une flèche de retour, ou la touche `L`) rejoue la journée en accéléré : les
@@ -753,6 +765,7 @@ Tout fonctionne sans rien configurer. Si vous avez besoin d'ajuster quelque chos
 | `HABBLAUD_BIND` | `127.0.0.1` | Docker uniquement (dans le `.env`) : où le port est publié. `0.0.0.0` ouvre l'accès au réseau local (et désactive le terminal et tout ce qui agit sur les sessions). |
 | `HABBLAUD_CLAUDE_DIRS` | détection automatique | Dossiers des comptes, séparés par des virgules (ex. : `/caminho/conta1,/caminho/conta2`). |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` | Où Habblaud garde ses propres données (noms des personnages et des salles, chronologie du timelapse et statistiques de Ma journée). |
+| `HABBLAUD_ASSETS_DIR` | `<HABBLAUD_DATA_DIR>/assets` | Le dossier d'assets de l'Architecte (salles, objets et `office.json`). |
 | `HABBLAUD_TIMELINE` | activé | `0` désactive l'enregistrement de la chronologie (les jours déjà enregistrés restent dans le timelapse). Dans Docker, il est toujours activé. |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` | Où le mod (ou la dérivation de statusline) enregistre l'utilisation. |
 | `HABBLAUD_DEMO` | désactivé | `1` active le mode démonstration au démarrage. |

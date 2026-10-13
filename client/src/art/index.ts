@@ -19,6 +19,7 @@ import {
   type RoomTheme,
   type Sprite,
   type WallStyle,
+  isCustomKind,
 } from './api';
 import { appearanceFromSeed as appearanceFromSeedPure, appearanceKey } from './character/appearance';
 import { CHAR_H, CHAR_W, POSE_DURATION, POSE_FRAMES, isSeated, renderCharacter } from './character/render';
@@ -27,6 +28,7 @@ import { PixelBuf } from './core/pixbuf';
 import type { BufSprite } from './core/sprite';
 import { drawBoard, drawClock, drawScreen, drawWindowView, footballLance } from './dynamic';
 import { normalizeFurniture, renderFurniture } from './furniture/index';
+import { customFurnitureSprites } from './custom';
 import { renderIcon } from './icons';
 import { CHUNK_PX, floorChunk } from './surfaces/floor';
 import { WALL_CAP_H, WALL_FACE_H, capColor, southWallTile, wallFaceTile } from './surfaces/walls';
@@ -134,6 +136,8 @@ export function avatarCanvas(seed: number, opts: { look?: 'f' | 'm'; sub?: boole
 // ------------------------------------------------------------------ móveis e ícones
 
 export function furnitureSprites(kind: FurnitureKind, variant?: string, state?: number, opts: { seed?: number } = {}): FurnitureSprites {
+  // itens criados pelo usuário na pasta de assets (art/custom.ts)
+  if (isCustomKind(kind)) return customFurnitureSprites(kind);
   // Chave normalizada: sementes/variantes equivalentes compartilham o mesmo canvas.
   const n = normalizeFurniture(kind, variant, state, opts.seed);
   const key = `${kind}|${n.variant ?? '-'}|${n.state}|${n.vseed}`;

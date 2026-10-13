@@ -57,6 +57,8 @@ export interface ApiDeps {
    * Ausente = desligado (sem HABBLAUD_PTY=1, Docker, sem node-pty ou sem bind local).
    */
   pty?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
+  /** Assets do usuário e o Arquiteto (/api/assets/*, http/assets.ts). */
+  assets?: (req: IncomingMessage, res: ServerResponse, url: URL) => void;
   /**
    * Fonte do Codex ao vivo: recebe os eventos dos hooks do Codex (POST /api/codex/events, server/codex/http.ts). Sem
    * ela a rota responde {ok: false}. Só com Host local e, fora do Docker, conexão pelo loopback (os eventos só observam:
@@ -459,6 +461,14 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         }
         handleCharacter(req, res, id, method).catch((err) => fail(res, err));
       }
+      return true;
+    }
+    if (path === '/api/assets' || path.startsWith('/api/assets/')) {
+      // Ler os assets vale de qualquer lugar que veja o escritório; importar e abrir o Arquiteto agem no computador:
+      // nunca pela porta remota (o resto da trava, Host e endereço locais, fica em http/assets.ts).
+      if (!deps.assets) sendJson(res, 404, { error: tr('assets desligados') });
+      else if (isRemote(req) && method !== 'GET' && method !== 'HEAD') sendJson(res, 403, { error: tr('importar e abrir o Arquiteto só funcionam pelo próprio computador (http://localhost)') });
+      else deps.assets(req, res, url);
       return true;
     }
     if (path === '/api/codex/events') {

@@ -486,6 +486,17 @@ o `claude` não funcionarem, o recurso fica desligado e o log diz o motivo. **Re
 abertas por ele.**
 O terminal ao vivo continua no histórico de sessões, para subagentes e quando o interativo está desligado.
 
+### Arquiteto (salas e itens sob medida)
+
+O botão do lápis na barra superior abre o **Arquiteto**: um Claude Code que trabalha numa pasta de assets sua e cria
+salas, móveis e mudanças no prédio a pedido (ex.: "uma sala de jogos com fliperamas para o projeto dash", "um puff em
+forma de gato"). Cada arquivo salvo redesenha o escritório na hora. Os itens são pixel art em texto (`items/<id>/item.json`)
+ou PNG; as salas, `rooms/<id>.json`; e o `office.json` diz qual sala cada projeto usa. O servidor valida tudo e
+escreve os problemas e um mapa de cada sala no `STATUS.md` da pasta. **Exportar** baixa uma sala, um item ou tudo
+num pacote `.habblaud.json`, e **Importar** traz um pacote de outro Habblaud sem sobrescrever nada. Abrir o Arquiteto
+precisa do terminal interativo (`HABBLAUD_PTY=1`); sem ele, dá para abrir o Claude Code na pasta por conta própria.
+A pasta é `<HABBLAUD_DATA_DIR>/assets` (`HABBLAUD_ASSETS_DIR` para outra).
+
 ### Timelapse do dia
 
 O botão **Timelapse** (relógio com a seta de voltar, ou a tecla `L`) reproduz o dia em alta velocidade: salas
@@ -714,6 +725,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal e o que age sobre as sessões). |
 | `HABBLAUD_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` | Onde o Habblaud guarda os próprios dados (nomes dos personagens e das salas, linha do tempo do timelapse e estatísticas do Meu dia). |
+| `HABBLAUD_ASSETS_DIR` | `<HABBLAUD_DATA_DIR>/assets` | A pasta de assets do Arquiteto (salas, itens e o `office.json`). |
 | `HABBLAUD_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `HABBLAUD_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |

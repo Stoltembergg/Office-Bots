@@ -3,6 +3,7 @@
 //
 // Regra de evolução: mudanças aqui devem ser ADITIVAS (campos opcionais novos).
 // Renomear/remover campos quebra servidor, mundo e UI ao mesmo tempo.
+import type { AssetsMeta } from './assets';
 
 import type { AppearanceParts } from './appearance';
 
@@ -364,6 +365,8 @@ export interface OfficeSnapshot {
     pty?: PtyStatus;
     /** Verificação de versão nova no GitHub (ausente nos testes e no timelapse). */
     updates?: UpdateStatus;
+    /** Assets do usuário (salas e itens do Arquiteto): o cliente baixa o pacote quando a versão muda. */
+    assets?: AssetsMeta;
   };
 }
 

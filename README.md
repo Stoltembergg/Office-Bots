@@ -488,6 +488,18 @@ another one); it only accepts requests from the computer it runs on. On startup,
 it opened.**
 The live terminal is still available in the session history, for subagents and when the interactive one is off.
 
+### Architect (custom rooms and items)
+
+The pencil button in the top bar opens the **Architect**: a Claude Code that works in an assets folder of yours and
+creates rooms, furniture and changes to the building on request (e.g. "a game room with arcade machines for the dash
+project", "a cat-shaped beanbag"). Every saved file redraws the office right away. Items are pixel art as text
+(`items/<id>/item.json`) or PNG; rooms, `rooms/<id>.json`; and `office.json` says which room each project uses. The
+server validates everything and writes the problems and a map of each room to the folder's `STATUS.md`. **Export**
+downloads a room, an item or everything as a `.habblaud.json` package, and **Import** brings in a package from another
+Habblaud without overwriting anything. Opening the Architect needs the interactive terminal (`HABBLAUD_PTY=1`);
+without it, you can open Claude Code in the folder yourself. The folder is `<HABBLAUD_DATA_DIR>/assets`
+(`HABBLAUD_ASSETS_DIR` for another one).
+
 ### Day timelapse
 
 The **Timelapse** button (a clock with a back arrow, or the `L` key) replays the day at high speed: rooms
@@ -716,6 +728,7 @@ Everything works without configuring anything. If you need to adjust something, 
 | `HABBLAUD_BIND` | `127.0.0.1` | Docker only (in `.env`): where the port is published. `0.0.0.0` opens it to the local network (and turns off the terminal and anything that acts on the sessions). |
 | `HABBLAUD_CLAUDE_DIRS` | automatic detection | Account folders, comma-separated (e.g. `/caminho/conta1,/caminho/conta2`). |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` | Where Habblaud keeps its own data (character and room names, the timelapse timeline and the My day stats). |
+| `HABBLAUD_ASSETS_DIR` | `<HABBLAUD_DATA_DIR>/assets` | The Architect's assets folder (rooms, items and `office.json`). |
 | `HABBLAUD_TIMELINE` | on | `0` turns off timeline recording (the days already recorded stay in the timelapse). In Docker it's always on. |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` | Where the mod (or the statusline tap) writes usage. |
 | `HABBLAUD_DEMO` | off | `1` turns on demo mode at startup. |
