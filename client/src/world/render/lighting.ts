@@ -236,16 +236,24 @@ export class Lighting {
     // halos dos postes além da base: na mesma camada, com o mesmo sprite e tamanho dos postes da base, para a
     // rua de fora ficar com o mesmo tom da de dentro
     const n = amb.night;
-    if (n >= 0.12 && scene.lampsBeyond.length) {
+    if (n >= 0.12) {
       const k = Math.min(1, (n - 0.12) / 0.5);
       const street = haloSprite(STREET_WARM, 64);
       l.globalCompositeOperation = 'lighten';
-      l.globalAlpha = k;
-      for (const prop of scene.lampsBeyond) {
-        l.drawImage(street, prop.x - 60, prop.y + 6 - 42, 120, 84);
-        l.globalAlpha = 0.7 * k;
-        l.drawImage(street, prop.x - 15, prop.y - 30 - 12, 30, 24);
+      const lampHalo = (x: number, y: number) => {
         l.globalAlpha = k;
+        l.drawImage(street, x - 60, y + 6 - 42, 120, 84);
+        l.globalAlpha = 0.7 * k;
+        l.drawImage(street, x - 15, y - 30 - 12, 30, 24);
+      };
+      for (const prop of scene.lampsBeyond) lampHalo(prop.x, prop.y);
+      // postes da base perto da borda do mapa: o halo deles foi cortado na borda do mapa; repintado aqui, inteiro
+      // ('lighten' é o máximo por canal, então sobre o trecho já pintado não muda nada)
+      const mx1 = mx0 + map.width * MAP_SCALE;
+      const my1 = my0 + map.height * MAP_SCALE;
+      for (const prop of scene.exterior.props) {
+        if (prop.kind !== 'lamp') continue;
+        if (prop.x - 60 < mx0 || prop.x + 60 > mx1 || prop.y - 42 < my0 || prop.y + 48 > my1) lampHalo(prop.x, prop.y);
       }
       l.globalAlpha = 1;
       l.globalCompositeOperation = 'source-over';
