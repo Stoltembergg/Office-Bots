@@ -18,11 +18,12 @@ import { buildAnim, furnitureScale, NO_ANIM, sweepDelay, type BuildAnim } from '
 import { daylightModeOf, parseHourParam } from './daylight';
 import { charRect, promoteOverlapping } from './elevated';
 import { cellTouches, FIELD_CELL, fieldCells, fieldProp } from './field';
-import { RoomFxRenderer } from './github-fx';
+import { reducedMotion, RoomFxRenderer } from './github-fx';
+import { GRASS_PERIOD } from '../../art/surfaces/floor';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { carSprite, carSpriteV, propSprite, shadowSprite, trafficLightSprite } from './props';
-import { drawPixelText, pixelTextWidth } from './pixel-font';
+import { pixelText, pixelTextWidth } from '../../art/pixelfont';
 import { CAR_HALF_L, StreetLife, streetGeometry, type Car } from './street-life';
 import { countBadge, fallbackIcon } from './shell-sprites';
 import { decorateElevator, drawSeasonalLights, drawSeasonalWindow, seasonalCostume, seasonalFurniture } from './seasonal';
@@ -77,7 +78,6 @@ const EDGE_BAND = 5;
 /** Quanto (px) as faixas das ruas além da base entram sob a base, para não deixar fresta em zoom fracionário. */
 const SEAM_OVERLAP = 2;
 const GRASS_CELL = 8;
-const GRASS_CELL_CACHE = 1024;
 
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
@@ -105,7 +105,7 @@ export class Renderer {
   private builtAssetsVersion = 0;
   /** Pedestres, semáforo e carros da rua (render/street-life.ts). */
   readonly street: StreetLife;
-  /** Faixas das ruas repetidas além da camada base (D1 de "rua viva"): o mundo não acaba na borda dos bounds. */
+  /** Faixas das ruas repetidas além da camada base: o mundo não acaba na borda dos bounds. */
   private strips: { axis: 'h' | 'v'; rect: TileRect; pattern: CanvasPattern }[] = [];
   /** Campo de árvores procedural além dos bounds, por célula (cache do que já foi sorteado). */
   private field = new Map<string, ExteriorProp | null>();
@@ -131,8 +131,13 @@ export class Renderer {
   /** Último fator noturno aplicado (usado pelo overlay). */
   night = 0;
   private clearColor = '#7fae62';
-  /** Células de grama (GRASS_CELL tiles) além da base, por coordenada de célula. */
-  private grassCells = new Map<string, HTMLCanvasElement>();
+  /** Padrão da grama (GRASS_PERIOD tiles, ancorado em (0, 0) do mundo): o canvas cru dá a cor de fundo; o padrão,
+   * já dessaturado e com a vinheta completa, pinta o gramado além da base numa chamada só. A base pinta a sua grama
+   * com o mesmo pintor periódico, então a emenda não aparece. Refeitos quando os assets mudam. */
+  private grassCanvas: HTMLCanvasElement | null = null;
+  private grassPattern: CanvasPattern | null = null;
+  /** Relógio da rua: tempo real mesmo no timelapse (carros e pedestres são figurantes, não história). */
+  private streetNow = 0;
   private theme: SeasonalTheme = 'none';
 
   constructor(
@@ -267,7 +272,8 @@ export class Renderer {
     this.finishBase(ctx);
     // fundo além da área desenhada: a mesma grama procedural (ruído ancorado no mundo, semente da base),
     // pintada por célula sob demanda com a dessaturação e a vinheta completa — contínua com a borda
-    this.grassCells.clear();
+    this.grassCanvas = null;
+    this.grassPattern = null;
     this.clearColor = this.grassAverage();
     this.base = c;
   }
@@ -295,8 +301,8 @@ export class Renderer {
       ctx.fillStyle = white;
       ctx.fillRect(x0 + 1, (i.y - 2) * TILE - 6, lane - 2, 3);
       ctx.fillRect(x0 + lane + 1, (i.y + 7) * TILE + 3, lane - 2, 3);
-      drawPixelText(ctx, 'STOP', x0 + Math.floor((lane - textW) / 2), (i.y - 2) * TILE - 22, white, 2);
-      drawPixelText(ctx, 'STOP', x0 + lane + Math.floor((lane - textW) / 2), (i.y + 7) * TILE + 11, white, 2);
+      pixelText(ctx, 'STOP', x0 + Math.floor((lane - textW) / 2), (i.y - 2) * TILE - 22, white, 2);
+      pixelText(ctx, 'STOP', x0 + lane + Math.floor((lane - textW) / 2), (i.y + 7) * TILE + 11, white, 2);
     }
   }
 
@@ -354,45 +360,54 @@ export class Renderer {
   }
 
   /** Ruas além da camada base: cada rua h segue para os dois lados e cada rua v para cima e para baixo. */
-  /** Uma célula de grama além da base, pintada como a base pinta a sua (ruído do mundo, semente 11), já
-   * dessaturada e com a vinheta completa. Cache por célula; zera quando a base é refeita. */
-  private grassCell(cx: number, cy: number): HTMLCanvasElement | null {
-    const key = `${cx},${cy}`;
-    const hit = this.grassCells.get(key);
-    if (hit) return hit;
-    if (this.grassCells.size > GRASS_CELL_CACHE) this.grassCells.clear();
-    const size = GRASS_CELL * TILE;
+  /** Um período da grama (GRASS_PERIOD×GRASS_PERIOD tiles), pintado como a base pinta a sua (semente 11). */
+  private grassTile(): HTMLCanvasElement | null {
+    if (this.grassCanvas) return this.grassCanvas;
+    const size = GRASS_PERIOD * TILE;
     const c = document.createElement('canvas');
     c.width = size;
     c.height = size;
     const ctx = c.getContext('2d');
     if (!ctx) return null;
     ctx.imageSmoothingEnabled = false;
-    ctx.translate(-cx * size, -cy * size);
     try {
-      this.art.drawFloor(ctx, 'grass', cx * size, cy * size, size, size, { seed: 11 });
+      this.art.drawFloor(ctx, 'grass', 0, 0, size, size, { seed: 11 });
     } catch {
       ctx.fillStyle = '#9fc77f';
-      ctx.fillRect(cx * size, cy * size, size, size);
+      ctx.fillRect(0, 0, size, size);
     }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.grassCanvas = c;
+    return c;
+  }
+
+  /** Padrão da grama além da base: o período, já dessaturado e com a vinheta completa (como a borda da base). */
+  private grassBeyondPattern(): CanvasPattern | null {
+    if (this.grassPattern) return this.grassPattern;
+    const tile = this.grassTile();
+    if (!tile) return null;
+    const c = document.createElement('canvas');
+    c.width = tile.width;
+    c.height = tile.height;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(tile, 0, 0);
     try {
       ctx.globalCompositeOperation = 'saturation';
       ctx.fillStyle = 'rgba(128,128,128,0.16)';
-      ctx.fillRect(0, 0, size, size);
+      ctx.fillRect(0, 0, c.width, c.height);
     } catch {
       // sem o modo de mistura: segue sem dessaturar
     }
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = VIGNETTE_EDGE;
-    ctx.fillRect(0, 0, size, size);
-    this.grassCells.set(key, c);
-    return c;
+    ctx.fillRect(0, 0, c.width, c.height);
+    this.grassPattern = this.ctx.createPattern(c, 'repeat');
+    return this.grassPattern;
   }
 
-  /** Cor média de uma célula de grama: fundo da tela antes de a cena cobrir tudo. */
+  /** Cor média da grama: fundo da tela antes de a cena cobrir tudo. */
   private grassAverage(): string {
-    const c = this.grassCell(0, 0);
+    const c = this.grassTile();
     const ctx = c?.getContext('2d');
     if (!c || !ctx) return '#6f9a5a';
     try {
@@ -412,25 +427,26 @@ export class Renderer {
     }
   }
 
-  /** Grama além da base: as células visíveis que não estão inteiras dentro da base. */
+  /** Grama além da base: uma pintura só com o padrão (ancorado no mundo pela transformação da câmera), recortada
+   * para fora da base. Custo constante, seja qual for o zoom. */
   private drawGrassBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
     if (!this.base) return;
-    const size = GRASS_CELL * TILE;
     const bx0 = this.baseX;
     const by0 = this.baseY;
     const bx1 = bx0 + this.base.width;
     const by1 = by0 + this.base.height;
     if (vx0 >= bx0 && vy0 >= by0 && vx1 <= bx1 && vy1 <= by1) return;
+    const pattern = this.grassBeyondPattern();
+    if (!pattern) return;
     const ctx = this.ctx;
-    for (let cy = Math.floor(vy0 / size); cy * size < vy1; cy++) {
-      for (let cx = Math.floor(vx0 / size); cx * size < vx1; cx++) {
-        const x = cx * size;
-        const y = cy * size;
-        if (x >= bx0 && y >= by0 && x + size <= bx1 && y + size <= by1) continue;
-        const cell = this.grassCell(cx, cy);
-        if (cell) ctx.drawImage(cell, x, y);
-      }
-    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(vx0, vy0, vx1 - vx0, vy1 - vy0);
+    ctx.rect(bx0, by0, bx1 - bx0, by1 - by0);
+    ctx.clip('evenodd');
+    ctx.fillStyle = pattern;
+    ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
+    ctx.restore();
   }
 
   private drawStripsBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
@@ -524,10 +540,14 @@ export class Renderer {
 
   // =================================================================== frame
 
-  frame(now: number, dt: number, opts: WorldOptions, sel: { agent: string | null; room: string | null; hover: string | null }): void {
+  /** `real` é o relógio de parede (no timelapse `now` é o do mundo): a rua anda por ele. */
+  frame(now: number, dt: number, opts: WorldOptions, sel: { agent: string | null; room: string | null; hover: string | null }, real: { now: number; dt: number } = { now, dt }): void {
     const { ctx, camera } = this;
     this.date.setTime(this.clock());
     this.dt = dt;
+    this.streetNow = real.now;
+    // movimento calmo ou prefers-reduced-motion: a rua esvazia (quem já está nela termina o trajeto e sai)
+    this.street.quiet = opts.liveliness === 'calm' || reducedMotion();
     const W = this.canvas.width;
     const H = this.canvas.height;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -546,7 +566,7 @@ export class Renderer {
     }
     // carros e pedestres de uma borda à outra da união (base ∪ visão): nunca fora do asfalto ou da calçada,
     // mesmo com a câmera afastada
-    this.street.update(now, dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60, Math.min(vy0, this.baseY) - 60, Math.max(vy1, this.baseY + (this.base?.height ?? 0)) + 60);
+    this.street.update(real.now, real.dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60, Math.min(vy0, this.baseY) - 60, Math.max(vy1, this.baseY + (this.base?.height ?? 0)) + 60);
     const visible = (x: number, y: number, w: number, h: number) => x < vx1 && x + w > vx0 && y < vy1 && y + h > vy0;
 
     // ---- camada base (só a parte visível)
@@ -765,7 +785,7 @@ export class Renderer {
   }
 
   /**
-   * Camada elevada (spec 3.7): o piso das passarelas, os guarda-corpos e os personagens sobre elas, depois de tudo o
+   * Camada elevada: o piso das passarelas, os guarda-corpos e os personagens sobre elas, depois de tudo o
    * que está no chão (rua, carros, cerca). Ordem própria: guarda-corpo norte e laterais atrás de quem passa pelo tile,
    * o sul na frente.
    */
@@ -1371,7 +1391,7 @@ export class Renderer {
 
   private drawProp(prop: ExteriorProp, alpha: number): void {
     if (prop.kind === 'traffic_light') {
-      const s = trafficLightSprite(this.street.light(this.clock()));
+      const s = trafficLightSprite(this.street.light(this.streetNow));
       this.ctx.drawImage(s.canvas, Math.round(prop.x - s.ax), Math.round(prop.y - s.ay));
       return;
     }
@@ -1429,7 +1449,7 @@ export class Renderer {
       for (let cx = cx0; cx <= cx1; cx++) {
         const x = cx * s;
         const y = cy * s;
-        // célula que encosta na base (com 1 tile de folga): as árvores dela já vêm da área externa (D1 do campo único)
+        // célula que encosta na base (com 1 tile de folga): as árvores dela já vêm da área externa
         if (cellTouches(cx, cy, bx0, by0, bx1, by1)) continue;
         let onStreet = false;
         for (const st of this.strips) {

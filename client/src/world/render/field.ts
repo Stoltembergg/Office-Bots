@@ -1,4 +1,4 @@
-// Campo de árvores procedural além dos bounds da área externa (D1 de "rua viva"): o mundo não acaba quando a
+// Campo de árvores procedural além dos bounds da área externa: o mundo não acaba quando a
 // câmera afasta. Por célula de FIELD_CELL × FIELD_CELL tiles, um hash da célula decide se há árvore, pinheiro ou
 // arbusto e onde dentro dela — determinístico (a mesma célula dá o mesmo prop em qualquer frame e zoom) e sem
 // estado. O renderer só pede as células visíveis que ficam fora dos bounds e fora das faixas estendidas das ruas.

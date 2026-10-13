@@ -1,6 +1,6 @@
-// Vida na rua (D4 de "rua viva"): pedestres passando na calçada, semáforo com faixa de pedestres na frente da
+// Vida na rua: pedestres passando na calçada, semáforo com faixa de pedestres na frente da
 // entrada, carros que param no vermelho e seguem no verde (em fila), pedestres que só atravessam com o sinal
-// fechado para os carros, e conversas de rua com emoções. Cruzamentos (D2 de "cruzamentos e campo"): carros nas
+// fechado para os carros, e conversas de rua com emoções. Cruzamentos: carros nas
 // ruas norte–sul param de verdade no STOP, só entram no quadrado com a rua principal livre e cedem a pedestres;
 // dentro do quadrado, os da principal cedem a eles; pedestres esperam na borda do asfalto de uma rua norte–sul. Lógica pura (sem canvas) e sem estado no Sim: o
 // renderer chama update() por frame e desenha `peds` (com drawCharacter) e `cars`. Os pedestres são
@@ -172,6 +172,8 @@ const TALK_CHANCE = 0.35;
 export class StreetLife {
   peds: Pedestrian[] = [];
   cars: Car[] = [];
+  /** Sem figurantes novos (movimento calmo, prefers-reduced-motion): quem já está na rua termina e sai. */
+  quiet = false;
   private nextPedAt = 0;
   private nextCarAt = 0;
   private nextVCarAt = 0;
@@ -199,13 +201,13 @@ export class StreetLife {
   }
 
   private updateCars(now: number, dt: number, x0: number, x1: number, y0: number, y1: number): void {
-    if (now >= this.nextCarAt && this.geo.lanes.length) {
+    if (!this.quiet && now >= this.nextCarAt && this.geo.lanes.length) {
       this.nextCarAt = now + 4000 + this.rng() * 9000;
       const lane = this.geo.lanes[Math.floor(this.rng() * this.geo.lanes.length)];
       const speed = 38 + this.rng() * 30;
       this.cars.push({ axis: 'h', x: lane.dir > 0 ? x0 : x1, y: lane.y, dir: lane.dir, speed, v: speed, variant: Math.floor(this.rng() * 6), stoppedAt: 0, cleared: NaN });
     }
-    if (now >= this.nextVCarAt && this.geo.vlanes.length && y1 - y0 < 1e8) {
+    if (!this.quiet && now >= this.nextVCarAt && this.geo.vlanes.length && y1 - y0 < 1e8) {
       this.nextVCarAt = now + 6000 + this.rng() * 10000;
       const lane = this.geo.vlanes[Math.floor(this.rng() * this.geo.vlanes.length)];
       const speed = 34 + this.rng() * 26;
@@ -342,7 +344,7 @@ export class StreetLife {
   }
 
   private updatePeds(now: number, dt: number, x0: number, x1: number): void {
-    if (now >= this.nextPedAt && this.peds.length < MAX_PEDS) {
+    if (!this.quiet && now >= this.nextPedAt && this.peds.length < MAX_PEDS) {
       this.nextPedAt = now + 3000 + this.rng() * 5000;
       this.spawnPed(x0, x1);
     }

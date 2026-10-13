@@ -29,9 +29,17 @@ export class WalkGrid {
     return (y - this.y0) * this.w + (x - this.x0);
   }
 
-  /** Tile do índice `i` de `cells` (inverso de `key`). */
+  /** Tile do índice `i` de `cells` (inverso de `key`). Aloca; nos laços quentes use xOf/yOf. */
   at(i: number): { x: number; y: number } {
-    return { x: (i % this.w) + this.x0, y: Math.floor(i / this.w) + this.y0 };
+    return { x: this.xOf(i), y: this.yOf(i) };
+  }
+
+  xOf(i: number): number {
+    return (i % this.w) + this.x0;
+  }
+
+  yOf(i: number): number {
+    return Math.floor(i / this.w) + this.y0;
   }
 
   inside(x: number, y: number): boolean {
@@ -92,7 +100,8 @@ export class WalkGrid {
     seen[start] = 1;
     while (head < tail) {
       const i = queue[head++];
-      const { x: cx, y: cy } = this.at(i);
+      const cx = this.xOf(i);
+      const cy = this.yOf(i);
       for (let k = 0; k < 4; k++) {
         const nx = cx + (k === 0 ? 1 : k === 1 ? -1 : 0);
         const ny = cy + (k === 2 ? 1 : k === 3 ? -1 : 0);

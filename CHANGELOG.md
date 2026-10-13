@@ -87,6 +87,19 @@ do meio (0.**3**.0).
   e entra pela porta da recepção; quem vai embora sai pela porta, desce até a calçada, vira para um lado e some
   andando. O elevador ficou de decoração, com a porta fechada, e o "ding" (Configurações › Sons › Porta de entrada) toca na
   porta quando alguém entra ou sai.
+- **A compactação só muda uma sala quando o prédio encolhe.** Como as vagas alternam leste e oeste, a sala da maior
+  vaga só se muda para a vaga livre se isso esvaziar uma coluna ou um anexo; antes, uma sala podia atravessar o
+  núcleo para levantar de novo a coluna do outro lado.
+- **A rua anda em tempo real.** No timelapse, carros e pedestres seguem o relógio de parede (eles são figurantes, não
+  história), em vez de disparar a 600×. Em Movimento › Calmo, ou com `prefers-reduced-motion`, a rua esvazia: quem
+  já está nela termina o trajeto e ninguém mais entra.
+- **Rodas e passeios no próprio prédio.** O fliperama e a torcida do pingue-pongue ficam no lounge mais perto de
+  quem puxa (nunca uma máquina em cada prédio); sofá, puff, janela e estante preferem o bloco em que o personagem
+  está. Os faróis dos carros das ruas norte–sul apontam para onde o carro anda.
+- **A demonstração abre os seis projetos originais primeiro** (os de "Meu dia" e das capturas) e só depois os extras.
+- O gramado além da área externa é um padrão único ancorado no mundo (a grama se repete a cada 24 tiles, sem emenda
+  com a base): custo constante em qualquer zoom, em vez de refazer centenas de células por quadro com o prédio
+  grande e a câmera afastada.
 - **Porta nos fundos do lounge.** O lounge ganha uma porta na parede sul quando sai dali a passarela do anexo (e a
   copa, na parede norte, para o anexo ao norte); sem passarela, a parede é inteira.
 - A câmera, a luz das janelas, os pátios e os balões da visão geral acompanham o prédio quando ele cresce para o

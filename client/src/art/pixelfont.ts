@@ -32,27 +32,28 @@ const DIACRITIC: Readonly<Record<string, readonly [string, Mark]>> = {
   ó: ['o', 'acute'], ô: ['o', 'circ'], õ: ['o', 'tilde'], ú: ['u', 'acute'], ç: ['c', 'cedilla'],
 };
 
-/** Largura em px de `text` desenhado por pixelText (3 px por letra + 1 px de espaço). */
-export function pixelTextWidth(text: string): number {
-  return Math.max(0, [...text].length * 4 - 1);
+/** Largura em px de `text` desenhado por pixelText (3 px por letra + 1 px de espaço, vezes `scale`). */
+export function pixelTextWidth(text: string, scale = 1): number {
+  return Math.max(0, [...text].length * 4 - 1) * scale;
 }
 
-/** Desenha texto em minúsculas (3x5 por letra, 1px de espaço, com acentos e cedilha) via fillRect. */
-export function pixelText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): number {
+/** Desenha texto em minúsculas (3x5 por letra, 1px de espaço, com acentos e cedilha) via fillRect; `scale` amplia
+ * cada pixel (o STOP do chão e da placa usam 2). */
+export function pixelText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, scale = 1): number {
   ctx.fillStyle = color;
   let cx = x;
   for (const raw of text.toLowerCase()) {
     const dia = DIACRITIC[raw];
     const ch = dia ? dia[0] : raw;
     const g = GLYPHS[ch] ?? GLYPHS[' '];
-    for (let i = 0; i < 15; i++) if (g[i] === '1') ctx.fillRect(cx + (i % 3), y + Math.floor(i / 3), 1, 1);
+    for (let i = 0; i < 15; i++) if (g[i] === '1') ctx.fillRect(cx + (i % 3) * scale, y + Math.floor(i / 3) * scale, scale, scale);
     if (dia) {
       const m = MARKS[dia[1]];
       m.rows.forEach((row, r) => {
-        for (let c = 0; c < 3; c++) if (row[c] === '1') ctx.fillRect(cx + c, y + m.dy + r, 1, 1);
+        for (let c = 0; c < 3; c++) if (row[c] === '1') ctx.fillRect(cx + c * scale, y + (m.dy + r) * scale, scale, scale);
       });
     }
-    cx += 4;
+    cx += 4 * scale;
   }
   return cx - x;
 }

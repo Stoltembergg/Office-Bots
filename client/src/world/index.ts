@@ -70,7 +70,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
 
   const updateBounds = () => {
     const b = buildingRect();
-    // o pan vai até a borda da área externa desenhada (D6), não só até uma margem ao redor do prédio
+    // o pan vai até a borda da área externa desenhada, não só até uma margem ao redor do prédio
     camera.bounds = rectPx(renderer.exterior.bounds);
     const fit = camera.fitZoom(b, 16);
     camera.minZoom = Math.min(1, Math.max(0.15, fit));
@@ -261,7 +261,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       const followCh = camera.follow ? sim.chars.get(camera.follow) : undefined;
       if (camera.follow && !followCh) camera.follow = null;
       camera.update(real, followCh ? camera.centerFor(followCh.x, followCh.y - 12, camera.zoom) : null, realDt);
-      renderer.frame(now, dt, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
+      renderer.frame(now, dt, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover }, { now: real, dt: realDt });
       overlay.draw(now, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
       renderer.pruneHeads();
       // No timelapse o mundo fica mudo: o teclado e o elevador em alta velocidade só fariam barulho.

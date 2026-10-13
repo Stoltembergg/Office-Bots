@@ -38,7 +38,7 @@ export interface LightScene {
   readonly exterior: ExteriorLayout;
   readonly shells: readonly SlotShell[];
   readonly shellWindows: readonly WallVis[];
-  readonly cars: readonly { x: number; y: number; dir: 1 | -1 }[];
+  readonly cars: readonly { axis: 'h' | 'v'; x: number; y: number; dir: 1 | -1 }[];
   roomInSlot(slot: number): RoomState | undefined;
   deskScreen(f: FurnVis, area: AreaVis): ScreenMode;
 }
@@ -448,7 +448,7 @@ export class Lighting {
       }
     }
     // fachadas de vidro nas pontas de cada corredor (pontas do retângulo de pé do bloco, não do envelope); uma ponta
-    // aberta para a passarela horizontal (fase 3) não tem vidro nem halo
+    // aberta para a passarela horizontal não tem vidro nem halo
     for (const vis of scene.areas.values()) {
       if (vis.layout.kind !== 'corridor') continue;
       const r = vis.layout.rect;
@@ -593,7 +593,16 @@ export class Lighting {
     const beam = glowSprite('#fff1c4', 64);
     const tail = glowSprite('#ff4a3a', 16);
     for (const car of scene.cars) {
-      if (car.x < view.x0 - 80 || car.x > view.x1 + 80 || car.y < view.y0 - 30 || car.y > view.y1 + 30) continue;
+      if (car.x < view.x0 - 80 || car.x > view.x1 + 80 || car.y < view.y0 - 80 || car.y > view.y1 + 80) continue;
+      if (car.axis === 'v') {
+        // rua norte–sul: o facho sai pela frente, para cima ou para baixo; a lanterna fica atrás
+        const front = car.y + car.dir * 14;
+        ctx.globalAlpha = 0.55 * n;
+        ctx.drawImage(beam, Math.round(car.x - 8), Math.round(front + (car.dir > 0 ? 0 : -46)), 16, 46);
+        ctx.globalAlpha = 0.8 * n;
+        ctx.drawImage(tail, Math.round(car.x - 4), Math.round(car.y - car.dir * 14 - 4), 8, 8);
+        continue;
+      }
       const front = car.x + car.dir * 16;
       ctx.globalAlpha = 0.55 * n;
       ctx.drawImage(beam, Math.round(front + (car.dir > 0 ? 0 : -46)), Math.round(car.y - 15), 46, 16);
@@ -622,7 +631,7 @@ export class Lighting {
     }
   }
 
-  /** Vaga-lumes perto de arbustos, flores e árvores: semente por posição do prop, para não mudarem de lugar quando um bloco nasce (D5). */
+  /** Vaga-lumes perto de arbustos, flores e árvores: semente por posição do prop, para não mudarem de lugar quando um bloco nasce. */
   private seedFireflies(ext: ExteriorLayout): void {
     this.fliesFor = ext;
     this.flies = [];

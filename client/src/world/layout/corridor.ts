@@ -16,7 +16,7 @@ export function corridorId(block: BlockId): string {
   return isPrincipal(block) ? CORRIDOR_ID : `anexo:${block.bx},${block.by}:corredor`;
 }
 
-/** Pontas do corredor abertas por passarela horizontal (D3): o bloco é pai ou filho dela, na mesma fileira. */
+/** Pontas do corredor abertas por passarela horizontal: o bloco é pai ou filho dela, na mesma fileira. */
 export function corridorEnds(block: BlockLayout, bridges: readonly BridgeLayout[]): { west: boolean; east: boolean } {
   const key = blockKey(block.id);
   let west = false;
@@ -37,7 +37,7 @@ export function corridorEnds(block: BlockLayout, bridges: readonly BridgeLayout[
 
 /**
  * Corredor sobre as colunas de pé `lo..hi` do bloco. Cada ponta tem fachada de vidro, salvo quando uma passarela
- * horizontal chega por ela (D3): aí as três linhas do meio (as da passarela) ficam abertas e caminháveis até a borda,
+ * horizontal chega por ela: aí as três linhas do meio (as da passarela) ficam abertas e caminháveis até a borda,
  * e só os cantos das linhas 0 e 4 ficam de vidro.
  */
 export function layoutCorridor(block: BlockLayout, bridges: readonly BridgeLayout[] = []): AreaLayout {

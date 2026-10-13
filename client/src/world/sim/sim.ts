@@ -8,7 +8,7 @@ import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_
 import { assembleBuilding, type BuildingLayout } from '../layout/building';
 import { CAFE_ID, RECEPTION_ID } from '../layout/core';
 import { ENTRANCE_DOOR, SIDEWALK_TY } from '../layout/exterior';
-import { existingBlocks, inRect, occupiedRegions, regionAt, regionKey, retainRegions, standingKey } from '../layout/geometry';
+import { existingBlocks, inRect, moveShrinks, occupiedRegions, regionAt, regionKey, retainRegions, standingKey } from '../layout/geometry';
 import { layoutProjectRoom } from '../layout/room';
 import type { SpotDef, SpotKind } from '../layout/types';
 import { PathFinder } from '../path/astar';
@@ -86,7 +86,7 @@ function between(rng: () => number, a: number, b: number): number {
   return a + rng() * (b - a);
 }
 
-/** Depois do café, sentar à mesa só quando o café foi na copa do principal: o saguão do anexo não tem mesas (spec 7.3). */
+/** Depois do café, sentar à mesa só quando o café foi na copa do principal: o saguão do anexo não tem mesas. */
 export function cafeSeatAfter(coffee: SpotDef): boolean {
   return coffee.areaId === CAFE_ID;
 }
@@ -506,7 +506,7 @@ export class Sim {
     let blocks = existingBlocks(slots);
     this.shrinkPending = false;
     if (!force) {
-      // trava de encolher, como união (spec 7.2): as colunas, os blocos (com os ancestrais) e as passarelas do layout
+      // trava de encolher, como união: as colunas, os blocos (com os ancestrais) e as passarelas do layout
       // anterior onde há alguém (não `gone`) continuam de pé e o prédio é montado com as salas presentes de agora (a
       // sala que saiu vira pátio); enquanto houver retenção, shrinkPending faz o housekeeping tentar de novo a cada 1 s
       const tiles = [...this.chars.values()].filter((c) => !c.gone).map((c) => ({ tx: c.tx, ty: c.ty }));
@@ -634,10 +634,11 @@ export class Sim {
   // =================================================================== mudança de sala
 
   /**
-   * Sem buracos entre as salas: quando uma vaga fica livre antes da última sala (um terminal fechou e a
-   * sala foi desmontada), a sala da maior vaga (a mais nova no prédio, não a mais longe da porta) se muda para
-   * ela depois de COMPACT_DELAY_MS. Uma sala por
-   * vez, só sala pronta e com a sessão aberta; o prédio encolhe quando o endereço antigo é desmontado.
+   * O prédio encolhe sem buracos: quando uma vaga fica livre antes da última sala (um terminal fechou e a sala foi
+   * desmontada), a sala da maior vaga (a mais nova no prédio, não a mais longe da porta) se muda para ela depois de
+   * COMPACT_DELAY_MS, mas só se a mudança tirar uma coluna ou um bloco de pé (moveShrinks): como as vagas alternam
+   * leste e oeste, mudar de lado com a coluna antiga ainda ocupada só levantaria outra coluna. Uma sala por vez, só
+   * sala pronta e com a sessão aberta; o prédio encolhe quando o endereço antigo é desmontado.
    */
   private compact(now: number): void {
     const free = this.freeSlot();
@@ -645,7 +646,8 @@ export class Sim {
     for (const r of this.rooms.values()) {
       if (r.slot > free && !r.ghost && r.listed && r.phase === 'ready' && (!far || r.slot > far.slot)) far = r;
     }
-    if (!far) {
+    const slots = [...this.rooms.values()].filter((r) => r.listed && !r.ghost).map((r) => r.slot);
+    if (!far || !moveShrinks(slots, far.slot, free)) {
       this.gapSince = 0;
       return;
     }
@@ -1442,10 +1444,10 @@ export class Sim {
 
   /**
    * Spot livre de um serviço (café, água, cabine, pia) para `ch`: primeiro na mesma região (bloco) em que ele está
-   * (spec 7.3), senão em qualquer lugar. `near` manda na distância (padrão: o tile de `ch`); `at` é o tile cuja região
+   * senão em qualquer lugar. `near` manda na distância (padrão: o tile de `ch`); `at` é o tile cuja região
    * manda (padrão: o de `ch`; a pia depois da cabine usa a cabine); `rng` sorteia entre os 3 mais próximos.
    */
-  serviceSpot(kind: 'coffee' | 'water' | 'stall' | 'sink', ch: Character, opts: { near?: { tx: number; ty: number }; at?: { tx: number; ty: number }; areaId?: string; rng?: () => number } = {}): SpotDef | null {
+  serviceSpot(kind: SpotKind, ch: Character, opts: { near?: { tx: number; ty: number }; at?: { tx: number; ty: number }; areaId?: string; rng?: () => number } = {}): SpotDef | null {
     const near = opts.near ?? { tx: ch.tx, ty: ch.ty };
     const at = opts.at ?? { tx: ch.tx, ty: ch.ty };
     // primeiro a própria área (a pia do banheiro depois da cabine, não a da copa ao lado), depois a região, depois qualquer
@@ -1461,11 +1463,15 @@ export class Sim {
     return this.spots.findFree(kind, { near, by: ch.id, rng: opts.rng });
   }
 
+  /** Lugar livre ao acaso entre `kinds`: primeiro os da região (bloco) em que `ch` está, senão qualquer um. */
   private randomFree(kinds: SpotKind[], ch: Character): SpotDef | null {
     const cands: SpotDef[] = [];
     for (const k of kinds) for (const s of this.spots.ofKind(k)) if (this.spots.isFree(s.id, ch.id)) cands.push(s);
     if (!cands.length) return null;
-    return cands[Math.floor(ch.rng() * cands.length)];
+    const here = this.regionOf(ch.tx, ch.ty);
+    const same = here ? cands.filter((s) => this.regionOf(s.tx, s.ty) === here) : [];
+    const pool = same.length ? same : cands;
+    return pool[Math.floor(ch.rng() * pool.length)];
   }
 
   /** Planeja uma saída ociosa; `what` (testes) força a atividade em vez de sortear. */
@@ -1575,7 +1581,7 @@ export class Sim {
       case 'window': {
         // olhar pela janela ou dar uma conferida no quadro kanban da própria sala
         const board = rng() < 0.35 ? this.spots.findFree('whiteboard', { by: ch.id, filter: (p) => p.areaId === ch.roomId }) : null;
-        const s = board ?? this.spots.findFree('window', { by: ch.id, rng });
+        const s = board ?? this.serviceSpot('window', ch, { near, rng });
         if (!s || !this.reserveTemp(ch, s)) return false;
         this.pushLeave(ch, steps);
         goUse(s);
@@ -1584,7 +1590,7 @@ export class Sim {
         break;
       }
       case 'shelf': {
-        const s = this.spots.findFree('shelf', { by: ch.id, rng })!;
+        const s = this.serviceSpot('shelf', ch, { near, rng })!;
         if (!this.reserveTemp(ch, s)) return false;
         this.pushLeave(ch, steps);
         goUse(s);

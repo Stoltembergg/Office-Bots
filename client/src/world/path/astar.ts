@@ -76,7 +76,8 @@ export class PathFinder {
       }
       if (this.closed[cur] === gen) continue;
       this.closed[cur] = gen;
-      const { x: cx, y: cy } = grid.at(cur);
+      const cx = grid.xOf(cur);
+      const cy = grid.yOf(cur);
       const gCur = this.g[cur];
       const dIn = this.dirIn[cur];
       for (let k = 0; k < 4; k++) {
@@ -111,9 +112,8 @@ export class PathFinder {
     out.length = n * 2;
     let k = n - 1;
     for (let i = goal; i !== start && i >= 0; i = this.from[i]) {
-      const { x, y } = grid.at(i);
-      out[k * 2] = x;
-      out[k * 2 + 1] = y;
+      out[k * 2] = grid.xOf(i);
+      out[k * 2 + 1] = grid.yOf(i);
       k--;
     }
   }

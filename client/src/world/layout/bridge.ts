@@ -1,4 +1,4 @@
-// Passarela entre blocos (spec 3.6/3.7) como área: piso de chapas e tiles caminháveis nos trechos, sem paredes,
+// Passarela entre blocos como área: piso de chapas e tiles caminháveis nos trechos, sem paredes,
 // guarda-corpo em cada borda de tile que não dá em outro trecho nem numa porta. Não entra na camada base: o render
 // desenha a passarela numa camada elevada, depois de tudo o que está no chão.
 import { TILE } from '../constants';

@@ -1,4 +1,4 @@
-// Miolo dos anexos (spec 3.1, D1): saguão e WC na coluna do miolo, um de cada lado do corredor. O saguão fica do lado
+// Miolo dos anexos: saguão e WC na coluna do miolo, um de cada lado do corredor. O saguão fica do lado
 // por onde a passarela própria chega (norte na fileira 1, sul nos demais) e o WC do outro. O saguão reúne, em menor,
 // a mobília do lounge do principal (sofá, poltronas, ping-pong, fliperamas, estante, puffs) mais um canto de café e água.
 // A planta do WC é a mesma do banheiro do principal, com outro id.

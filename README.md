@@ -107,8 +107,8 @@ counters and each account's usage; on the left, the rooms and agents; at the bot
 
 **The lights go out.** When you close a project's last session, the last character walks to the light switch,
 turns off the lights, leaves through the door and walks off down the sidewalk — and the room is taken apart,
-becoming a garden until a new project arrives. If a free spot was left before the last occupied one, the room in
-the highest spot moves there: it's set up in the empty spot, everyone walks over to it, and the old address goes
+becoming a garden until a new project arrives. If a free spot was left before the last occupied one and moving
+the room in the highest spot there would shrink the building (empty a column or an annex), it moves: it's set up in the empty spot, everyone walks over to it, and the old address goes
 dark and is taken apart. That way the building has no gaps and shrinks on its own, on both sides of the core (spots
 alternate east and west). When the annex's last room leaves, the annex and the footbridge are taken apart too —
 unless someone is still there, or on the footbridge; then they wait for them to leave.

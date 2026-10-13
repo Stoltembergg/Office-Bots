@@ -523,7 +523,10 @@ export class DemoSimulator {
     const activeRooms = new Set([...this.rooms.values()].map((r) => r.name));
     // Cada sessão abre a sua sala; só reaproveita uma (35%) quando todos os projetos já têm sala.
     const reuse = activeRooms.size > 0 && this.rng() < 0.35 && activeRooms.size >= PROJECTS.length;
-    const candidates = PROJECTS.filter((p) => (reuse ? activeRooms.has(p.name) : !activeRooms.has(p.name)));
+    // sem sala: primeiro os 6 projetos originais (os de "Meu dia" e das capturas), depois os extras
+    const fresh = PROJECTS.filter((p) => !activeRooms.has(p.name));
+    const freshBase = fresh.filter((p) => BASE_PROJECTS.includes(p));
+    const candidates = reuse ? PROJECTS.filter((p) => activeRooms.has(p.name)) : freshBase.length ? freshBase : fresh;
     let project = this.pick(candidates.length ? candidates : PROJECTS);
     // Abertura: a 2ª sessão é do Codex e entra na sala da 1ª (Claude Code e Codex dividindo a sala). O sorteio da
     // sala acontece igual (a sequência das outras sessões não muda); só o resultado é trocado.

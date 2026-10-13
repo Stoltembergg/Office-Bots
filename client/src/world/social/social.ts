@@ -452,13 +452,18 @@ export class Social {
         return { seats: order.slice(0, n), pool: order };
       }
       case 'arcade': {
-        const a = spots.ofKind('arcade').filter(free);
-        return a.length >= 2 && n <= 2 ? { seats: a.slice(0, 2), pool: a.slice(0, 2) } : null;
+        // as duas máquinas do lounge mais perto de quem puxa (cada anexo tem as suas): nunca uma em cada prédio
+        const byArea = new Map<string, SpotDef[]>();
+        for (const s of spots.ofKind('arcade').filter(free)) byArea.set(s.areaId, [...(byArea.get(s.areaId) ?? []), s]);
+        const dist = (s: SpotDef) => Math.abs(s.tx - ch.tx) + Math.abs(s.ty - ch.ty);
+        const a = [...byArea.values()].filter((m) => m.length >= 2).sort((p, q) => dist(p[0]) - dist(q[0]))[0];
+        return a && n <= 2 ? { seats: a.slice(0, 2), pool: a.slice(0, 2) } : null;
       }
       case 'pingpong': {
         const g = spots.findFreeGroup('pingpong', { filter: (grp) => grp.every(free) });
         if (!g) return null;
-        const watch = spots.ofKind('watch').filter(free);
+        // a torcida fica na sala da mesa (o lounge de cada bloco tem a sua)
+        const watch = spots.ofKind('watch').filter((s) => free(s) && s.areaId === g[0].areaId);
         if (n > 2 + watch.length) return null;
         return { seats: [...g, ...watch].slice(0, n), pool: [...g, ...watch] };
       }

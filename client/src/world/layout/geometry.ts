@@ -1,4 +1,4 @@
-// Geometria do prédio: modelo de blocos (spec seção 1: envelopes, ordem dos blocos, vagas por bloco,
+// Geometria do prédio: modelo de blocos (envelopes, ordem dos blocos, vagas por bloco,
 // colunas de pé). Puro e testável.
 import { BUILDING_H, COL_W, CORRIDOR_Y, NORTH_Y, ROOM_H, SOUTH_Y, TILE } from '../constants';
 import type { TileRect } from './types';
@@ -22,7 +22,7 @@ export const ANNEX_COLS = 5;
 export const STREET_W = 12;
 /** Passo entre fileiras de blocos (tiles): 41. */
 export const ROW_STEP = BUILDING_H + STREET_W;
-/** Chegada do bloco: decide a ordem das vagas (spec 1.2) e a coluna de ligação (1.3). */
+/** Chegada do bloco: decide a ordem das vagas e a coluna de ligação. */
 export type Arrival = 'core' | 'hub' | 'west' | 'east';
 export interface SlotAddress {
   block: BlockId;
@@ -33,7 +33,7 @@ export interface ColumnSpan {
   lo: number;
   hi: number;
 }
-/** Bloco existente: envelope fixo (spec 1.1), colunas de pé e retângulo de pé (envelope recortado a lo..hi). */
+/** Bloco existente: envelope fixo, colunas de pé e retângulo de pé (envelope recortado a lo..hi). */
 export interface BlockLayout {
   id: BlockId;
   envelope: TileRect;
@@ -65,7 +65,7 @@ const ANNEX_INSET = (MAIN_W - ANNEX_W) / 2;
 /** Passo entre envelopes vizinhos da mesma fileira (anexo + rua): 92. */
 const ANNEX_STEP = ANNEX_W + STREET_W;
 
-/** Envelope do bloco (spec 1.1): retângulo máximo, de posição fixa. */
+/** Envelope do bloco: retângulo máximo, de posição fixa. */
 export function blockRect(b: BlockId): TileRect {
   const y = b.by * ROW_STEP;
   if (isPrincipal(b)) return { x: 0, y, w: MAIN_W, h: BUILDING_H };
@@ -74,13 +74,13 @@ export function blockRect(b: BlockId): TileRect {
   return { x: ANNEX_STEP * b.bx, y, w: ANNEX_W, h: BUILDING_H };
 }
 
-/** x (tiles) da rua norte–sul que separa a coluna de blocos bx da vizinha mais perto do principal (spec 1.6): 96 para bx = 1, −12 para bx = −1. */
+/** x (tiles) da rua norte–sul que separa a coluna de blocos bx da vizinha mais perto do principal: 96 para bx = 1, −12 para bx = −1. */
 export function streetX(bx: number): number {
   if (bx === 0) throw new Error('não há rua norte–sul na coluna do principal');
   return bx > 0 ? MAIN_W + ANNEX_STEP * (bx - 1) : ANNEX_STEP * bx + ANNEX_W;
 }
 
-/** Anel 1 da ordem dos blocos (spec 1.4): A1..A8. */
+/** Anel 1 da ordem dos blocos: A1..A8 (leste, sul dele, oeste, sul do oeste, norte da rua norte e os cantos). */
 const RING_1: readonly BlockId[] = [
   { bx: 0, by: 1 },
   { bx: 1, by: 0 },
@@ -101,7 +101,7 @@ const RING_SHAPE: readonly (readonly [number, number])[] = [
   [-1, -1],
 ];
 
-/** n-ésimo bloco da ordem (spec 1.4): 0 → principal; n ≥ 1 → A_n. */
+/** n-ésimo bloco da ordem: 0 → principal; n ≥ 1 → A_n. */
 export function blockOrder(n: number): BlockId {
   if (n === 0) return PRINCIPAL;
   if (n <= RING_1.length) return RING_1[n - 1];
@@ -125,7 +125,7 @@ export function blockIndex(b: BlockId): number {
   return RING_1.length + (ring - 2) * RING_SHAPE.length + k + 1;
 }
 
-/** Pai do bloco (spec 1.4): de onde sai a passarela. O principal não tem pai. */
+/** Pai do bloco: de onde sai a passarela. O principal não tem pai. */
 export function parentOf(b: BlockId): BlockId | null {
   if (isPrincipal(b)) return null;
   if (b.bx === 0) return PRINCIPAL;
@@ -151,7 +151,7 @@ export function isCoreColumn(b: BlockId, col: number): boolean {
   return coreColumns(b).includes(col);
 }
 
-/** Ordem das 8 vagas locais (coluna, lado) por tipo de chegada (spec 1.2); índice = vaga local s mod 8. */
+/** Ordem das 8 vagas locais (coluna, lado) por tipo de chegada; índice = vaga local s mod 8. */
 export const SLOT_ORDER: Readonly<Record<Arrival, readonly (readonly [number, Side])[]>> = {
   core: [[4, 'north'], [1, 'north'], [4, 'south'], [1, 'south'], [5, 'north'], [0, 'north'], [5, 'south'], [0, 'south']],
   hub: [[3, 'north'], [1, 'north'], [3, 'south'], [1, 'south'], [4, 'north'], [0, 'north'], [4, 'south'], [0, 'south']],
@@ -159,12 +159,12 @@ export const SLOT_ORDER: Readonly<Record<Arrival, readonly (readonly [number, Si
   east: [[4, 'north'], [4, 'south'], [3, 'north'], [3, 'south'], [1, 'north'], [1, 'south'], [0, 'north'], [0, 'south']],
 };
 
-/** Bloco da vaga global: o ⌊slot/8⌋-ésimo da ordem dos blocos (spec 1.4). */
+/** Bloco da vaga global: o ⌊slot/8⌋-ésimo da ordem dos blocos. */
 export function blockFor(slot: number): BlockId {
   return blockOrder(Math.floor(Math.max(0, slot) / ROOMS_PER_BLOCK));
 }
 
-/** Endereço (bloco, coluna, lado) da vaga global (spec 1.2). */
+/** Endereço (bloco, coluna, lado) da vaga global. */
 export function slotAddress(slot: number): SlotAddress {
   slot = Math.max(0, slot);
   const block = blockOrder(Math.floor(slot / ROOMS_PER_BLOCK));
@@ -186,7 +186,7 @@ export function blockColumnRect(block: BlockId, col: number, side: Side): TileRe
 }
 
 /**
- * Colunas de pé do bloco (spec 1.3): da menor à maior entre o miolo, as colunas das vagas presentes
+ * Colunas de pé do bloco: da menor à maior entre o miolo, as colunas das vagas presentes
  * deste bloco, a ponta por onde chega a passarela (bloco lateral) e, por filho, o miolo (filho vertical)
  * ou a ponta voltada para ele (filho lateral).
  */
@@ -219,8 +219,8 @@ export function standingKey(blocks: readonly BlockLayout[]): string {
 }
 
 /**
- * Blocos existentes (spec 1.3): os das vagas, seus ancestrais e o principal, ordenados por blockIndex. `keep` são
- * blocos mantidos sem vaga (trava de encolher, spec 7.2): entram com os ancestrais e ficam só com o miolo.
+ * Blocos existentes: os das vagas, seus ancestrais e o principal, ordenados por blockIndex. `keep` são
+ * blocos mantidos sem vaga (trava de encolher): entram com os ancestrais e ficam só com o miolo.
  */
 export function existingBlocks(slots: Iterable<number>, keep: readonly BlockId[] = []): BlockLayout[] {
   const slotList = [...slots];
@@ -287,7 +287,7 @@ export function occupiedColumns(blocks: readonly BlockLayout[], tiles: Iterable<
 }
 
 /**
- * Trava de encolher (spec 7.2): estende as colunas de pé de cada bloco até cobrir as referências dele.
+ * Trava de encolher: estende as colunas de pé de cada bloco até cobrir as referências dele.
  * Refs de blocos ausentes são ignoradas. Não muta a entrada; `retained` diz se algum lo/hi mudou.
  */
 export function retainColumns(blocks: readonly BlockLayout[], refs: readonly ColumnRef[]): { blocks: BlockLayout[]; retained: boolean } {
@@ -329,7 +329,7 @@ export function occupiedRegions(blocks: readonly BlockLayout[], bridges: readonl
 }
 
 /**
- * Trava de encolher por regiões (spec 7.2): os blocos das vagas presentes mais os blocos (e ancestrais) das
+ * Trava de encolher por regiões: os blocos das vagas presentes mais os blocos (e ancestrais) das
  * referências, com as colunas estendidas até cobri-las. `retained` diz se algo além do layout fresco ficou de pé.
  */
 export function retainRegions(slots: Iterable<number>, refs: readonly RegionRef[]): { blocks: BlockLayout[]; retained: boolean } {
@@ -365,13 +365,13 @@ export function bridgeId(child: BlockId): string {
   return `passarela:${blockKey(child)}`;
 }
 
-/** Lado do saguão no bloco (D1): norte quando a passarela própria chega por cima (fileira 1); sul nos demais anexos. */
+/** Lado do saguão no bloco: norte quando a passarela própria chega por cima (fileira 1); sul nos demais anexos. */
 export function hubSide(b: BlockId): Side {
   return b.by === 1 ? 'north' : 'south';
 }
 
 /**
- * Porta externa do saguão (D1): o lado dela, ou null quando a parede fica fechada. Abre pela passarela própria
+ * Porta externa do saguão: o lado dela, ou null quando a parede fica fechada. Abre pela passarela própria
  * (chegada `hub`) ou, no bloco lateral da fileira 0, pela passarela do filho (bx, 1), que sai pela parede sul.
  */
 export function hubDoor(b: BlockId, bridges: readonly BridgeLayout[]): Side | null {
@@ -384,7 +384,7 @@ export function hubDoor(b: BlockId, bridges: readonly BridgeLayout[]): Side | nu
 }
 
 /**
- * Trechos e aberturas da passarela do filho até o pai (spec 1.5, D2). Aberturas na ordem pai, filho.
+ * Trechos e aberturas da passarela do filho até o pai. Aberturas na ordem pai, filho.
  * - Z do principal: lounge (coluna 3) → saguão de A1 (0, 1), ou copa (coluna 3) → saguão de A6 (0, −1), espelhado em y.
  * - Vertical reta (demais chegadas `hub`): saída sul do saguão do pai (coluna 2) → porta norte do saguão do filho.
  * - Horizontal (chegadas `west`/`east`): da ponta do corredor do pai à do filho, nas 3 linhas caminháveis do corredor.
@@ -489,7 +489,7 @@ export function blockAt(blocks: readonly BlockLayout[], tx: number, ty: number):
 
 export type Region = { kind: 'block'; block: BlockLayout } | { kind: 'bridge'; bridge: BridgeLayout };
 
-/** Região do tile (spec 5): o bloco de pé que o contém, senão a passarela, senão null (rua, jardim, fora). */
+/** Região do tile: o bloco de pé que o contém, senão a passarela, senão null (rua, jardim, fora). */
 export function regionAt(blocks: readonly BlockLayout[], bridges: readonly BridgeLayout[], tx: number, ty: number): Region | null {
   const block = blockAt(blocks, tx, ty);
   if (block) return { kind: 'block', block };
@@ -510,4 +510,14 @@ export function rectPx(r: TileRect): { x: number; y: number; w: number; h: numbe
 
 export function inRect(r: TileRect, tx: number, ty: number): boolean {
   return tx >= r.x && ty >= r.y && tx < r.x + r.w && ty < r.y + r.h;
+}
+
+/**
+ * A mudança da sala da vaga `from` para a vaga `to` diminui o prédio (uma coluna de pé a menos, ou um bloco inteiro)?
+ * Só então vale mudar: as vagas alternam leste e oeste, e mudar de lado (4S → 1N) com a coluna antiga ainda ocupada só
+ * faria a equipe atravessar o núcleo e levantar a coluna 1 de novo.
+ */
+export function moveShrinks(slots: readonly number[], from: number, to: number): boolean {
+  const size = (s: readonly number[]) => existingBlocks(s).reduce((n, b) => n + 1000 + (b.columns.hi - b.columns.lo + 1), 0);
+  return size(slots.map((s) => (s === from ? to : s))) < size(slots);
 }

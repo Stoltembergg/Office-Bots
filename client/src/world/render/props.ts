@@ -3,7 +3,7 @@
 // cinza-azulado escuro, 3–4 tons por material, luz vinda de cima/esquerda.
 import { mulberry32 } from '../../../../shared/hash';
 import type { ExteriorProp } from '../layout/types';
-import { drawPixelText } from './pixel-font';
+import { pixelText } from '../../art/pixelfont';
 import type { Light } from './street-life';
 
 export interface PropSprite {
@@ -274,7 +274,7 @@ function stopSignSprite(): PropSprite {
   };
   octagon(0, 0, 20, 6, '#f4f4f0');
   octagon(1, 1, 18, 5, '#c8322e');
-  drawPixelText(ctx, 'STOP', 3, 7, '#ffffff');
+  pixelText(ctx, 'STOP', 3, 7, '#ffffff');
   ctx.fillStyle = '#3a4152';
   ctx.fillRect(9, 34, 4, 2);
   return { canvas: c, ax: 11, ay: 36 };

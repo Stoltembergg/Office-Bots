@@ -9,7 +9,7 @@ import type { ExteriorProp, FloorPatch, TileRect, WallItemPlacement, WallSegment
 
 export const EXTERIOR_WALL: WallStyle = { base: '#cfc8bd', trim: '#8a8174', pattern: 'brick', exterior: true };
 
-/** Entrada do prédio (D9): porta de 3 tiles na parede sul da recepção (coluna 2 do principal, lx 7..10 → x 39..42). */
+/** Entrada do prédio: porta de 3 tiles na parede sul da recepção (coluna 2 do principal, lx 7..10 → x 39..42). */
 export const ENTRANCE_X = blockRect(PRINCIPAL).x + 2 * COL_W + DOOR_LX;
 export const ENTRANCE_W = BRIDGE_W;
 /** Caminho de pedra da porta (y 29) até a calçada (y 31): 2 tiles. */
@@ -19,7 +19,7 @@ export const ENTRANCE_DOOR = { tx: ENTRANCE_X + 1, ty: blockRect(PRINCIPAL).y + 
 /** Linha da calçada (segunda linha da calçada norte da rua principal) por onde os personagens chegam e vão. */
 export const SIDEWALK_TY = ENTRANCE_DOOR.ty + 1 + ENTRANCE_DEPTH + 1;
 
-/** Rua (tiles): perfil da spec 1.6 — h: linhas 2–3 e 9–10 calçada, 4–8 asfalto; v: colunas 1–2 e 8–9 calçada, 3–7 asfalto. */
+/** Rua (tiles), 12 de largura — h: linhas 2–3 e 9–10 calçada, 4–8 asfalto; v: colunas 1–2 e 8–9 calçada, 3–7 asfalto. */
 export interface Street {
   axis: 'h' | 'v';
   rect: TileRect;
@@ -39,7 +39,7 @@ export interface ExteriorLayout {
   /** Linha central da rua principal (px), para as faixas tracejadas. */
   streetY: number;
   streetH: number;
-  /** Todas as ruas (D5): principal, norte (com bloco em by = −1) e norte–sul (uma por coluna de blocos |bx| ≥ 1). */
+  /** Todas as ruas: principal, norte (com bloco em by = −1) e norte–sul (uma por coluna de blocos |bx| ≥ 1). */
   streets: Street[];
   /** Cruzamentos (tiles): o asfalto comum de cada rua norte–sul com cada rua leste–oeste (5×5). */
   intersections: TileRect[];
@@ -57,7 +57,7 @@ export interface SlotShell {
   props: ExteriorProp[];
 }
 
-/** Calçada + asfalto de uma rua (tiles): onde nada de jardim entra (D5). */
+/** Calçada + asfalto de uma rua (tiles): onde nada de jardim entra. */
 function pavedRect(s: Street): TileRect {
   return s.axis === 'h' ? { x: s.rect.x, y: s.rect.y + 2, w: s.rect.w, h: 9 } : { x: s.rect.x + 1, y: s.rect.y, w: 9, h: s.rect.h };
 }
@@ -73,7 +73,7 @@ export function canopyOverlapsStreet(x: number, y: number, s: Street): boolean {
   return x + CANOPY_HALF_W > x0 && x - CANOPY_HALF_W < x1 && y > y0 && y - CANOPY_UP < y1;
 }
 
-/** Lados de um bloco que dão para uma rua (D5): a cerca viva e o paving dos pátios ficam só deles. */
+/** Lados de um bloco que dão para uma rua: a cerca viva e o paving dos pátios ficam só deles. */
 export function streetSides(b: BlockId, northStreet: boolean): readonly Side[] {
   if (b.by === 1) return ['north'];
   if (b.by === -1) return ['south'];
@@ -101,8 +101,8 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   /** Meia-largura (px) dos sprites com copa: a base pode ficar fora do bloco e a copa invadir a parede lateral. */
   const HALF_W: Partial<Record<ExteriorProp['kind'], number>> = { tree: 18, pine: 14 };
   /**
-   * Um prop só entra se o tile da sua base não cai num bloco de pé, num trecho de passarela (spec 4) nem na calçada ou
-   * asfalto de uma rua (D5; `onStreet` libera o mobiliário da calçada), e a copa não encosta num bloco.
+   * Um prop só entra se o tile da sua base não cai num bloco de pé, num trecho de passarela nem na calçada ou
+   * asfalto de uma rua (`onStreet` libera o mobiliário da calçada), e a copa não encosta num bloco.
    */
   const place = (p: ExteriorProp, onStreet = false) => {
     const tx = Math.floor(p.x / TILE);
@@ -137,7 +137,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
   // caminho de pedra da entrada: da porta sul da recepção (y 29) até a calçada (y 31), atravessando a cerca viva
   floors.push({ kind: 'sidewalk', x: px(ENTRANCE_X), y: px(south), w: px(ENTRANCE_W), h: px(ENTRANCE_DEPTH), seed: 15 });
 
-  // árvores e arbustos (D1 do campo único): as mesmas células de 8×8 tiles do campo que o renderer desenha além da
+  // árvores e arbustos: as mesmas células de 8×8 tiles do campo que o renderer desenha além da
   // base, aqui as que encostam nos bounds (o renderer pula exatamente essas). Como a célula é do mundo, uma árvore
   // nunca muda de lugar quando um bloco nasce. Ficam de fora (place) blocos, passarelas, ruas, jardins e entrada.
   const gardens = blocks.flatMap((b) => streetSides(b.id, northStreet).map((side): TileRect => (side === 'south' ? { x: b.rect.x, y: b.envelope.y + BUILDING_H, w: b.rect.w, h: 3 } : { x: b.rect.x, y: b.envelope.y - 3, w: b.rect.w, h: 3 })));
@@ -154,7 +154,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
       place(p);
     }
   }
-  // cerca viva + flores diante de cada bloco, de cada lado com rua (D5), ao longo do retângulo de pé; diante de cada
+  // cerca viva + flores diante de cada bloco, de cada lado com rua, ao longo do retângulo de pé; diante de cada
   // vaga de projeto, o trecho do caminho do jardim só tem cerca quando há sala ali (nunca diante do miolo). As peças
   // sob uma passarela saem (place); diante da entrada do prédio (caminho de pedra, x 39..42) a cerca do principal abre.
   for (const b of blocks) {
@@ -235,7 +235,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
 /**
  * Parede externa + jardim de um slot vazio: deck de madeira com mesas e guarda-sóis, canteiros e caminho.
  * `ends` diz quais pontas da coluna são pontas de pé do prédio: ali o corredor é fechado com um `cap`; `street` diz se
- * há rua daquele lado (D5): só então o jardim tem caminho de pedra até a calçada e `paving`. Sem `street`, vale a
+ * há rua daquele lado: só então o jardim tem caminho de pedra até a calçada e `paving`. Sem `street`, vale a
  * regra da fase 2 (só o sul do principal).
  */
 export function slotShell(slot: number, ends: { west: boolean; east: boolean; street?: boolean }): SlotShell {

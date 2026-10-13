@@ -30,7 +30,7 @@ export function layoutReception(rect: TileRect): AreaLayout {
   b.floor('marble', 0, 0, 16, 12, 101);
   b.rug(1.5, 2.2, 6.5, 2.6, '#3d5a80', 102);
   b.rug(8.6, 6.4, 5.2, 3.2, '#b65f3a', 103);
-  // ao sul do corredor (D9): a face norte abre para o corredor (porta de 2 tiles com batente) e a parede sul tem a
+  // ao sul do corredor (a entrada do prédio é pela rua): a face norte abre para o corredor (porta de 2 tiles com batente) e a parede sul tem a
   // entrada do prédio, de 3 tiles, dando no caminho de pedra até a calçada. Os elevadores ficam na face, a oeste da porta.
   b.face(0.5, 15, wall, [{ lx: 7, w: 2 }]);
   b.wall('door_frame', 8, undefined, { order: 0.05 });
@@ -134,12 +134,12 @@ export function layoutRestroom(rect: TileRect, id = RESTROOM_ID, side: Side = 's
   return b.build();
 }
 
-/** `open` = há passarela saindo pela porta norte (D4); sem ela a parede fica fechada. */
+/** `open` = há passarela saindo pela porta norte (a do anexo ao norte da rua norte); sem ela a parede fica fechada. */
 export function layoutCafe(rect: TileRect, open = true): AreaLayout {
   const b = new AreaBuilder(CAFE_ID, 'cafe', rect);
   const wall = CORE_WALLS.cafe;
   b.floor('tile_check', 0, 0, 16, 12, 301);
-  // frontão de mármore atrás da bancada (oeste) + porta norte de 3 tiles (D4: saída para a passarela de A6, em lx 7..10)
+  // frontão de mármore atrás da bancada (oeste) + porta norte de 3 tiles (saída para a passarela do anexo ao norte, em lx 7..10)
   // + parede clara com janela (leste)
   b.face(0.5, 6.5, CORE_WALLS.cafeSplash);
   b.face(10, 5.5, wall);

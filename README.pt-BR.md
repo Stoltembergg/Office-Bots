@@ -106,8 +106,8 @@ salas e os agentes; embaixo, o feed de atividade.
 
 **A luz apaga.** Quando você fecha a última sessão de um projeto, o último personagem vai até o interruptor,
 apaga a luz, sai pela porta e some andando pela calçada — e a sala é desmontada, virando jardim até um novo projeto
-chegar. Se sobrou uma vaga livre antes da última ocupada, a sala da maior vaga se muda para lá: é montada no lugar
-vago, o pessoal vai andando até ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com buracos e
+chegar. Se sobrou uma vaga livre antes da última ocupada e a mudança
+encolhe o prédio (esvazia uma coluna ou um anexo), a sala da maior vaga se muda para lá: é montada no lugar vago, o pessoal vai andando até ela, e o endereço antigo apaga e é desmontado. Assim o prédio não fica com buracos e
 encolhe sozinho, dos dois lados do núcleo (as vagas alternam leste e oeste). Quando a última sala do anexo sai, o
 anexo e a passarela são desmontados também — a não ser que alguém ainda esteja lá, ou na passarela; aí esperam a
 pessoa sair.

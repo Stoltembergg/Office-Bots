@@ -725,3 +725,19 @@ describe('pendências da fase 1', () => {
     expect(geometry.slotAddress(-3)).toEqual(geometry.slotAddress(0));
   });
 });
+
+describe('moveShrinks: a compactação só muda uma sala quando o prédio encolhe', () => {
+  it('mudar de lado com a coluna antiga ainda de pé não encolhe (4S → 1N com /a em 4N)', () => {
+    // vagas 0 (4N) e 2 (4S): colunas 2..4; levar a 2 para a 1 (1N) levantaria a coluna 1
+    expect(geometry.moveShrinks([0, 2], 2, 1)).toBe(false);
+    // 0 (4N), 2 (4S), 3 (1S), 4 (5N), 5 (0N), 6 (5S) com a 1 livre: a 6 em 5S não tira a coluna 5 (a 4 segue nela)
+    expect(geometry.moveShrinks([0, 2, 3, 4, 5, 6], 6, 1)).toBe(false);
+  });
+  it('tirar a última sala de uma coluna encolhe', () => {
+    // 1 (1N), 2 (4S), 3 (1S), 4 (5N) com a 0 (4N) livre: a 4 para a 0 esvazia a coluna 5
+    expect(geometry.moveShrinks([1, 2, 3, 4], 4, 0)).toBe(true);
+  });
+  it('esvaziar um bloco encolhe', () => {
+    expect(geometry.moveShrinks([1, 2, 3, 4, 5, 6, 7, 8], 8, 0)).toBe(true);
+  });
+});
