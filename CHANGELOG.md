@@ -17,6 +17,11 @@ mudou.
 
 ### Adicionado
 
+- **Temas do escritório** em Configurações › Aparência: decoração em pixel art (árvores com presentes, guirlandas e
+  neve nas janelas no Natal; abóboras, fantasmas, teias e morcegos no Halloween), luzes, tapetes e acessórios nos
+  personagens. **Automático**, o padrão, segue o calendário: Halloween de 1º a 31 de outubro e Natal de 1º de
+  novembro a 26 de dezembro (no resto do ano, o visual de sempre). **Nenhum** deixa o visual de sempre o ano todo, e
+  **Natal** e **Halloween** fixam um tema. A escolha fica salva no navegador.
 - **Aprovar o Codex do terminal pelo escritório, ao mesmo tempo que o terminal.** O `codex` no terminal, que roda as
   sessões no daemon do app-server, mostra o pedido de aprovação no cartão **Pede permissão** e no terminal juntos, sem
   prazo: vale o que você responder primeiro, e o cartão fecha sozinho quando a resposta é no terminal. Os botões são
