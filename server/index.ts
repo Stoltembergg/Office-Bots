@@ -123,8 +123,8 @@ const codexHookKey = codex ? loadCodexHookKey() : undefined;
 if (codex && !codexHookKey) {
   log.warn(
     config.inDocker
-      ? 'Codex: sem a chave do hook (HABBLAUD_CODEX_HOOK_KEY); os eventos do hook do Codex vão ser recusados no container. Rode o npm run docker:up de novo.'
-      : `Codex: não consegui ler nem criar ${join(config.home, '.habblaud', HOOK_KEY_FILE)} (precisa ter 32 bytes; apague para recriar); as chamadas do hook do Codex só valem pelo loopback.`,
+      ? tr('Codex: sem a chave do hook (HABBLAUD_CODEX_HOOK_KEY); os eventos do hook do Codex vão ser recusados no container. Rode o npm run docker:up de novo.')
+      : tr('Codex: não consegui ler nem criar {0} (precisa ter 32 bytes; apague para recriar); as chamadas do hook do Codex só valem pelo loopback.', [join(config.home, '.habblaud', HOOK_KEY_FILE)]),
   );
 }
 late.office = office;
@@ -353,8 +353,8 @@ server.listen(config.port, config.host, () => {
       log.info(tr('   Conta {0} do Codex ({1}): uso: {2} · {3}', [a.detected.short, a.id, accounts.usageView(a.id).status, a.detected.configDir]));
     }
     // Sem o binário, o próprio serviço já avisou no start().
-    if (!codexAppServer) log.info(`   Aprovação do codex no terminal pelo escritório: desligada (${codexAppServerOffReason(process.env, config.host, config.inDocker)}).`);
-    else if (codexAppServerBin) log.info(`   Aprovação do codex no terminal pelo escritório: pelo daemon do app-server, quando o codex o deixar no ar (${codexAppServerBin}).`);
+    if (!codexAppServer) log.info(tr('   Aprovação do codex no terminal pelo escritório: desligada ({0}).', [codexAppServerOffReason(process.env, config.host, config.inDocker)]));
+    else if (codexAppServerBin) log.info(tr('   Aprovação do codex no terminal pelo escritório: pelo daemon do app-server, quando o codex o deixar no ar ({0}).', [codexAppServerBin]));
   } else {
     log.info(tr('   Codex: {0}.', [config.codex ? tr('nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)') : tr('desligado (HABBLAUD_CODEX=0)')]));
   }

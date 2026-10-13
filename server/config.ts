@@ -160,9 +160,9 @@ export function codexAppServerOffReason(env: NodeJS.ProcessEnv, host: string, in
   if (codex && !isTruthy(codex)) return `HABBLAUD_CODEX=${codex}`;
   const flag = env.HABBLAUD_CODEX_APPSERVER?.trim();
   if (flag && !isTruthy(flag)) return `HABBLAUD_CODEX_APPSERVER=${flag}`;
-  if (inDocker) return 'no Docker o daemon do Codex (no host) não é alcançável';
+  if (inDocker) return tr('no Docker o daemon do Codex (no host) não é alcançável');
   const terminal = terminalOffReason(env, host, inDocker);
-  return terminal ? `mesma trava do terminal: ${terminal}` : undefined;
+  return terminal ? tr('mesma trava do terminal: {0}', [terminal]) : undefined;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): ServerConfig {

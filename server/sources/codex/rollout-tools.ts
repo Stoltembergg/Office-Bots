@@ -255,7 +255,7 @@ function looseJson(literal: string): string {
 const DOTTED_NAMESPACES = new Set(['web', 'clock']);
 
 export function sleepDesc(): ActivityDescription {
-  return { kind: 'wait', icon: '⏳', text: 'Esperando um pouco' };
+  return { kind: 'wait', icon: '⏳', text: tr('Esperando um pouco') };
 }
 
 /** Busca na web (Extension web.search): página aberta vira leitura (WebFetch); senão a busca (WebSearch). */
@@ -345,7 +345,7 @@ export function describeCodexTool(rawName: string, input: Rec, namespace?: strin
       // Mensagem cifrada (0.160.1) ou ausente: rótulo neutro com o nome da tarefa, nunca o texto cifrado.
       const base = describeTool('Agent', { subagent_type: maskedText(input.agent_type) });
       const task = plainText(input.task_name);
-      return { desc: task ? { ...base, text: maskedCut(`Delegando ao subagente ${task}`, ACTIVITY_TEXT_MAX) } : base, tool: 'Agent' };
+      return { desc: task ? { ...base, text: maskedCut(tr('Delegando ao subagente {0}', [task]), ACTIVITY_TEXT_MAX) } : base, tool: 'Agent' };
     }
     case 'wait':
     case 'wait_agent':
@@ -361,7 +361,7 @@ export function describeCodexTool(rawName: string, input: Rec, namespace?: strin
       return { desc: { kind: 'wait', icon: '🔐', text: tr('Pedindo permissões') }, tool: name };
     case 'request_user_input':
       // Pergunta síncrona: o turno para até você responder (kind 'ask': o escritório não sobrepõe o "Precisa de você").
-      return { desc: { ...describeTool('AskUserQuestion', { questions: maskedQuestions(input.questions) }), text: 'Esperando você responder' }, tool: name };
+      return { desc: { ...describeTool('AskUserQuestion', { questions: maskedQuestions(input.questions) }), text: tr('Esperando você responder') }, tool: name };
     case 'web.run':
       return webRunDesc(input);
     case 'clock.sleep':

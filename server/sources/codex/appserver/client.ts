@@ -8,6 +8,7 @@
 // (perguntas, permissões, ferramentas dinâmicas, renovação de token, atestado, elicitação MCP, aprovações v1) NUNCA
 // recebe resposta: a primeira resposta vence, e uma resposta do Habblaud quebraria a sessão do TUI.
 import { EventEmitter } from 'node:events';
+import { tr } from '../../../../shared/i18n';
 import type { CodexDecision } from '../../../../shared/types';
 import { RpcError, RpcPeer } from './rpc';
 import { WsConnection } from './ws';
@@ -215,7 +216,7 @@ export class CodexAppServerClient extends EventEmitter {
   }
 
   close(): void {
-    this.finish('fechada pelo Habblaud');
+    this.finish(tr('fechada pelo Habblaud'));
   }
 
   private async open(): Promise<void> {
@@ -230,7 +231,7 @@ export class CodexAppServerClient extends EventEmitter {
       try {
         rpc.handle(text);
       } catch (err) {
-        this.finish(`falha ao tratar mensagem do app-server (${errMessage(err)})`);
+        this.finish(tr('falha ao tratar mensagem do app-server ({0})', [errMessage(err)]));
       }
     });
     ws.on('close', (reason: string) => this.finish(reason));
@@ -244,7 +245,7 @@ export class CodexAppServerClient extends EventEmitter {
         capabilities: { optOutNotificationMethods: [...OPT_OUT_NOTIFICATIONS] },
       });
     } catch (err) {
-      this.finish(`initialize recusado (${errMessage(err)})`);
+      this.finish(tr('initialize recusado ({0})', [errMessage(err)]));
     }
     if (this.closedReason !== undefined) throw new Error(this.closedReason);
     rpc.notify('initialized');
@@ -252,7 +253,7 @@ export class CodexAppServerClient extends EventEmitter {
   }
 
   private request(method: string, params: unknown): Promise<unknown> {
-    if (!this.rpc || !this.ready || this.closedReason !== undefined) return Promise.reject(new Error('sem conexão com o app-server'));
+    if (!this.rpc || !this.ready || this.closedReason !== undefined) return Promise.reject(new Error(tr('sem conexão com o app-server')));
     return this.rpc.request(method, params);
   }
 
@@ -324,7 +325,7 @@ export class CodexAppServerClient extends EventEmitter {
       if (patch) req.patch = patch;
     }
     const grant = req.kind === 'fileChange' ? str(p.grantRoot) : undefined;
-    const reason = str(p.reason) ?? (grant ? `pede para escrever em ${grant}` : undefined);
+    const reason = str(p.reason) ?? (grant ? tr('pede para escrever em {0}', [grant]) : undefined);
     if (reason) req.reason = reason;
     const decisions = decisionsOf(p.availableDecisions);
     if (decisions) req.decisions = decisions;

@@ -372,7 +372,7 @@ class AgentView {
       update: (row, a) => updateAgentRow(row, a, ctx.account(a.account), false, ctx.now(), ctx.store.snapshot?.agents),
     });
     const childList = h('div', { class: 'ui-team' });
-    this.childSec = section('Subagentes', childList);
+    this.childSec = section(tr('Subagentes'), childList);
     this.children = new KeyedList<AgentInfo>(childList, {
       key: (a) => a.id,
       create: (a) => createAgentRow(a, (id) => ctx.select({ type: 'agent', id }, { focus: true }), 'sm'),

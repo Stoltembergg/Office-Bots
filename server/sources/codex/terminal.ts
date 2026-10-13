@@ -93,7 +93,7 @@ function titled(label: string, arg: string | undefined): string {
 
 /** Mensagem do multiagente: a cifrada (0.160.1) vira um aviso; o texto cifrado nunca aparece. */
 function readable<T>(v: T): T | string {
-  return typeof v === 'string' && isEncryptedText(v) ? '(mensagem cifrada)' : v;
+  return typeof v === 'string' && isEncryptedText(v) ? tr('(mensagem cifrada)') : v;
 }
 
 /** Texto livre como entrada da ferramenta, mascarado antes do corte. */
@@ -118,10 +118,10 @@ function bashView(cmd: unknown, cwd: string | undefined): View {
 /** update_plan ({explanation?, plan: [{step, status}]}): "update_plan(1/3 concluídas)" e a lista ☒/◐/☐. */
 function planView(args: Rec): View {
   const steps = Array.isArray(args.plan) ? args.plan.map(rec).filter((s): s is Rec => !!s) : [];
-  const list = steps.map((s) => `${PLAN_MARK[String(s.status)] ?? '☐'} ${str(s.step) ?? '(sem título)'}`).join('\n');
+  const list = steps.map((s) => `${PLAN_MARK[String(s.status)] ?? '☐'} ${str(s.step) ?? tr('(sem título)')}`).join('\n');
   const done = steps.filter((s) => s.status === 'completed').length;
   const body = [str(args.explanation), list].filter(Boolean).join('\n\n');
-  return { title: steps.length ? `update_plan(${done}/${steps.length} concluídas)` : 'update_plan', ...textInput(body) };
+  return { title: steps.length ? tr('{0}({1}/{2} concluídas)', ['update_plan', done, steps.length]) : 'update_plan', ...textInput(body) };
 }
 
 function optionLine(o: unknown): string {
@@ -145,7 +145,7 @@ function questionsView(name: string, args: Rec): View {
 function stdinView(args: Rec): View {
   const session = typeof args.session_id === 'number' || typeof args.session_id === 'string' ? String(args.session_id) : '';
   const n = typeof args.chars === 'string' ? args.chars.length : 0;
-  const parts = [session && `sessão ${session}`, n ? `${n} caractere${n === 1 ? '' : 's'}` : ''].filter(Boolean);
+  const parts = [session && tr('sessão {0}', [session]), n ? (n === 1 ? tr('1 caractere') : tr('{0} caracteres', [n])) : ''].filter(Boolean);
   return { title: titled('write_stdin', parts.join(', ')) };
 }
 
@@ -370,7 +370,7 @@ class CodexTerminalParser implements TerminalParser {
       case 'CollabAgentToolCall': {
         const tool = str(item.tool) ?? 'spawn_agent';
         // Prompt cifrado (0.160.1): o título leva o aviso, sem os parênteses dobrados do toolView; o texto cifrado nunca aparece.
-        if (isEncryptedText(str(item.prompt) ?? '')) return this.tool(id, at, tool, { title: titled(tool, 'mensagem cifrada') });
+        if (isEncryptedText(str(item.prompt) ?? '')) return this.tool(id, at, tool, { title: titled(tool, tr('mensagem cifrada')) });
         return this.tool(id, at, tool, toolView(tool, str(item.prompt) ? { prompt: item.prompt } : {}, this.cwd));
       }
       case 'Plan':

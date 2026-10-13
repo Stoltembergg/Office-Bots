@@ -206,7 +206,7 @@ export class CodexAppServerService implements ParallelSink {
   start(): void {
     if (this.timer || this.stopped) return;
     if (!this.opts.codexBin) {
-      this.say('Codex: sem o binário do Codex (codex no PATH ou HABBLAUD_CODEX_BIN): os pedidos do codex no terminal ficam só com o hook.');
+      this.say(tr('Codex: sem o binário do Codex (codex no PATH ou HABBLAUD_CODEX_BIN): os pedidos do codex no terminal ficam só com o hook.'));
       return;
     }
     this.timer = setInterval(() => this.tick(), this.opts.tickMs ?? TICK_MS);
@@ -218,7 +218,7 @@ export class CodexAppServerService implements ParallelSink {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    for (const st of [...this.states.values()]) if (st.conn) this.drop(st, st.conn, 'fechada pelo Habblaud');
+    for (const st of [...this.states.values()]) if (st.conn) this.drop(st, st.conn, tr('fechada pelo Habblaud'));
     this.states.clear();
     this.closedTurns.clear();
   }
@@ -236,7 +236,7 @@ export class CodexAppServerService implements ParallelSink {
         // Sai do mapa antes da queda: o drop não avisa "não ficou pronto" de uma conexão que o Habblaud mesmo fechou.
         this.states.delete(st.id);
         this.closedTurns.delete(st.id);
-        if (st.conn) this.drop(st, st.conn, 'a conta saiu da lista');
+        if (st.conn) this.drop(st, st.conn, tr('a conta saiu da lista'));
       }
       for (const a of accounts) {
         let st = this.states.get(a.id);
@@ -325,7 +325,7 @@ export class CodexAppServerService implements ParallelSink {
     try {
       proxy = (this.opts.spawnProxy ?? spawnCodexProxy)(bin, st.home);
     } catch (err) {
-      log.warnOnce(`codex-appserver-spawn:${errMsg(err)}`, `Codex (${st.id}): não consegui abrir o proxy do app-server (${errMsg(err)}).`);
+      log.warnOnce(`codex-appserver-spawn:${errMsg(err)}`, tr('Codex ({0}): não consegui abrir o proxy do app-server ({1}).', [st.id, errMsg(err)]));
       this.backoff(st);
       return;
     }
@@ -349,9 +349,9 @@ export class CodexAppServerService implements ParallelSink {
     st.conn = conn;
     // Antes dos eventos (um proxy que já saiu chama o 'exit' na hora): o drop limpa o prazo.
     const handshakeMs = this.opts.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS;
-    conn.handshakeTimer = setTimeout(() => this.guard(() => this.drop(st, conn, `sem handshake em ${handshakeMs / 1000} s`)), handshakeMs);
+    conn.handshakeTimer = setTimeout(() => this.guard(() => this.drop(st, conn, tr('sem handshake em {0} s', [handshakeMs / 1000]))), handshakeMs);
     conn.handshakeTimer.unref?.();
-    proxy.on('exit', () => this.drop(st, conn, 'o proxy do app-server saiu'));
+    proxy.on('exit', () => this.drop(st, conn, tr('o proxy do app-server saiu')));
     client.on('close', (reason: string) => this.drop(st, conn, reason));
     client.on('approval', (req: ApprovalRequest) => this.guard(() => this.onApproval(st, conn, req)));
     client.on('approvalResolved', (r: { requestId: string | number }) => this.guard(() => this.onResolved(st, conn, r.requestId)));
@@ -382,7 +382,7 @@ export class CodexAppServerService implements ParallelSink {
     clearTimeout(conn.handshakeTimer);
     conn.ready = true;
     st.backoffMs = BACKOFF_MIN_MS;
-    this.say(`Codex (${st.id}): ligado ao daemon do app-server; os pedidos de aprovação do codex no terminal também podem ser respondidos pelo escritório.`);
+    this.say(tr('Codex ({0}): ligado ao daemon do app-server; os pedidos de aprovação do codex no terminal também podem ser respondidos pelo escritório.', [st.id]));
     this.listLoaded(st, conn);
     this.heartbeat(st, conn);
   }
@@ -400,7 +400,7 @@ export class CodexAppServerService implements ParallelSink {
       () =>
         this.guard(() => {
           if (conn.closed) return;
-          conn.heartbeatTimer = setTimeout(() => this.guard(() => this.drop(st, conn, 'o daemon não responde')), timeoutMs);
+          conn.heartbeatTimer = setTimeout(() => this.guard(() => this.drop(st, conn, tr('o daemon não responde'))), timeoutMs);
           conn.heartbeatTimer.unref?.();
           conn.client.ping().then(
             () =>
@@ -409,7 +409,7 @@ export class CodexAppServerService implements ParallelSink {
                 clearTimeout(conn.heartbeatTimer);
                 this.heartbeat(st, conn);
               }),
-            (err) => this.guard(() => this.drop(st, conn, `o daemon não responde (${errMsg(err)})`)),
+            (err) => this.guard(() => this.drop(st, conn, tr('o daemon não responde ({0})', [errMsg(err)]))),
           );
         }),
       intervalMs,
@@ -429,7 +429,7 @@ export class CodexAppServerService implements ParallelSink {
       else if (this.idle(st.id, threadId, now)) this.release(conn, threadId);
       else if (!closed?.has(threadId) && now - (conn.activeAt.get(threadId) ?? now) >= STALE_RELEASE_MS) {
         this.release(conn, threadId);
-        this.say(`Codex (${st.id}): uma thread assinada ficou ${STALE_RELEASE_MS / 60_000} min com o turno aberto e sem nenhum evento (o terminal fechou?); o Habblaud a soltou, e os pedidos dela voltam ao hook (${threadId}).`);
+        this.say(tr('Codex ({0}): uma thread assinada ficou {1} min com o turno aberto e sem nenhum evento (o terminal fechou?); o Habblaud a soltou, e os pedidos dela voltam ao hook ({2}).', [st.id, STALE_RELEASE_MS / 60_000, threadId]));
       }
     }
     if (now < conn.listAt) return;
@@ -470,7 +470,7 @@ export class CodexAppServerService implements ParallelSink {
           conn.listAt = this.now() + DISCOVERY_MS;
           if (conn.listWarned) return;
           conn.listWarned = true;
-          this.say(`Codex (${st.id}): o thread/loaded/list falhou (${errMsg(err)}); tento de novo em ${DISCOVERY_MS / 1000} s. Até lá, só as threads que começarem agora entram no canal paralelo.`);
+          this.say(tr('Codex ({0}): o thread/loaded/list falhou ({1}); tento de novo em {2} s. Até lá, só as threads que começarem agora entram no canal paralelo.', [st.id, errMsg(err), DISCOVERY_MS / 1000]));
         }),
     );
   }
@@ -498,8 +498,8 @@ export class CodexAppServerService implements ParallelSink {
     st.conn = undefined;
     this.backoff(st);
     if (this.stopped) return;
-    if (wasReady) this.say(`Codex (${st.id}): a conexão com o app-server caiu (${reason}); os pedidos voltam ao hook até reconectar.`);
-    else if (this.states.get(st.id) === st) log.warnOnce(`codex-appserver-refused:${st.id}:${reason}`, `Codex (${st.id}): o app-server não ficou pronto (${reason}); os pedidos seguem com o hook e tento de novo.`);
+    if (wasReady) this.say(tr('Codex ({0}): a conexão com o app-server caiu ({1}); os pedidos voltam ao hook até reconectar.', [st.id, reason]));
+    else if (this.states.get(st.id) === st) log.warnOnce(`codex-appserver-refused:${st.id}:${reason}`, tr('Codex ({0}): o app-server não ficou pronto ({1}); os pedidos seguem com o hook e tento de novo.', [st.id, reason]));
   }
 
   private backoff(st: AccountState): void {
@@ -511,7 +511,7 @@ export class CodexAppServerService implements ParallelSink {
     try {
       fn();
     } catch (err) {
-      log.warnOnce(`codex-appserver:${errMsg(err)}`, `Codex: falha no canal paralelo (${errMsg(err)}).`);
+      log.warnOnce(`codex-appserver:${errMsg(err)}`, tr('Codex: falha no canal paralelo ({0}).', [errMsg(err)]));
     }
   }
 
@@ -534,7 +534,7 @@ export class CodexAppServerService implements ParallelSink {
         else if (r === 'not-daemon') conn.notDaemon.add(threadId);
         else {
           // Erro do daemon (ou sem resposta): a thread não entra no canal até dar certo; uma linha por conta e thread.
-          if (r === 'error') log.warnOnce(`codex-appserver-resume:${st.id}:${threadId}`, `Codex (${st.id}): o thread/resume de uma thread falhou (${threadId}); os pedidos dela seguem com o hook e tento de novo a cada ${DISCOVERY_MS / 1000} s.`);
+          if (r === 'error') log.warnOnce(`codex-appserver-resume:${st.id}:${threadId}`, tr('Codex ({0}): o thread/resume de uma thread falhou ({1}); os pedidos dela seguem com o hook e tento de novo a cada {2} s.', [st.id, threadId, DISCOVERY_MS / 1000]));
           conn.retry.set(threadId, this.now() + (r === 'no-rollout' ? RESUME_RETRY_MS : DISCOVERY_MS));
         }
       }),
@@ -608,7 +608,7 @@ export class CodexAppServerService implements ParallelSink {
     // thread segue assinada, então o hook dela sai sem decidir).
     const decisions = req.decisions ?? [...ALL_DECISIONS];
     if (!decisions.some((d) => OFFICE_DECISIONS.has(d))) {
-      this.say(`Codex (${st.id}): pedido de aprovação sem nenhuma decisão que o escritório saiba dar (aprovar, aprovar nesta sessão ou recusar); fica só com o terminal.`);
+      this.say(tr('Codex ({0}): pedido de aprovação sem nenhuma decisão que o escritório saiba dar (aprovar, aprovar nesta sessão ou recusar); fica só com o terminal.', [st.id]));
       return;
     }
     const key = requestKey(st.id, req.requestId);

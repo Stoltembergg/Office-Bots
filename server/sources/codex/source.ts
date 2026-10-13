@@ -435,7 +435,7 @@ export class CodexSource implements AgentSource, CodexLive {
     try {
       this.opts.onTurn(t.acc.id, threadId, open);
     } catch (err) {
-      log.warnOnce(`codex-turn:${errMsg(err)}`, `Codex: o aviso de turno ao canal paralelo falhou (${errMsg(err)}).`);
+      log.warnOnce(`codex-turn:${errMsg(err)}`, tr('Codex: o aviso de turno ao canal paralelo falhou ({0}).', [errMsg(err)]));
     }
   }
 

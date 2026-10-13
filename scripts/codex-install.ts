@@ -429,9 +429,9 @@ export function installState(file: Settings, command: string, waitS: number): In
 /** Aviso das cópias repetidas que o install deixa no lugar (linhas de saída, a 1ª depois do rótulo da pasta). */
 function stuckDuplicates(events: string[]): string[] {
   return [
-    `mais de uma cópia do hook do Habblaud em ${events.join(', ')} (ele roda uma vez por cópia).`,
-    '    Tirar a repetida mudaria a posição do hook de outro app nesse evento (e o Codex pediria para aprová-lo de novo',
-    '    em /hooks), por isso ela fica; se quiser, tire-a à mão no hooks.json.',
+    tr('mais de uma cópia do hook do Habblaud em {0} (ele roda uma vez por cópia).', [events.join(', ')]),
+    tr('    Tirar a repetida mudaria a posição do hook de outro app nesse evento (e o Codex pediria para aprová-lo de novo'),
+    tr('    em /hooks), por isso ela fica; se quiser, tire-a à mão no hooks.json.'),
   ];
 }
 

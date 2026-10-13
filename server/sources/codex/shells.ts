@@ -15,6 +15,7 @@
 //
 // As linhas herdadas de um fork (ordinal < subagent_history_start_ordinal) não contam: o processo é do pai.
 import { describeShellJob } from '../../../shared/activity';
+import { tr } from '../../../shared/i18n';
 import { commandText, contentText, maskedCut, parseArguments } from './rollout';
 
 export type CodexShellStatus = 'completed' | 'failed' | 'killed';
@@ -140,7 +141,7 @@ function onOutput(scan: CodexShellScan, p: Rec): CodexShellEvent[] {
     }
     case 'exec': {
       const cell = CELL_RUNNING.exec(text.trimStart())?.[1];
-      return cell ? started(scan, callId, `cell:${cell}`, 'Rodando script') : [];
+      return cell ? started(scan, callId, `cell:${cell}`, tr('Rodando script')) : [];
     }
     case 'wait': {
       const head = text.trimStart();

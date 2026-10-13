@@ -1,6 +1,8 @@
 // JSON-RPC do app-server do Codex: mensagens sem o campo "jsonrpc", uma por mensagem WebSocket. Separa
 // respostas (dos nossos pedidos, ids numéricos), notificações (sem id) e pedidos do servidor (com id, que
 // pode ser número ou string: a resposta precisa levar o id ORIGINAL).
+import { tr } from '../../../../shared/i18n';
+
 export class RpcError extends Error {
   constructor(
     readonly code: number,
@@ -41,14 +43,14 @@ export class RpcPeer {
 
   /** Pedido nosso; rejeita com RpcError (code + message) quando o servidor responde erro. */
   request(method: string, params?: unknown): Promise<unknown> {
-    if (this.closedReason !== undefined) return Promise.reject(new Error(`conexão encerrada: ${this.closedReason}`));
+    if (this.closedReason !== undefined) return Promise.reject(new Error(tr('conexão encerrada: {0}', [this.closedReason])));
     const id = this.nextId++;
     return new Promise((ok, fail) => {
       const w: Waiting = { ok, fail };
       if (this.timeoutMs > 0) {
         w.timer = setTimeout(() => {
           this.waiting.delete(id);
-          fail(new Error(`sem resposta para ${method} em ${this.timeoutMs} ms`));
+          fail(new Error(tr('sem resposta para {0} em {1} ms', [method, this.timeoutMs])));
         }, this.timeoutMs);
         w.timer.unref?.();
       }
@@ -102,7 +104,7 @@ export class RpcPeer {
     const w = this.settle(id);
     if (!w) return;
     const e = rec(m.error);
-    if (e) w.fail(new RpcError(typeof e.code === 'number' ? e.code : 0, typeof e.message === 'string' ? e.message : 'erro do app-server', e.data));
+    if (e) w.fail(new RpcError(typeof e.code === 'number' ? e.code : 0, typeof e.message === 'string' ? e.message : tr('erro do app-server'), e.data));
     else w.ok(m.result);
   }
 
@@ -114,7 +116,7 @@ export class RpcPeer {
     this.waiting.clear();
     for (const w of all) {
       if (w.timer) clearTimeout(w.timer);
-      w.fail(new Error(`conexão encerrada: ${reason}`));
+      w.fail(new Error(tr('conexão encerrada: {0}', [reason])));
     }
   }
 

@@ -86,7 +86,7 @@ export function permissionOptions(p: Pick<PermissionRequestInfo, 'provider' | 's
 }
 
 /** Dica do cartão de um pedido do canal paralelo do Codex. */
-export const PARALLEL_NOTE = 'Vale quem responder primeiro: aqui ou no terminal';
+export const PARALLEL_NOTE = tr('Vale quem responder primeiro: aqui ou no terminal');
 
 /** O que o cartão de um pedido 'parallel' oferece: os botões conforme as decisões do canal (sem prazo nem "Responder no terminal"). */
 export interface ParallelOptions {
@@ -555,7 +555,7 @@ export class PermissionCard {
       setText(this.status, error);
     } else {
       this.phase = 'sent';
-      const done = d.forSession ? 'Aprovado nesta sessão' : DONE[d.behavior];
+      const done = d.forSession ? tr('Aprovado nesta sessão') : DONE[d.behavior];
       setText(this.status, `${done}.`);
       this.ctx.announce(`${done}: ${this.ctx.agent(this.agentId)?.name ?? tr('agente')}.`);
     }

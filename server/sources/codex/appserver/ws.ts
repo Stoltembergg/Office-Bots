@@ -4,6 +4,7 @@
 // frames de texto mascarados (cliente), mensagens fragmentadas, ping → pong e close.
 import { createHash, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { tr } from '../../../../shared/i18n';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 export const OP_CONTINUATION = 0x0;
@@ -73,11 +74,11 @@ export class FrameDecoder {
       } else if (len === 127) {
         if (b.length < 10) break;
         const big = b.readBigUInt64BE(2);
-        if (big > BigInt(this.maxBytes)) throw new Error(`frame WebSocket grande demais (${big} bytes)`);
+        if (big > BigInt(this.maxBytes)) throw new Error(tr('frame WebSocket grande demais ({0} bytes)', [big]));
         len = Number(big);
         off = 10;
       }
-      if (len > this.maxBytes) throw new Error(`frame WebSocket grande demais (${len} bytes)`);
+      if (len > this.maxBytes) throw new Error(tr('frame WebSocket grande demais ({0} bytes)', [len]));
       const keyAt = off;
       if (masked) off += 4;
       if (b.length < off + len) break;
@@ -112,14 +113,14 @@ export function acceptKey(key: string): string {
 /** Motivo da recusa do handshake (texto até o \r\n\r\n), ou undefined se for um 101 válido. */
 function handshakeError(text: string, key: string): string | undefined {
   const [status = '', ...lines] = text.split('\r\n');
-  if (!/^HTTP\/1\.1 101\b/.test(status)) return `handshake recusado: ${status.slice(0, 120)}`;
+  if (!/^HTTP\/1\.1 101\b/.test(status)) return tr('handshake recusado: {0}', [status.slice(0, 120)]);
   for (const line of lines) {
     const i = line.indexOf(':');
     if (i > 0 && line.slice(0, i).trim().toLowerCase() === 'sec-websocket-accept') {
-      return line.slice(i + 1).trim() === acceptKey(key) ? undefined : 'handshake com Sec-WebSocket-Accept errado';
+      return line.slice(i + 1).trim() === acceptKey(key) ? undefined : tr('handshake com Sec-WebSocket-Accept errado');
     }
   }
-  return 'handshake sem Sec-WebSocket-Accept';
+  return tr('handshake sem Sec-WebSocket-Accept');
 }
 
 /**
@@ -177,7 +178,7 @@ export class WsConnection extends EventEmitter {
       code.writeUInt16BE(1000, 0);
       this.sendFrame(OP_CLOSE, code);
     }
-    this.finish('fechada pelo Habblaud');
+    this.finish(tr('fechada pelo Habblaud'));
   }
 
   private onData = (chunk: Buffer | string): void => {
@@ -187,7 +188,7 @@ export class WsConnection extends EventEmitter {
       this.head = Buffer.concat([this.head, data]);
       const end = this.head.indexOf('\r\n\r\n');
       if (end < 0) {
-        if (this.head.length > MAX_HANDSHAKE_BYTES) this.fail(new Error('resposta do handshake grande demais'));
+        if (this.head.length > MAX_HANDSHAKE_BYTES) this.fail(new Error(tr('resposta do handshake grande demais')));
         return;
       }
       const err = handshakeError(this.head.subarray(0, end).toString('latin1'), this.key);
@@ -214,7 +215,7 @@ export class WsConnection extends EventEmitter {
     }
   };
 
-  private onEnd = (): void => this.finish('o proxy do app-server fechou a saída');
+  private onEnd = (): void => this.finish(tr('o proxy do app-server fechou a saída'));
 
   private onStreamError = (err: Error): void => this.fail(err);
 
@@ -229,12 +230,12 @@ export class WsConnection extends EventEmitter {
         const code = f.payload.length >= 2 ? f.payload.readUInt16BE(0) : 1005;
         const why = f.payload.subarray(2).toString('utf8');
         if (!this.closeSent) this.sendFrame(OP_CLOSE, f.payload.subarray(0, 2));
-        this.finish(`o app-server fechou a conexão (${code}${why ? `: ${why}` : ''})`);
+        this.finish(why ? tr('o app-server fechou a conexão ({0}: {1})', [code, why]) : tr('o app-server fechou a conexão ({0})', [code]));
         return;
       }
       case OP_TEXT:
       case OP_BINARY:
-        if (this.fragmented) return this.fail(new Error('frame de dados no meio de uma mensagem fragmentada'));
+        if (this.fragmented) return this.fail(new Error(tr('frame de dados no meio de uma mensagem fragmentada')));
         if (f.fin) {
           if (f.opcode === OP_TEXT) this.emit('message', f.payload.toString('utf8'));
           return;
@@ -245,9 +246,9 @@ export class WsConnection extends EventEmitter {
         this.partsBytes = f.payload.length;
         return;
       case OP_CONTINUATION: {
-        if (!this.fragmented) return this.fail(new Error('continuação sem mensagem começada'));
+        if (!this.fragmented) return this.fail(new Error(tr('continuação sem mensagem começada')));
         this.partsBytes += f.payload.length;
-        if (this.partsBytes > MAX_MESSAGE_BYTES) return this.fail(new Error('mensagem WebSocket grande demais'));
+        if (this.partsBytes > MAX_MESSAGE_BYTES) return this.fail(new Error(tr('mensagem WebSocket grande demais')));
         this.parts.push(f.payload);
         if (!f.fin) return;
         const msg = Buffer.concat(this.parts);
@@ -257,7 +258,7 @@ export class WsConnection extends EventEmitter {
         return;
       }
       default:
-        this.fail(new Error(`opcode WebSocket desconhecido (${f.opcode})`));
+        this.fail(new Error(tr('opcode WebSocket desconhecido ({0})', [f.opcode])));
     }
   }
 

@@ -57,7 +57,7 @@ export function createPermissionRoutes(
   /** Chamada do hook do Codex: false = recusada (já respondeu 403). Com a prova, a resposta já leva a do servidor. */
   const codexAllowed = (req: IncomingMessage, res: ServerResponse, codexHook: CodexHookAuth | undefined): boolean => {
     if (verifyHookCall(req, res, codexHook ?? LOOPBACK_ONLY) !== 'denied') return true;
-    sendJson(res, 403, { error: 'pedidos do hook do Codex só são aceitos pelo próprio computador (no Docker, com a prova da chave do hook)' });
+    sendJson(res, 403, { error: tr('pedidos do hook do Codex só são aceitos pelo próprio computador (no Docker, com a prova da chave do hook)') });
     return false;
   };
 

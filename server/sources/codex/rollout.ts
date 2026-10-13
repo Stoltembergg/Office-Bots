@@ -460,7 +460,7 @@ class RolloutLineParser {
     else if (kind === 'clock.sleep') d = { desc: sleepDesc(), tool: 'clock.sleep' };
     else if (kind.startsWith('image_gen')) {
       const prompt = str(item.revisedPrompt);
-      const desc: ActivityDescription = { kind: 'other', icon: '🎨', text: 'Gerando imagem' };
+      const desc: ActivityDescription = { kind: 'other', icon: '🎨', text: tr('Gerando imagem') };
       if (prompt) desc.detail = maskedCut(prompt, 300);
       d = { desc, tool: 'image_gen' };
     } else return;
