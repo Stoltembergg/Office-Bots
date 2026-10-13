@@ -329,16 +329,17 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   Habblaud a segurasse quando o Codex retoma a thread, o Codex falharia): no Windows, ler 1 byte dá `EBUSY` = segura;
   no Linux, uma linha `FLOCK WRITE` do `/proc/locks` com o dispositivo:inode do arquivo (lido uma vez por ciclo); no
   macOS, no Docker, no Linux sem `/proc/locks` e numa pasta de travas noutro kernel ou na rede (9p do WSL2, NFS,
-  CIFS/SMB, FUSE, virtiofs, vboxsf, pelo `statfs`), só a existência. Segura = aberta, sem prazo (um comando longo passa
-  horas sem escrever); solta com sinal de vida nos últimos 60 s (o rollout cresceu ou chegou um hook) vale como a da
-  existência; solta sem sinal ou sumida = principal encerrado depois de 5 s, subagente depois de 1,5 s (o que ainda
-  não concluiu e não está ocioso espera 120 s, porque volta com o mesmo id num `followup_task`). Só no modo da
-  existência (e na solta com sinal de vida): lock e rollout parados há 12 h (pela última linha), sem evento de hook =
-  lock de crash; sem a trava segura, `working` sem escrita nem hook por 30 min = `idle`, no principal e no subagente
-  (uma linha nova do turno ainda aberto volta a `working`, ou a `waiting` com pergunta aberta). Lock sem rollout =
-  sessão aberta e vazia: o lock não diz a pasta, então o principal só entra quando o rollout (criado no 1º prompt) ou
-  um hook disser o cwd. Sem a pasta de locks: escrita no rollout nos últimos 30 min. Evento de hook segura a presença
-  por 60 s. O mtime nunca decide a presença: só escolhe o que abrir.
+  CIFS/SMB, FUSE, virtiofs, vboxsf, pelo `statfs`), só a existência. Segura = aberta, sem prazo (um comando longo
+  passa horas sem escrever); solta com sinal de vida nos últimos 60 s (o rollout cresceu ou chegou um hook: a sessão
+  que caiu logo depois de escrever leva até ~65 s para sair) vale como a da existência; solta sem sinal ou sumida =
+  principal encerrado depois de 5 s, subagente depois de 1,5 s (o que ainda não concluiu e não está ocioso espera
+  120 s, porque volta com o mesmo id num `followup_task`). Só no modo da existência (e na solta com sinal de vida):
+  lock e rollout parados há 12 h (pela última linha), sem evento de hook = lock de crash; sem a trava segura,
+  `working` sem escrita nem hook por 30 min = `idle`, no principal e no subagente (uma linha nova do turno ainda
+  aberto volta a `working`, ou a `waiting` com pergunta aberta). Lock sem rollout = sessão aberta e vazia: o lock não
+  diz a pasta, então o principal só entra quando o rollout (criado no 1º prompt) ou um hook disser o cwd. Sem a pasta
+  de locks: escrita no rollout nos últimos 30 min. Evento de hook segura a presença por 60 s. O mtime nunca decide a
+  presença: só escolhe o que abrir.
 - **Rollout** (`sources/codex/rollout.ts` e os `rollout-*.ts`, `reader.ts`): `sessions/AAAA/MM/DD/rollout-*-<threadId>.jsonl` (a pasta é a
   data de criação; sessão retomada continua no arquivo antigo; um thread revertido tem mais de um arquivo e vale o de
   última linha mais recente, com o mtime só desempatando) e `archived_sessions/`, lidos com `FileTail`. Ao abrir:
@@ -423,19 +424,20 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   (`unwrapCommand`); vale a 1ª resposta, do escritório ou do terminal, e o `serverRequest/resolved` fecha o cartão. A
   decisão do escritório vai ao app-server (503 com o canal fora); recusar não leva motivo; "nesta sessão" =
   `acceptForSession`. Numa thread assinada, o hook recebe `{skip: 'parallel'}`. Assinada, a thread fica carregada no
-  daemon com a trava de escritor presa, então a fonte avisa o turno de cada uma (`onTurn` → `setTurnOpen`): 60 s depois
-  de o turno fechar (`UNSUBSCRIBE_AFTER_MS`) o serviço a desassina (`thread/unsubscribe`; os cartões dela fecham e os
-  pedidos novos voltam ao hook) e a assina de novo quando um turno abre, se ela ainda estiver carregada. Com o turno
-  aberto e nenhum evento da thread (notificação ou pedido do app-server, turno reaberto) por 30 min
+  daemon com a trava de escritor presa, então a fonte avisa o turno de cada uma (`onTurn` → `setTurnOpen`): 60 s
+  depois de o turno fechar (`UNSUBSCRIBE_AFTER_MS`) o serviço a desassina (`thread/unsubscribe`; os cartões dela
+  fecham e os pedidos novos voltam ao hook) e a assina de novo quando um turno abre, se ela ainda estiver carregada.
+  Com o turno aberto e nenhum evento da thread (notificação ou pedido do app-server, turno reaberto) por 30 min
   (`STALE_RELEASE_MS`: o TUI fechou no meio do turno, por exemplo esperando uma aprovação), também a desassina e avisa
-  no log; a presença não serve de sinal, porque a assinatura mantém a trava presa. Um comando longo sem eventos também
-  passa do prazo: os pedidos seguintes dele vão pelo hook. Uma reconexão assina de novo e recomeça a contagem. No boot, e
-  quando outro cliente carrega de novo uma thread de turno fechado (`thread/started`), ela é assinada de novo e solta
-  60 s depois; uma reconexão ao mesmo daemon não reassina a que já passou dos 60 s. O daemon só descarrega a
-  thread depois de ela ficar ociosa e sem inscritos, num prazo do próprio Codex (`thread_unload_delay_secs`: cerca de
-  1 a 2 min no teste com o 0.160.1; o código do Codex prevê até 30 min), e é aí que a trava some e o TUI fechado sai
-  do escritório: no pior caso, 60 s mais o prazo do Codex, contados de novo a cada reinício do Habblaud ou nova carga da
-  thread.
+  no log; a presença não serve de sinal, porque a assinatura mantém a trava presa. O prazo não distingue o TUI fechado
+  do usuário longe: com o TUI aberto, um cartão sem resposta por 30 min fecha (a aprovação fica no terminal) e um
+  comando longo sem eventos também passa do prazo; o resto do turno vai pelo hook, e a thread volta ao canal no
+  próximo turno ou numa reconexão (que recomeça a contagem). No boot, e quando outro cliente carrega de novo uma
+  thread de turno fechado (`thread/started`), ela é assinada de novo e solta 60 s depois; uma reconexão ao mesmo
+  daemon não reassina a que já passou dos 60 s. O daemon só descarrega a thread depois de ela ficar ociosa e sem
+  inscritos, num prazo do próprio Codex (`thread_unload_delay_secs`: cerca de 1 a 2 min no teste com o 0.160.1; o
+  código do Codex prevê até 30 min), e é aí que a trava some e o TUI fechado sai do escritório: no pior caso, 60 s
+  mais o prazo do Codex, contados de novo a cada reinício do Habblaud ou nova carga da thread.
   Sem daemon, confere de novo a cada 30 s; um `thread/loaded/list` que falha com a conexão de pé avisa uma vez e lista
   de novo em 30 s; um `thread/resume` com erro avisa uma vez por conta e thread e é tentado de novo a cada 30 s. A
   conexão que não fica pronta em 15 s (`HANDSHAKE_TIMEOUT_MS`) cai, e ela ou um handshake/`initialize` recusado deixa

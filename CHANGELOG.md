@@ -31,7 +31,8 @@ mudou.
   hooks, com o Habblaud no modo Node e o terminal ligado; o Habblaud só se junta a um daemon que já está rodando e às
   conversas que ele já tem carregadas, nunca inicia nem configura o daemon nem carrega uma conversa, e solta cada uma
   60 s depois de o turno fechar (assina de novo quando um turno abre) e também depois de 30 min de turno aberto sem
-  nenhum evento da conversa (o terminal fechou no meio do turno), para não segurar a sessão de um terminal que
+  nenhum evento da conversa (o terminal pode ter fechado no meio do turno; com ele aberto, um cartão sem resposta por
+  30 min fecha e a aprovação fica no terminal), para não segurar a sessão de um terminal que
   você fechou (o Codex a descarrega num prazo dele depois de ficar ociosa e sem ninguém inscrito, de 1 a 2 minutos no
   teste com o 0.160.1 e de até 30 no código do Codex, e a trava some). No Windows, ele usa o
   `codex.exe` do PATH (com o Codex instalado só pelo npm, aponte `HABBLAUD_CODEX_BIN` para o executável nativo).

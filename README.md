@@ -536,9 +536,11 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
     Node (no Docker, o container não alcança o daemon) e com o terminal do Habblaud ligado (mesma trava). O Habblaud só
     se junta a um daemon que já está rodando: nunca o inicia nem muda a configuração dele. Também só se junta às
     conversas que o daemon já tem carregadas (nunca carrega uma), solta cada uma 60 segundos depois de o turno fechar e a
-    assina de novo quando um turno abre, para não segurar a sessão de um terminal que você fechou. Se o terminal fechar
-    no meio do turno (por exemplo, esperando uma aprovação), solta a conversa depois de 30 minutos sem nenhum evento
-    dela; um comando que fica mais que isso sem eventos também perde o canal, e os pedidos seguintes vão pelo hook.
+    assina de novo quando um turno abre, para não segurar a sessão de um terminal que você fechou. Com o turno aberto,
+    ele também solta a conversa depois de 30 minutos sem nenhum evento dela, porque daqui não dá para saber se o
+    terminal fechou (por exemplo, esperando uma aprovação). Com o terminal aberto, isso também acontece: um cartão sem
+    resposta por 30 minutos fecha e a aprovação fica só no terminal, e um comando que passa disso sem eventos perde o
+    canal. Nos dois casos, o resto do turno vai pelo hook, e a conversa volta ao canal no turno seguinte.
     A cada 15 segundos ele confere se o daemon responde; sem resposta em 10 segundos (um daemon travado por mais que
     isso conta como morto), a ligação cai, os cartões abertos fecham, os pedidos novos vão pelo hook e ele tenta se
     ligar de novo logo depois. No Windows, o canal paralelo e as mensagens usam o `codex.exe` do PATH; com o Codex
@@ -577,9 +579,9 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
   cliente do Codex volta a carregar a conversa, o que recomeça a contagem do Codex), então um terminal fechado sai no
   tempo do Codex: no pior caso, esses 60 segundos mais o prazo do Codex.
   No Windows e no Linux (fora do Docker), a sessão sai segundos depois de o processo que segura a trava dela fechar (o
-  app, a CLI fora do daemon ou o próprio daemon, ao descarregar a conversa), mesmo que ele tenha caído sem avisar. O
-  subagente que ainda não concluiu espera 2 minutos antes de sair, porque volta com o mesmo id quando o pai manda um
-  novo pedido a ele (`followup_task`).
+  app, a CLI fora do daemon ou o próprio daemon, ao descarregar a conversa), mesmo que ele tenha caído sem avisar (até
+  cerca de 1 minuto, se ele tinha acabado de escrever na conversa). O subagente que ainda não concluiu espera 2
+  minutos antes de sair, porque volta com o mesmo id quando o pai manda um novo pedido a ele (`followup_task`).
 - **O que aparece:** comandos rodados pelo PowerShell ou pelo cmd aparecem pelo comando de dentro (`npm test`, não
   `pwsh.exe -Command …`), e com eles push e PR do GitHub; uma pergunta do Codex deixa o personagem esperando você, com
   as perguntas; o plano do code mode atualiza as tarefas; subagentes contam e chegam com a tarefa como título; busca
