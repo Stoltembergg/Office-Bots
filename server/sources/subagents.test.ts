@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { tr } from '../../shared/i18n';
+import { tempDir } from '../test/fixtures';
 import {
   BOOT_RECENT_MS,
   concludedByIdle,
@@ -8,6 +11,7 @@ import {
   parseJournal,
   parseSubagentMeta,
   PENDING_TOOL_TIMEOUT_MS,
+  readSubagentMeta,
   sessionDirOf,
   subagentRole,
   type IdleCheck,
@@ -273,5 +277,29 @@ describe('sessionDirOf', () => {
       expect(sessionDirOf(p), p).toBe(p);
     }
     expect(sessionDirOf('/a/b/s.jsonl.jsonl')).toBe('/a/b/s.jsonl');
+  });
+});
+
+describe('readSubagentMeta', () => {
+  let tmp: ReturnType<typeof tempDir>;
+  beforeEach(() => {
+    tmp = tempDir();
+  });
+  afterEach(() => tmp.cleanup());
+
+  it('SUBAG-33: arquivo com JSON válido devolve o mesmo que parseSubagentMeta', () => {
+    const file = join(tmp.dir, 'agent-a1.meta.json');
+    writeFileSync(file, '{"agentType":"Explore","spawnDepth":2}');
+    expect(readSubagentMeta(file)).toStrictEqual({ agentType: 'Explore', spawnDepth: 2 });
+  });
+
+  it('SUBAG-34: arquivo inexistente devolve undefined sem lançar', () => {
+    expect(readSubagentMeta(join(tmp.dir, 'agent-nada.meta.json'))).toBeUndefined();
+  });
+
+  it('SUBAG-35: arquivo com JSON inválido devolve undefined sem lançar', () => {
+    const file = join(tmp.dir, 'agent-a1.meta.json');
+    writeFileSync(file, '{oops');
+    expect(readSubagentMeta(file)).toBeUndefined();
   });
 });
