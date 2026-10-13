@@ -19,6 +19,8 @@ export interface UiPrefs {
   sounds: SoundSettings;
   /** Notification do navegador para alertas com a aba oculta. */
   browserNotifications: boolean;
+  /** Toast quando uma janela de uso (5 h ou semana) de uma conta chega a 80% e a 95%. */
+  quotaAlerts: boolean;
   sidebarOpen: boolean;
   feedOpen: boolean;
   /** Contas ocultas na barra lateral (AccountInfo.id). */
@@ -34,6 +36,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   sound: false,
   sounds: DEFAULT_SOUND_SETTINGS,
   browserNotifications: false,
+  quotaAlerts: true,
   sidebarOpen: true,
   feedOpen: true,
   hiddenAccounts: [],
@@ -59,6 +62,7 @@ export function sanitizePrefs(raw: unknown): UiPrefs {
     sound: bool(o.sound, d.sound),
     sounds: sanitizeSoundSettings(o.sounds),
     browserNotifications: bool(o.browserNotifications, d.browserNotifications),
+    quotaAlerts: bool(o.quotaAlerts, d.quotaAlerts),
     sidebarOpen: bool(o.sidebarOpen, d.sidebarOpen),
     feedOpen: bool(o.feedOpen, d.feedOpen),
     hiddenAccounts: Array.isArray(o.hiddenAccounts) ? o.hiddenAccounts.filter((x): x is string => typeof x === 'string').slice(0, 20) : [],
