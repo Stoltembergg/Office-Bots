@@ -9,7 +9,7 @@
 # ---------------------------------------------------------------------------------------------
 # Estágio 1: compila o cliente (Vite) e empacota o servidor (esbuild) em dist/.
 # ---------------------------------------------------------------------------------------------
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 
 # Dependências primeiro: a camada fica em cache enquanto o lockfile não mudar.
@@ -23,7 +23,7 @@ RUN npm run build
 # Estágio 2: runtime enxuto. O servidor não tem dependências de runtime (só módulos node:*),
 # então basta o dist/ e o package.json (nome, versão e "type": "module").
 # ---------------------------------------------------------------------------------------------
-FROM node:24-alpine AS runtime
+FROM node:26-alpine AS runtime
 
 # HABBLAUD_USAGE_DIR: onde o docker-up monta (somente leitura) o uso capturado pelo tap de statusline.
 ENV NODE_ENV=production \
