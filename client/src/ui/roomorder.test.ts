@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { orderRooms } from './roomorder';
+import { moveRoom, orderRooms } from './roomorder';
 
 const KEY = 'habblaud.rooms.order';
 
@@ -62,5 +62,83 @@ describe('orderRooms', () => {
     const congelado = Object.freeze([...SALAS]);
     expect(() => orderRooms(congelado, idOf)).not.toThrow();
     expect(ids([...congelado])).toBe('a,b,c,d');
+  });
+});
+
+describe('moveRoom', () => {
+  const ORDEM = ['a', 'b', 'c', 'd'];
+  const guardado = (st: ReturnType<typeof memoryStorage>) => st.data.get(KEY);
+
+  it('SALORD-07: põe a sala imediatamente antes da alvo e devolve true', () => {
+    const st = install();
+    expect(moveRoom(ORDEM, 'a', 'c', false)).toBe(true);
+    expect(guardado(st)).toBe('["b","a","c","d"]');
+  });
+
+  it('SALORD-08: com after põe a sala imediatamente depois da alvo e devolve true', () => {
+    const st = install();
+    expect(moveRoom(ORDEM, 'a', 'c', true)).toBe(true);
+    expect(guardado(st)).toBe('["b","c","a","d"]');
+  });
+
+  it('SALORD-09: antes da primeira ou depois da última põe nos extremos', () => {
+    const st = install();
+    expect(moveRoom(ORDEM, 'd', 'a', false)).toBe(true);
+    expect(guardado(st)).toBe('["d","a","b","c"]');
+    expect(moveRoom(ORDEM, 'a', 'd', true)).toBe(true);
+    expect(guardado(st)).toBe('["b","c","d","a"]');
+  });
+
+  it('SALORD-10: grava em habblaud.rooms.order um array JSON com a nova ordem', () => {
+    const st = install();
+    moveRoom(ORDEM, 'a', 'c', true);
+    expect(st.setItem).toHaveBeenCalledTimes(1);
+    expect(st.setItem).toHaveBeenCalledWith(KEY, '["b","c","a","d"]');
+    expect(Array.isArray(JSON.parse(guardado(st) ?? ''))).toBe(true);
+  });
+
+  it('SALORD-11: salas guardadas que não estão em shown vão depois, na ordem em que estavam', () => {
+    const st = install({ [KEY]: '["b","c","a","d","x","y"]' });
+    expect(moveRoom(['p', 'q', 'r'], 'r', 'p', false)).toBe(true);
+    expect(guardado(st)).toBe('["r","p","q","b","c","a","d","x","y"]');
+  });
+
+  it('SALORD-12: id guardado que também está em shown é gravado uma só vez', () => {
+    const st = install({ [KEY]: '["b","c","a","d"]' });
+    expect(moveRoom(ORDEM, 'a', 'c', true)).toBe(true);
+    const out = JSON.parse(guardado(st) ?? '') as string[];
+    expect(out).toHaveLength(4);
+    expect(out).toEqual(['b', 'c', 'a', 'd']);
+  });
+
+  it('SALORD-13: orderRooms depois de moveRoom devolve a nova ordem', () => {
+    install();
+    moveRoom(ORDEM, 'a', 'c', true);
+    expect(ids(orderRooms(SALAS, idOf))).toBe('b,c,a,d');
+  });
+
+  it('SALORD-14: from igual a to devolve false sem gravar', () => {
+    const st = install();
+    expect(moveRoom(ORDEM, 'b', 'b', false)).toBe(false);
+    expect(st.setItem).not.toHaveBeenCalled();
+  });
+
+  it('SALORD-15: from desconhecida devolve false sem gravar', () => {
+    const st = install();
+    expect(moveRoom(ORDEM, 'z', 'b', false)).toBe(false);
+    expect(st.setItem).not.toHaveBeenCalled();
+  });
+
+  it('SALORD-16: to desconhecida devolve false sem gravar', () => {
+    const st = install();
+    expect(moveRoom(ORDEM, 'a', 'z', false)).toBe(false);
+    expect(st.setItem).not.toHaveBeenCalled();
+  });
+
+  it('SALORD-17: deixa shown intacto, mesmo congelado', () => {
+    install();
+    const congelado = Object.freeze([...ORDEM]);
+    expect(moveRoom(congelado, 'a', 'c', true)).toBe(true);
+    expect([...congelado]).toEqual(['a', 'b', 'c', 'd']);
   });
 });
