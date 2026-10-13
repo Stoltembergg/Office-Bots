@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountUsage, UsageWindow } from '../../../shared/types';
+import { formatResetAt } from './format';
 import { CYCLE_TOLERANCE_MS, decideQuota, evaluateQuota, QUOTA_KEY, QUOTA_THRESHOLDS, quotaNoticeText, sanitizeQuotaState, type QuotaAccount, type QuotaCycle, type QuotaInput, type QuotaLast, type QuotaState } from './quota-alert';
 
 const MIN = 60_000;
@@ -8,6 +9,11 @@ const R = 1_000 * HOUR; // um resetsAt qualquer
 const cyc = (done: (80 | 95)[] = [], resetsAt = R): QuotaCycle => ({ resetsAt, done });
 
 describe('decideQuota', () => {
+  it('QUOTA-02: leitura anterior já no limiar (80) não é cruzamento; só vindo de baixo avisa', () => {
+    expect(decideQuota({ pct: 81, resetsAt: R, prevPct: 80, cycle: cyc() }).notify).toBeNull();
+    expect(decideQuota({ pct: 81, resetsAt: R, prevPct: 79, cycle: cyc() }).notify).toBe(80);
+  });
+
   it('QUOTA-09: sem ciclo gravado e sem leitura anterior, 85% é só linha de base (null) e registra o 80', () => {
     const d = decideQuota({ pct: 85, resetsAt: R, prevPct: undefined, cycle: undefined });
     expect(d.notify).toBeNull();
@@ -161,6 +167,7 @@ describe('evaluateQuota', () => {
     expect(n.id).toBe(`quota:.claude-c:fiveHour:80:${FIVE}`);
     expect(n.at).toBe(NOW);
     expect(n.text).toContain('Conta C: 82% da sessão de 5 h usados (reinicia ');
+    expect(n.text).toBe(quotaNoticeText('Conta C', 'fiveHour', 80, 82, formatResetAt(FIVE, NOW)));
     expect('agentId' in n).toBe(false);
     expect('roomId' in n).toBe(false);
     expect(c.notices).toEqual([]);

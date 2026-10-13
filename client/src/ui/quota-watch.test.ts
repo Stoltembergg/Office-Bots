@@ -64,6 +64,18 @@ describe('QuotaToaster', () => {
     expect(p.notices.every((n) => n.level === 'warn')).toBe(true);
   });
 
+  it('QUOTA-17: conta oculta nas preferências não avisa, e reexibida já em 98% é só linha de base', () => {
+    const p = page(memoryStorage());
+    p.see(70);
+    p.prefs.hiddenAccounts = ['conta-a'];
+    p.see(85);
+    p.see(97);
+    expect(p.notices).toHaveLength(0);
+    p.prefs.hiddenAccounts = [];
+    p.see(98);
+    expect(p.notices).toHaveLength(0);
+  });
+
   it('QUOTA-19: opção desligada não avisa nem grava, e religar em 90% é só linha de base', () => {
     const st = memoryStorage();
     const p = page(st);
