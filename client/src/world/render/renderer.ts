@@ -5,21 +5,26 @@ import { TILE, type ArtModule, type CharacterFrameRequest, type IconName, type S
 import type { SeasonalTheme, WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
-import { BUILDING_H, COL_W, CORE_COLS, CORRIDOR_Y } from '../constants';
-import { layoutExterior, slotShell, type ExteriorLayout, type SlotShell } from '../layout/exterior';
-import { slotAt } from '../layout/geometry';
-import type { ExteriorProp } from '../layout/types';
+import type { AgentInfo } from '../../../../shared/types';
+import { ENTRANCE_W, ENTRANCE_X, lampsAlong, layoutExterior, slotShell, streetSides, type ExteriorLayout, type SlotShell } from '../layout/exterior';
+import { inRect, isCoreColumn, slotAt, standingKey, STREET_W } from '../layout/geometry';
+import type { ExteriorProp, FloorPatch, TileRect } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
-import type { Character } from '../sim/character';
+import { Character } from '../sim/character';
 import type { RoomState } from '../sim/room-state';
 import { cobwebScale, hourglassIcon, HOURGLASS_FLIP_MS, STORM_LIFT } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim, furnitureScale, NO_ANIM, sweepDelay, type BuildAnim } from './anim';
 import { daylightModeOf, parseHourParam } from './daylight';
-import { RoomFxRenderer } from './github-fx';
+import { charRect, promoteOverlapping } from './elevated';
+import { cellTouches, FIELD_CELL, fieldCells, fieldProp } from './field';
+import { reducedMotion, RoomFxRenderer } from './github-fx';
+import { GRASS_PERIOD } from '../../art/surfaces/floor';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
-import { carSprite, propSprite, shadowSprite } from './props';
+import { carSprite, carSpriteV, propSprite, shadowSprite, trafficLightSprite } from './props';
+import { pixelText, pixelTextWidth } from '../../art/pixelfont';
+import { CAR_HALF_L, StreetLife, streetGeometry, type Car } from './street-life';
 import { countBadge, fallbackIcon } from './shell-sprites';
 import { decorateElevator, drawSeasonalLights, drawSeasonalWindow, seasonalCostume, seasonalFurniture } from './seasonal';
 import { buildAreaVis, furnitureSprites, opaqueBounds, paintShell, toWallVis, WALL_MARGIN, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
@@ -38,14 +43,6 @@ interface Ent {
   ref: FurnVis | Character | ExteriorProp | Car | null;
   area: AreaVis | null;
   scale: number;
-}
-
-interface Car {
-  x: number;
-  y: number;
-  dir: 1 | -1;
-  speed: number;
-  variant: number;
 }
 
 /** Posição da cabeça (px de mundo) de cada personagem desenhado neste frame. */
@@ -74,6 +71,13 @@ const WEB_MAX_OUT = 9;
 /** Tom das bordas da área externa (vinheta) e do gramado além dela. */
 const VIGNETTE_ALPHA = 0.2;
 const VIGNETTE_EDGE = `rgba(18,40,26,${VIGNETTE_ALPHA})`;
+/** Faixa (tiles) junto à borda da área externa onde a vinheta já está completa: a grama de fora é pintada com a
+ * vinheta completa, então as duas ficam com o mesmo tom (dia e noite) e a emenda some. */
+const EDGE_BAND = 5;
+/** Lado (tiles) das células de grama além da base e teto do cache. */
+/** Quanto (px) as faixas das ruas além da base entram sob a base, para não deixar fresta em zoom fracionário. */
+const SEAM_OVERLAP = 2;
+const GRASS_CELL = 8;
 
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
@@ -82,15 +86,32 @@ export class Renderer {
   exterior: ExteriorLayout;
   shells: SlotShell[] = [];
   shellWindows: WallVis[] = [];
+  /** Áreas das passarelas (kind `bridge`): desenhadas na camada elevada, não nas passadas do chão. */
+  private bridgeVis: AreaVis[] = [];
+  /** Tiles da camada elevada: trechos das passarelas e os tiles de porta em que elas encostam. */
+  private elevatedRects: TileRect[] = [];
+  /** Personagens sobre uma passarela neste frame (desenhados na camada elevada). */
+  private elevated: Character[] = [];
+  private ground: Character[] = [];
+  private elevatedEnts: Ent[] = [];
+  /** Entradas do pool de entidades usadas neste frame. */
+  private used = 0;
   private base: HTMLCanvasElement | null = null;
   private baseX = 0;
   private baseY = 0;
-  private baseCols = -1;
+  private baseKey = '';
   private layoutVersion = -1;
   private assetsVersion = 0;
   private builtAssetsVersion = 0;
-  cars: Car[] = [];
-  private nextCarAt = 0;
+  /** Pedestres, semáforo e carros da rua (render/street-life.ts). */
+  readonly street: StreetLife;
+  /** Faixas das ruas repetidas além da camada base: o mundo não acaba na borda dos bounds. */
+  private strips: { axis: 'h' | 'v'; rect: TileRect; pattern: CanvasPattern }[] = [];
+  /** Postes além da base (fileira contínua até onde a câmera for), recalculados quando a janela visível muda. */
+  lampsBeyond: ExteriorProp[] = [];
+  private lampsKey = '';
+  /** Campo de árvores procedural além dos bounds, por célula (cache do que já foi sorteado). */
+  private field = new Map<string, ExteriorProp | null>();
   private ents: Ent[] = [];
   private pool: Ent[] = [];
   private date = new Date();
@@ -102,7 +123,6 @@ export class Renderer {
   /** dt do frame atual (s), para as partículas emitidas durante o desenho. */
   private dt = 0;
   private iconCount = 0;
-  private elevatorVis: WallVis[] = [];
   private occupiedSlots = new Set<number>();
   /** Hora forçada (?hora=21:30 na URL ou depuração) ou null para a hora local. */
   hourOverride: number | null = parseHourParam(typeof location === 'undefined' ? '' : location.search);
@@ -114,7 +134,13 @@ export class Renderer {
   /** Último fator noturno aplicado (usado pelo overlay). */
   night = 0;
   private clearColor = '#7fae62';
-  private grass: CanvasPattern | null = null;
+  /** Padrão da grama (GRASS_PERIOD tiles, ancorado em (0, 0) do mundo): o canvas cru dá a cor de fundo; o padrão,
+   * já dessaturado e com a vinheta completa, pinta o gramado além da base numa chamada só. A base pinta a sua grama
+   * com o mesmo pintor periódico, então a emenda não aparece. Refeitos quando os assets mudam. */
+  private grassCanvas: HTMLCanvasElement | null = null;
+  private grassPattern: CanvasPattern | null = null;
+  /** Relógio da rua: tempo real mesmo no timelapse (carros e pedestres são figurantes, não história). */
+  private streetNow = 0;
   private theme: SeasonalTheme = 'none';
 
   constructor(
@@ -124,7 +150,8 @@ export class Renderer {
     private readonly camera: Camera,
   ) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
-    this.exterior = layoutExterior(sim.building.cols);
+    this.exterior = layoutExterior(sim.building.blocks, sim.building.bridges);
+    this.street = new StreetLife(streetGeometry(this.exterior), (seed) => this.makePedestrian(seed));
     this.lighting = new Lighting(art, sim);
   }
 
@@ -141,11 +168,17 @@ export class Renderer {
     const themeChanged = theme !== this.theme;
     this.theme = theme;
     const assetsChanged = this.builtAssetsVersion !== this.assetsVersion || themeChanged;
-    if (this.baseCols !== sim.building.cols || assetsChanged) this.buildBase();
+    // base (exterior, pátios, vinheta): só quando um bloco entra/sai ou uma coluna sobe/desce — não a cada relayout(),
+    // que o housekeeping chama a cada 1 s enquanto shrinkPending segura uma coluna (layoutVersion sobe, o prédio não muda)
+    const baseKey = standingKey(sim.building.blocks);
+    if (this.baseKey !== baseKey || assetsChanged) {
+      this.baseKey = baseKey;
+      this.buildBase();
+    }
     if (this.layoutVersion !== sim.layoutVersion || assetsChanged) {
       this.layoutVersion = sim.layoutVersion;
       const want = new Set<string>();
-      for (const a of [...sim.building.core, sim.building.corridor]) {
+      for (const a of sim.building.areas) {
         want.add(a.id);
         const cur = this.areas.get(a.id);
         if (!cur || cur.layout !== a || assetsChanged) this.areas.set(a.id, buildAreaVis(this.art, a, undefined, this.assets, theme));
@@ -155,7 +188,9 @@ export class Renderer {
         want.add(room.id);
       }
       for (const id of [...this.areas.keys()]) if (!want.has(id)) this.areas.delete(id);
-      this.elevatorVis = this.areas.get('core:recepcao')?.wallItems.filter((w) => w.kind === 'elevator') ?? [];
+      this.bridgeVis = [...this.areas.values()].filter((v) => v.layout.kind === 'bridge');
+      // camada elevada: os trechos da passarela e os tiles de porta em que ela encosta (quem está na porta fica na frente do piso)
+      this.elevatedRects = sim.building.bridges.flatMap((br) => [...br.rects, ...br.openings]);
     }
     // salas: (re)constrói quando surgem, mudam de layout ou de versão (nome/tema)
     this.occupiedSlots.clear();
@@ -171,11 +206,10 @@ export class Renderer {
     this.builtAssetsVersion = this.assetsVersion;
   }
 
-  /** Camada base: área externa, pátios dos slots e fechamentos do corredor. */
+  /** Camada base: área externa, pátios das vagas vazias e fechamentos do corredor, por coluna de pé de cada bloco. */
   private buildBase(): void {
-    const cols = this.sim.building.cols;
-    this.baseCols = cols;
-    this.exterior = layoutExterior(cols);
+    this.exterior = layoutExterior(this.sim.building.blocks, this.sim.building.bridges);
+    this.street.geo = streetGeometry(this.exterior);
     const b = this.exterior.bounds;
     this.baseX = b.x * TILE;
     this.baseY = b.y * TILE;
@@ -186,68 +220,276 @@ export class Renderer {
     ctx.imageSmoothingEnabled = false;
     ctx.translate(-this.baseX, -this.baseY);
     paintShell(this.art, ctx, this.exterior.floors, []);
-    // faixas da rua
-    const ly = this.exterior.streetY + Math.round(this.exterior.streetH / 2) - 1;
+    // faixa tracejada no eixo de cada rua (asfalto: linhas 4–8 de uma rua h, colunas 3–7 de uma v)
+    // nos cruzamentos o asfalto fica liso: o traço de uma rua não entra no asfalto das outras
     ctx.fillStyle = 'rgba(255,236,170,0.75)';
-    for (let x = this.baseX + 4; x < this.baseX + c.width; x += 24) ctx.fillRect(x, ly, 12, 2);
+    const streets = this.exterior.streets;
+    const asphaltH = streets.filter((s) => s.axis === 'h').map((s) => [(s.rect.y + 4) * TILE, (s.rect.y + 9) * TILE] as const);
+    const asphaltV = streets.filter((s) => s.axis === 'v').map((s) => [(s.rect.x + 3) * TILE, (s.rect.x + 8) * TILE] as const);
+    for (const s of streets) {
+      const r = s.rect;
+      if (s.axis === 'h') {
+        const ly = r.y * TILE + 6 * TILE + TILE / 2 - 1;
+        // mesma fase das faixas além da base (x ≡ 4 mod 24 a partir de 0): a emenda não pula. Começa no traço que
+        // atravessa a borda (floor, não ceil): a metade dele que cai dentro da base é pintada aqui
+        for (let x = Math.floor((r.x * TILE - 4) / 24) * 24 + 4; x < (r.x + r.w) * TILE; x += 24) {
+          if (asphaltV.some(([x0, x1]) => x + 12 > x0 && x < x1)) continue;
+          // sem tracejado dentro da faixa de pedestres
+          if (s.cars && x + 12 > ENTRANCE_X * TILE - 4 && x < (ENTRANCE_X + ENTRANCE_W) * TILE + 4) continue;
+          ctx.fillRect(x, ly, 12, 2);
+        }
+      } else {
+        const lx = r.x * TILE + 5 * TILE + TILE / 2 - 1;
+        for (let y = Math.floor((r.y * TILE - 4) / 24) * 24 + 4; y < (r.y + r.h) * TILE; y += 24) {
+          if (asphaltH.some(([y0, y1]) => y + 12 > y0 && y < y1)) continue;
+          ctx.fillRect(lx, y, 2, 12);
+        }
+      }
+    }
+    // faixa de pedestres na frente da entrada: barras brancas atravessando o asfalto da rua principal
+    const main = streets.find((s) => s.cars);
+    if (main) {
+      const y0 = (main.rect.y + 4) * TILE;
+      const y1 = (main.rect.y + 9) * TILE;
+      ctx.fillStyle = 'rgba(245,245,240,0.85)';
+      for (let y = y0 + 3; y + 4 <= y1 - 2; y += 8) ctx.fillRect(ENTRANCE_X * TILE + 2, y, ENTRANCE_W * TILE - 4, 4);
+    }
+    this.paintIntersections(ctx);
+    this.buildStrips(streets);
     this.shells = [];
     this.shellWindows = [];
-    for (let col = CORE_COLS; col < cols; col++) {
-      for (const side of ['north', 'south'] as const) {
-        const sh = slotShell(slotAt(col, side), col === cols - 1);
-        this.shells.push(sh);
-        paintShell(this.art, ctx, sh.floors, sh.walls);
-        for (const w of sh.windows) this.shellWindows.push(toWallVis(w, `shell:${sh.slot}`));
+    const blocks = this.sim.building.blocks;
+    const northStreet = blocks.some((b) => b.id.by === -1);
+    for (const blk of blocks) {
+      const sides = streetSides(blk.id, northStreet);
+      for (let c = blk.columns.lo; c <= blk.columns.hi; c++) {
+        if (isCoreColumn(blk.id, c)) continue;
+        for (const side of ['north', 'south'] as const) {
+          const sh = slotShell(slotAt(blk.id, c, side), { west: c === blk.columns.lo, east: c === blk.columns.hi, street: sides.includes(side) });
+          this.shells.push(sh);
+          paintShell(this.art, ctx, sh.floors, sh.walls);
+          for (const w of sh.windows) this.shellWindows.push(toWallVis(w, `shell:${sh.slot}`));
+        }
       }
     }
     this.desaturate(ctx);
-    // fundo além da área desenhada: a própria grama (amostra espelhada 2x2, sem emendas), já no
-    // tom da borda da vinheta
-    const s = 4 * TILE;
-    try {
-      const tile = document.createElement('canvas');
-      tile.width = 2 * s;
-      tile.height = 2 * s;
-      const tctx = tile.getContext('2d')!;
-      tctx.imageSmoothingEnabled = false;
-      for (const [mx, my] of [
-        [0, 0],
-        [1, 0],
-        [0, 1],
-        [1, 1],
-      ] as const) {
-        tctx.setTransform(mx ? -1 : 1, 0, 0, my ? -1 : 1, mx ? 2 * s : 0, my ? 2 * s : 0);
-        tctx.drawImage(c, 0, 0, s, s, 0, 0, s, s);
+    this.finishBase(ctx);
+    // fundo além da área desenhada: a mesma grama procedural (ruído ancorado no mundo, semente da base),
+    // pintada por célula sob demanda com a dessaturação e a vinheta completa — contínua com a borda
+    this.grassCanvas = null;
+    this.grassPattern = null;
+    this.clearColor = this.grassAverage();
+    this.base = c;
+  }
+
+  /**
+   * Cruzamentos de cidade: faixas de pedestres nos quatro lados, cada uma alinhada à calçada que ela continua (as da
+   * rua leste–oeste nas calçadas da rua norte–sul e vice-versa: quem anda pela calçada cruza em cima da faixa), linha
+   * de parada 1 tile antes da faixa e o texto STOP no chão depois dela, em cada aproximação da rua norte–sul (a via
+   * secundária); as placas ficam por conta dos props do exterior.
+   */
+  private paintIntersections(ctx: CanvasRenderingContext2D): void {
+    const white = 'rgba(245,245,240,0.85)';
+    for (const i of this.exterior.intersections) {
+      const x0 = i.x * TILE;
+      const y0 = i.y * TILE;
+      ctx.fillStyle = white;
+      // atravessando a rua leste–oeste: barras empilhadas no asfalto dela, uma faixa de 2 tiles de cada lado
+      for (const tx of [i.x - 2, i.x + 5]) for (let y = y0 + 3; y + 4 <= y0 + i.h * TILE - 2; y += 8) ctx.fillRect(tx * TILE + 2, y, 2 * TILE - 4, 4);
+      // atravessando a rua norte–sul: barras lado a lado no asfalto dela, nas calçadas da rua leste–oeste (linhas
+      // 2–3 e 9–10 do retângulo dela = i.y−2 e i.y+5)
+      for (const ty of [i.y - 2, i.y + 5]) for (let x = x0 + 3; x + 4 <= x0 + i.w * TILE - 2; x += 8) ctx.fillRect(x, ty * TILE + 2, 4, 2 * TILE - 4);
+      // linha de parada 1 tile antes da faixa e STOP depois: quem vem do norte (mão oeste) e quem vem do sul (mão leste)
+      const lane = (i.w * TILE) / 2;
+      const textW = pixelTextWidth('STOP', 2);
+      ctx.fillStyle = white;
+      ctx.fillRect(x0 + 1, (i.y - 2) * TILE - 6, lane - 2, 3);
+      ctx.fillRect(x0 + lane + 1, (i.y + 7) * TILE + 3, lane - 2, 3);
+      pixelText(ctx, 'STOP', x0 + Math.floor((lane - textW) / 2), (i.y - 2) * TILE - 22, white, 2);
+      pixelText(ctx, 'STOP', x0 + lane + Math.floor((lane - textW) / 2), (i.y + 7) * TILE + 11, white, 2);
+    }
+  }
+
+  /**
+   * Um período de cada rua (6 tiles = 96 px, múltiplo do passo do tracejado) como padrão repetível: grama nas
+   * bordas, calçadas, asfalto e tracejado, dessaturado e com o tom da vinheta, igual à grama além da base.
+   */
+  private buildStrips(streets: ExteriorLayout['streets']): void {
+    this.strips = [];
+    const P = 6;
+    for (const s of streets) {
+      const h = s.axis === 'h';
+      const c = document.createElement('canvas');
+      c.width = (h ? P : STREET_W) * TILE;
+      c.height = (h ? STREET_W : P) * TILE;
+      const ctx = c.getContext('2d');
+      if (!ctx) continue;
+      ctx.imageSmoothingEnabled = false;
+      const px = (n: number) => n * TILE;
+      const floors: FloorPatch[] = h
+        ? [
+            { kind: 'sidewalk', x: 0, y: px(2), w: px(P), h: px(2), seed: 12 },
+            { kind: 'sidewalk', x: 0, y: px(9), w: px(P), h: px(2), seed: 14 },
+            { kind: 'street', x: 0, y: px(4), w: px(P), h: px(5), seed: 13 },
+          ]
+        : [
+            { kind: 'sidewalk', x: px(1), y: 0, w: px(2), h: px(P), seed: 12 },
+            { kind: 'sidewalk', x: px(8), y: 0, w: px(2), h: px(P), seed: 14 },
+            { kind: 'street', x: px(3), y: 0, w: px(5), h: px(P), seed: 13 },
+          ];
+      paintShell(this.art, ctx, floors, []);
+      ctx.fillStyle = 'rgba(255,236,170,0.75)';
+      if (h) for (let x = 4; x < c.width; x += 24) ctx.fillRect(x, px(6) + TILE / 2 - 1, 12, 2);
+      else for (let y = 4; y < c.height; y += 24) ctx.fillRect(px(5) + TILE / 2 - 1, y, 2, 12);
+      // dessaturação e vinheta só sobre o pavimento: as linhas de grama ficam transparentes e a célula de grama
+      // (já acabada) aparece por baixo — sem banda escura junto às calçadas
+      ctx.save();
+      ctx.beginPath();
+      for (const f of floors) ctx.rect(f.x, f.y, f.w, f.h);
+      ctx.clip();
+      try {
+        ctx.globalCompositeOperation = 'saturation';
+        ctx.fillStyle = 'rgba(128,128,128,0.16)';
+        ctx.fillRect(0, 0, c.width, c.height);
+      } catch {
+        // sem o modo de mistura: segue sem dessaturar
       }
-      tctx.setTransform(1, 0, 0, 1, 0, 0);
-      // média da amostra: suaviza as manchas grandes (que viram faixas ao repetir), mantém o capim
-      const d = tctx.getImageData(0, 0, 2 * s, 2 * s).data;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = VIGNETTE_EDGE;
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.restore();
+      const pattern = this.ctx.createPattern(c, 'repeat');
+      if (pattern) this.strips.push({ axis: s.axis, rect: s.rect, pattern });
+    }
+  }
+
+  /** Ruas além da camada base: cada rua h segue para os dois lados e cada rua v para cima e para baixo. */
+  /** Um período da grama (GRASS_PERIOD×GRASS_PERIOD tiles), pintado como a base pinta a sua (semente 11). */
+  private grassTile(): HTMLCanvasElement | null {
+    if (this.grassCanvas) return this.grassCanvas;
+    const size = GRASS_PERIOD * TILE;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = false;
+    try {
+      this.art.drawFloor(ctx, 'grass', 0, 0, size, size, { seed: 11 });
+    } catch {
+      ctx.fillStyle = '#9fc77f';
+      ctx.fillRect(0, 0, size, size);
+    }
+    this.grassCanvas = c;
+    return c;
+  }
+
+  /** Padrão da grama além da base: o período, já dessaturado e com a vinheta completa (como a borda da base). */
+  private grassBeyondPattern(): CanvasPattern | null {
+    if (this.grassPattern) return this.grassPattern;
+    const tile = this.grassTile();
+    if (!tile) return null;
+    const c = document.createElement('canvas');
+    c.width = tile.width;
+    c.height = tile.height;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(tile, 0, 0);
+    try {
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.fillStyle = 'rgba(128,128,128,0.16)';
+      ctx.fillRect(0, 0, c.width, c.height);
+    } catch {
+      // sem o modo de mistura: segue sem dessaturar
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = VIGNETTE_EDGE;
+    ctx.fillRect(0, 0, c.width, c.height);
+    this.grassPattern = this.ctx.createPattern(c, 'repeat');
+    return this.grassPattern;
+  }
+
+  /** Cor média da grama: fundo da tela antes de a cena cobrir tudo. */
+  private grassAverage(): string {
+    const c = this.grassTile();
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return '#6f9a5a';
+    try {
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
       let r = 0;
       let g = 0;
-      let bl = 0;
+      let b = 0;
       for (let i = 0; i < d.length; i += 4) {
         r += d[i];
         g += d[i + 1];
-        bl += d[i + 2];
+        b += d[i + 2];
       }
       const n = d.length / 4;
-      const avg = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(bl / n)})`;
-      tctx.globalAlpha = 0.6;
-      tctx.fillStyle = avg;
-      tctx.fillRect(0, 0, 2 * s, 2 * s);
-      tctx.globalAlpha = 1;
-      tctx.fillStyle = VIGNETTE_EDGE;
-      tctx.fillRect(0, 0, 2 * s, 2 * s);
-      this.grass = this.ctx.createPattern(tile, 'repeat');
-      // cor de fundo (antes do padrão carregar): a média já com o tom da vinheta
-      const k = VIGNETTE_ALPHA;
-      this.clearColor = `rgb(${Math.round((r / n) * (1 - k) + 18 * k)},${Math.round((g / n) * (1 - k) + 40 * k)},${Math.round((bl / n) * (1 - k) + 26 * k)})`;
+      return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
     } catch {
-      this.grass = null;
-      this.clearColor = '#6f9a5a';
+      return '#6f9a5a';
     }
-    this.finishBase(ctx, cols);
-    this.base = c;
+  }
+
+  /** Grama além da base: uma pintura só com o padrão (ancorado no mundo pela transformação da câmera), recortada
+   * para fora da base. Custo constante, seja qual for o zoom. */
+  private drawGrassBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
+    if (!this.base) return;
+    const bx0 = this.baseX;
+    const by0 = this.baseY;
+    const bx1 = bx0 + this.base.width;
+    const by1 = by0 + this.base.height;
+    // a base vai por cima sem a borda externa (SEAM_OVERLAP): com a câmera no limite de pan a borda da janela
+    // coincide com a da base, e esses 2 px precisam do campo por baixo e das ruas além
+    if (vx0 >= bx0 + SEAM_OVERLAP && vy0 >= by0 + SEAM_OVERLAP && vx1 <= bx1 - SEAM_OVERLAP && vy1 <= by1 - SEAM_OVERLAP) return;
+    const pattern = this.grassBeyondPattern();
+    if (!pattern) return;
+    const ctx = this.ctx;
+    ctx.save();
+    // o padrão cobre a janela inteira, inclusive sob a borda da base: a base vai por cima com a borda externa
+    // recortada (SEAM_OVERLAP), então a coluna reamostrada dela em zoom fracionário nunca fica exposta
+    ctx.fillStyle = pattern;
+    ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
+    ctx.restore();
+  }
+
+  /** Postes fora da base na janela visível (em tiles, com folga de 6 para o sprite não nascer na borda). */
+  private updateLampsBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
+    const b = this.exterior.bounds;
+    const x0 = Math.floor(vx0 / TILE) - 6;
+    const y0 = Math.floor(vy0 / TILE) - 6;
+    const x1 = Math.ceil(vx1 / TILE) + 6;
+    const y1 = Math.ceil(vy1 / TILE) + 6;
+    const key = `${x0},${y0},${x1},${y1}`;
+    if (key === this.lampsKey) return;
+    this.lampsKey = key;
+    const inside = (p: ExteriorProp) => inRect(b, Math.floor(p.x / TILE), Math.floor(p.y / TILE));
+    this.lampsBeyond = x0 >= b.x && y0 >= b.y && x1 <= b.x + b.w && y1 <= b.y + b.h ? [] : lampsAlong(this.exterior.streets, this.exterior.northStreetY, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }).filter((p) => !inside(p));
+  }
+
+  private drawStripsBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
+    if (!this.base) return;
+    const bx0 = this.baseX;
+    const by0 = this.baseY;
+    const bx1 = bx0 + this.base.width;
+    const by1 = by0 + this.base.height;
+    const ctx = this.ctx;
+    for (const s of this.strips) {
+      const r = s.rect;
+      ctx.save();
+      ctx.fillStyle = s.pattern;
+      if (s.axis === 'h') {
+        // origem do padrão na linha da rua (x em múltiplos de 96 a partir de 0, como o tracejado da base)
+        ctx.translate(0, r.y * TILE);
+        if (vx0 < bx0 + SEAM_OVERLAP) ctx.fillRect(vx0 - 1, 0, bx0 - vx0 + 1 + SEAM_OVERLAP, r.h * TILE);
+        if (vx1 > bx1 - SEAM_OVERLAP) ctx.fillRect(bx1 - SEAM_OVERLAP, 0, vx1 - bx1 + 1 + SEAM_OVERLAP, r.h * TILE);
+      } else {
+        ctx.translate(r.x * TILE, 0);
+        if (vy0 < by0 + SEAM_OVERLAP) ctx.fillRect(0, vy0 - 1, r.w * TILE, by0 - vy0 + 1 + SEAM_OVERLAP);
+        if (vy1 > by1 - SEAM_OVERLAP) ctx.fillRect(0, by1 - SEAM_OVERLAP, r.w * TILE, vy1 - by1 + 1 + SEAM_OVERLAP);
+      }
+      ctx.restore();
+    }
   }
 
   /** Grama ~15% menos saturada: o gramado não compete com o escritório. */
@@ -264,34 +506,40 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Acabamento da camada externa: bordas levemente mais escuras (vinheta) e o capacho da entrada. */
-  private finishBase(ctx: CanvasRenderingContext2D, cols: number): void {
+  /** Acabamento da camada externa: bordas levemente mais escuras (vinheta) em volta do prédio de pé. */
+  private finishBase(ctx: CanvasRenderingContext2D): void {
     const b = this.exterior.bounds;
     const x0 = b.x * TILE;
     const y0 = b.y * TILE;
     const w = b.w * TILE;
     const h = b.h * TILE;
     ctx.save();
-    // vinheta: escurece com a distância ao prédio e chega ao tom da grama "de fora" exatamente na
-    // borda da área desenhada (máscara de 1 px por tile, ampliada com suavização)
-    const bwT = cols * COL_W;
+    // vinheta: escurece com a distância ao retângulo de pé do prédio (em tiles; começa em x 32 sem
+    // sala a oeste) e chega ao tom da grama "de fora" exatamente na borda da área desenhada
+    // (máscara de 1 px por tile, ampliada com suavização)
+    const r = this.sim.building.rect;
     const smooth = (a: number, z: number, v: number) => {
       const t = Math.max(0, Math.min(1, (v - a) / Math.max(1e-6, z - a)));
       return t * t * (3 - 2 * t);
     };
     try {
+      // a máscara tem 1 tile de margem em volta (valores da borda): ampliada com suavização, a borda real não
+      // se mistura com o transparente de fora, senão o último tile ficaria meio vinhetado e apareceria como linha
+      const mw = b.w + 2;
+      const mh = b.h + 2;
       const m = document.createElement('canvas');
-      m.width = b.w;
-      m.height = b.h;
+      m.width = mw;
+      m.height = mh;
       const mctx = m.getContext('2d')!;
-      const img = mctx.createImageData(b.w, b.h);
-      for (let ty = 0; ty < b.h; ty++) {
-        for (let tx = 0; tx < b.w; tx++) {
-          const wx = b.x + tx + 0.5;
-          const wy = b.y + ty + 0.5;
-          const fx = wx < 0 ? smooth(6, -b.x, -wx) : wx > bwT ? smooth(6, b.x + b.w - bwT, wx - bwT) : 0;
-          const fy = wy < 0 ? smooth(5, -b.y, -wy) : wy > BUILDING_H ? smooth(12, b.y + b.h - BUILDING_H, wy - BUILDING_H) : 0;
-          const i = (ty * b.w + tx) * 4;
+      const img = mctx.createImageData(mw, mh);
+      for (let ty = 0; ty < mh; ty++) {
+        for (let tx = 0; tx < mw; tx++) {
+          const wx = b.x + Math.min(b.w - 1, Math.max(0, tx - 1)) + 0.5;
+          const wy = b.y + Math.min(b.h - 1, Math.max(0, ty - 1)) + 0.5;
+          // completa EDGE_BAND tiles antes da borda: a faixa final é uniforme e serve de amostra para a grama de fora
+          const fx = wx < r.x ? smooth(6, r.x - b.x - EDGE_BAND, r.x - wx) : wx > r.x + r.w ? smooth(6, b.x + b.w - (r.x + r.w) - EDGE_BAND, wx - (r.x + r.w)) : 0;
+          const fy = wy < r.y ? smooth(5, r.y - b.y - EDGE_BAND, r.y - wy) : wy > r.y + r.h ? smooth(12, b.y + b.h - (r.y + r.h) - EDGE_BAND, wy - (r.y + r.h)) : 0;
+          const i = (ty * mw + tx) * 4;
           img.data[i] = 18;
           img.data[i + 1] = 40;
           img.data[i + 2] = 26;
@@ -300,29 +548,24 @@ export class Renderer {
       }
       mctx.putImageData(img, 0, 0);
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(m, x0, y0, w, h);
+      ctx.drawImage(m, x0 - TILE, y0 - TILE, w + 2 * TILE, h + 2 * TILE);
       ctx.imageSmoothingEnabled = false;
     } catch {
       // sem vinheta
     }
-    // capacho diante da fachada de vidro da entrada (oeste do corredor)
-    const my = (CORRIDOR_Y + 1.25) * TILE;
-    ctx.fillStyle = '#3f4652';
-    ctx.fillRect(-1.75 * TILE, my, 1.5 * TILE, 2.5 * TILE);
-    ctx.fillStyle = '#596170';
-    ctx.fillRect(-1.75 * TILE + 2, my + 2, 1.5 * TILE - 4, 2.5 * TILE - 4);
-    ctx.fillStyle = '#4b525f';
-    for (let y = my + 4; y < my + 2.5 * TILE - 4; y += 3) ctx.fillRect(-1.75 * TILE + 3, y, 1.5 * TILE - 6, 1);
     ctx.restore();
   }
 
   // =================================================================== frame
 
-  frame(now: number, dt: number, opts: WorldOptions, sel: { agent: string | null; room: string | null; hover: string | null }): void {
+  /** `real` é o relógio de parede (no timelapse `now` é o do mundo): a rua anda por ele. */
+  frame(now: number, dt: number, opts: WorldOptions, sel: { agent: string | null; room: string | null; hover: string | null }, real: { now: number; dt: number } = { now, dt }): void {
     const { ctx, camera } = this;
     this.date.setTime(this.clock());
     this.dt = dt;
-    this.updateCars(now, dt);
+    this.streetNow = real.now;
+    // movimento calmo ou prefers-reduced-motion: a rua esvazia (quem já está nela termina o trajeto e sai)
+    this.street.quiet = opts.liveliness === 'calm' || reducedMotion();
     const W = this.canvas.width;
     const H = this.canvas.height;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -335,27 +578,25 @@ export class Renderer {
     const vy0 = -oy / scale;
     const vx1 = vx0 + W / scale;
     const vy1 = vy0 + H / scale;
-    if (this.grass && this.base) {
-      const bx1 = this.baseX + this.base.width;
-      const by1 = this.baseY + this.base.height;
-      if (vx0 < this.baseX || vy0 < this.baseY || vx1 > bx1 || vy1 > by1) {
-        // padrão ancorado na origem do mundo (múltiplo do tile), alinhado à camada base
-        ctx.fillStyle = this.grass;
-        ctx.save();
-        ctx.translate(this.baseX, this.baseY);
-        ctx.fillRect(vx0 - this.baseX - 1, vy0 - this.baseY - 1, vx1 - vx0 + 2, vy1 - vy0 + 2);
-        ctx.restore();
-      }
-    }
+    if (this.base) this.drawGrassBeyond(vx0, vy0, vx1, vy1);
+    // carros e pedestres de uma borda à outra da união (base ∪ visão): nunca fora do asfalto ou da calçada,
+    // mesmo com a câmera afastada
+    this.street.update(real.now, real.dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60, Math.min(vy0, this.baseY) - 60, Math.max(vy1, this.baseY + (this.base?.height ?? 0)) + 60);
     const visible = (x: number, y: number, w: number, h: number) => x < vx1 && x + w > vx0 && y < vy1 && y + h > vy0;
 
     // ---- camada base (só a parte visível)
     if (this.base) {
-      const sx = Math.max(0, Math.floor(vx0 - this.baseX) - 1);
-      const sy = Math.max(0, Math.floor(vy0 - this.baseY) - 1);
-      const sw = Math.min(this.base.width - sx, Math.ceil(vx1 - vx0) + 3);
-      const sh = Math.min(this.base.height - sy, Math.ceil(vy1 - vy0) + 3);
+      // a borda externa da base fica de fora (SEAM_OVERLAP px): em zoom fracionário ela é reamostrada contra o
+      // transparente e aparecia como linha clara na emenda com o campo de fora, que já está pintado por baixo
+      const sx = Math.max(SEAM_OVERLAP, Math.floor(vx0 - this.baseX) - 1);
+      const sy = Math.max(SEAM_OVERLAP, Math.floor(vy0 - this.baseY) - 1);
+      const sw = Math.min(this.base.width - SEAM_OVERLAP - sx, Math.ceil(vx1 - vx0) + 3);
+      const sh = Math.min(this.base.height - SEAM_OVERLAP - sy, Math.ceil(vy1 - vy0) + 3);
       if (sw > 0 && sh > 0) ctx.drawImage(this.base, sx, sy, sw, sh, this.baseX + sx, this.baseY + sy, sw, sh);
+      // as ruas além da base vão por cima dela, entrando 2 px: em zoom fracionário a borda reamostrada da base
+      // não aparece como linha na emenda
+      this.drawStripsBeyond(vx0, vy0, vx1, vy1);
+      this.updateLampsBeyond(vx0, vy0, vx1, vy1);
     }
     // hora do ciclo dia/noite (preferência ou hora forçada; o relógio de parede acompanha a forçada)
     if (this.hourOverride !== null) {
@@ -374,14 +615,16 @@ export class Renderer {
       this.drawWindow(w, hour, t, 1);
     }
 
-    // ---- áreas: piso, paredes e itens de parede
+    // ---- áreas: piso, paredes e itens de parede (as passarelas ficam para a camada elevada)
     for (const vis of this.areas.values()) {
+      if (vis.layout.kind === 'bridge') continue;
       const p = vis.px;
       if (!visible(p.x, p.y - WALL_MARGIN, p.w, p.h + WALL_MARGIN)) continue;
       const anim = vis.room ? buildAnim(vis.room.phase, vis.room.progress(now)) : NO_ANIM;
       this.drawFloor(vis, anim);
     }
     for (const vis of this.areas.values()) {
+      if (vis.layout.kind === 'bridge') continue;
       const p = vis.px;
       if (!visible(p.x, p.y - WALL_MARGIN, p.w, p.h + WALL_MARGIN)) continue;
       const anim = vis.room ? buildAnim(vis.room.phase, vis.room.progress(now)) : NO_ANIM;
@@ -394,21 +637,10 @@ export class Renderer {
     // ---- entidades ordenadas por profundidade
     const ents = this.ents;
     ents.length = 0;
-    let used = 0;
-    const push = (k: K, y: number, ref: Ent['ref'], area: AreaVis | null, scale: number) => {
-      let e = this.pool[used];
-      if (!e) this.pool[used] = e = { k, y, ref, area, scale };
-      else {
-        e.k = k;
-        e.y = y;
-        e.ref = ref;
-        e.area = area;
-        e.scale = scale;
-      }
-      used++;
-      ents.push(e);
-    };
+    this.used = 0;
+    const push = (k: K, y: number, ref: Ent['ref'], area: AreaVis | null, scale: number) => this.pushEnt(ents, k, y, ref, area, scale);
     for (const vis of this.areas.values()) {
+      if (vis.layout.kind === 'bridge') continue;
       const p = vis.px;
       if (!visible(p.x - TILE, p.y - 3 * TILE, p.w + 2 * TILE, p.h + 4 * TILE)) continue;
       const anim = vis.room ? buildAnim(vis.room.phase, vis.room.progress(now)) : NO_ANIM;
@@ -421,6 +653,8 @@ export class Renderer {
         if (fs?.front) push(K.FurnFront, f.ay + 0.5, f, vis, s);
       }
     }
+    this.elevated.length = 0;
+    this.ground.length = 0;
     for (const ch of this.sim.chars.values()) {
       const head = this.headOf(ch);
       head.visible = false;
@@ -431,8 +665,23 @@ export class Renderer {
         head.feetY = ch.y;
         continue;
       }
+      // quem está sobre uma passarela é desenhado na camada elevada, por cima de tudo o que está no chão
+      if (this.onBridge(ch.tx, ch.ty)) this.elevated.push(ch);
+      else this.ground.push(ch);
+    }
+    // quem está no chão com o sprite cruzando alguém elevado (fila na porta da passarela) sobe junto
+    const lifted = new Set(promoteOverlapping(this.elevated, this.ground, charRect));
+    for (const ch of this.ground) {
+      if (lifted.has(ch)) this.elevated.push(ch);
+      else push(K.Char, ch.depth(), ch, null, 1);
+    }
+    // pedestres da rua: personagens sem agente, só desenhados
+    for (const p of this.street.peds) {
+      const ch = p.ch;
+      if (ch.alpha <= 0.01 || !visible(ch.x - 24, ch.y - 48, 48, 56)) continue;
       push(K.Char, ch.depth(), ch, null, 1);
     }
+    for (const prop of this.lampsBeyond) push(K.Prop, prop.y, prop, null, 1);
     for (const prop of this.exterior.props) {
       if (!visible(prop.x - 24, prop.y - 56, 48, 60)) continue;
       let alpha = 1;
@@ -462,29 +711,14 @@ export class Renderer {
         push(K.Prop, prop.y, prop, null, alpha);
       }
     }
-    for (const car of this.cars) if (visible(car.x - 24, car.y - 24, 48, 28)) push(K.Car, car.y, car, null, 1);
+    this.pushField(push, vx0, vy0, vx1, vy1);
+    for (const car of this.cars) if (visible(car.x - 24, car.y - 24, 48, 48)) push(K.Car, car.axis === 'v' ? car.y + CAR_HALF_L : car.y, car, null, 1);
     ents.sort((a, b) => a.y - b.y || a.k - b.k);
 
     this.iconCount = 0;
-    for (const e of ents) {
-      switch (e.k) {
-        case K.FurnBase:
-          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, false, now);
-          break;
-        case K.FurnFront:
-          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, true, now);
-          break;
-        case K.Char:
-          this.drawCharacter(e.ref as Character, now, sel);
-          break;
-        case K.Prop:
-          this.drawProp(e.ref as ExteriorProp, e.scale);
-          break;
-        case K.Car:
-          this.drawCar(e.ref as Car);
-          break;
-      }
-    }
+    this.drawEnts(ents, now, sel);
+    // ---- camada elevada: passarelas (piso e guarda-corpos) e quem está sobre elas
+    this.drawElevated(now, sel, visible);
     this.drawPingPong(now);
     // ---- espera de shell: teias de aranha, confete/pipoca/chuva (por cima das entidades)
     this.drawCobwebs(now);
@@ -532,7 +766,73 @@ export class Renderer {
 
   /** Remove entradas de personagens que já saíram. */
   pruneHeads(): void {
-    for (const id of this.heads.keys()) if (!this.sim.chars.has(id)) this.heads.delete(id);
+    for (const id of this.heads.keys()) if (!this.sim.chars.has(id) && !this.street.has(id)) this.heads.delete(id);
+  }
+
+  /** Entrada do pool de entidades deste frame, acrescentada a `list`. */
+  private pushEnt(list: Ent[], k: K, y: number, ref: Ent['ref'], area: AreaVis | null, scale: number): void {
+    let e = this.pool[this.used];
+    if (!e) this.pool[this.used] = e = { k, y, ref, area, scale };
+    else {
+      e.k = k;
+      e.y = y;
+      e.ref = ref;
+      e.area = area;
+      e.scale = scale;
+    }
+    this.used++;
+    list.push(e);
+  }
+
+  private drawEnts(ents: readonly Ent[], now: number, sel: { agent: string | null; room: string | null; hover: string | null }): void {
+    for (const e of ents) {
+      switch (e.k) {
+        case K.FurnBase:
+          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, false, now);
+          break;
+        case K.FurnFront:
+          this.drawFurniture(e.ref as FurnVis, e.area!, e.scale, true, now);
+          break;
+        case K.Char:
+          this.drawCharacter(e.ref as Character, now, sel);
+          break;
+        case K.Prop:
+          this.drawProp(e.ref as ExteriorProp, e.scale);
+          break;
+        case K.Car:
+          this.drawCar(e.ref as Car);
+          break;
+      }
+    }
+  }
+
+  /**
+   * Camada elevada: o piso das passarelas, os guarda-corpos e os personagens sobre elas, depois de tudo o
+   * que está no chão (rua, carros, cerca). Ordem própria: guarda-corpo norte e laterais atrás de quem passa pelo tile,
+   * o sul na frente.
+   */
+  private drawElevated(now: number, sel: { agent: string | null; room: string | null; hover: string | null }, visible: (x: number, y: number, w: number, h: number) => boolean): void {
+    if (!this.bridgeVis.length) return;
+    const ents = this.elevatedEnts;
+    ents.length = 0;
+    for (const vis of this.bridgeVis) {
+      const p = vis.px;
+      if (!visible(p.x - TILE, p.y - 3 * TILE, p.w + 2 * TILE, p.h + 4 * TILE)) continue;
+      this.drawFloor(vis, NO_ANIM);
+      for (const f of vis.furniture) {
+        if (!visible(f.ax - 3 * TILE, f.ay - 4 * TILE, 6 * TILE, 4 * TILE + 4)) continue;
+        const y = f.variant === 's' ? f.ay + 2 : f.ay - TILE - 2;
+        this.pushEnt(ents, K.FurnBase, y, f, vis, 1);
+      }
+    }
+    for (const ch of this.elevated) this.pushEnt(ents, K.Char, ch.depth(), ch, null, 1);
+    ents.sort((a, b) => a.y - b.y || a.k - b.k);
+    this.drawEnts(ents, now, sel);
+  }
+
+  /** O tile está na camada elevada (trecho de passarela ou tile de porta em que ela encosta)? */
+  private onBridge(tx: number, ty: number): boolean {
+    return this.elevatedRects.some((r) => inRect(r, tx, ty));
   }
 
   roomInSlot(slot: number): RoomState | undefined {
@@ -588,9 +888,8 @@ export class Renderer {
         this.drawWindow(w, hour, now, 1, rise);
         return;
       case 'elevator': {
-        const idx = this.elevatorVis.indexOf(w);
-        const state = this.sim.elevators[idx]?.state ?? 0;
-        const s = wallSprites(this.art, 'elevator', w.variant, state, w.seed);
+        // decoração: chegadas e saídas são pela porta da rua, a porta do elevador fica fechada (estado 0)
+        const s = wallSprites(this.art, 'elevator', w.variant, 0, w.seed);
         if (!s) return;
         const o = wallItemOrigin(w, s.base);
         ctx.drawImage(s.base.canvas, o.x, o.y + rise);
@@ -1083,7 +1382,41 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Carros da rua (para a luz: faróis à noite). */
+  get cars(): readonly Car[] {
+    return this.street.cars;
+  }
+
+  /** Pedestre da rua: personagem com aparência pela semente e sem agente por trás (id rua:…). */
+  private makePedestrian(seed: number): Character {
+    const look = seed % 2 ? 'f' : 'm';
+    const info: AgentInfo = {
+      id: `rua:${seed.toString(36)}`,
+      kind: 'main',
+      roomId: '',
+      name: '',
+      look,
+      role: 'pedestre',
+      sessionId: '',
+      account: '',
+      status: 'idle',
+      recent: [],
+      tasks: [],
+      startedAt: 0,
+      lastEventAt: 0,
+      statusSince: 0,
+      stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 },
+      seed,
+    };
+    return new Character(info, this.art.appearanceFromSeed(seed, { look, sub: false }));
+  }
+
   private drawProp(prop: ExteriorProp, alpha: number): void {
+    if (prop.kind === 'traffic_light') {
+      const s = trafficLightSprite(this.street.light(this.streetNow));
+      this.ctx.drawImage(s.canvas, Math.round(prop.x - s.ax), Math.round(prop.y - s.ay));
+      return;
+    }
     if (prop.kind === 'paving') {
       const c = this.pavingCanvas(prop);
       if (alpha < 1) this.ctx.globalAlpha = alpha;
@@ -1116,21 +1449,49 @@ export class Renderer {
   }
 
   private drawCar(car: Car): void {
+    if (car.axis === 'v') {
+      const s = carSpriteV(car.variant, car.dir > 0);
+      this.ctx.drawImage(s.canvas, Math.round(car.x - s.ax), Math.round(car.y + CAR_HALF_L - s.ay));
+      return;
+    }
     const s = carSprite(car.variant, car.dir < 0);
     this.ctx.drawImage(s.canvas, Math.round(car.x - s.ax), Math.round(car.y - s.ay));
   }
 
-  private updateCars(now: number, dt: number): void {
-    const b = this.exterior.bounds;
-    const x0 = b.x * TILE - 40;
-    const x1 = (b.x + b.w) * TILE + 40;
-    if (now >= this.nextCarAt) {
-      this.nextCarAt = now + 4000 + Math.random() * 9000;
-      const lane = this.exterior.lanes[Math.floor(Math.random() * this.exterior.lanes.length)];
-      if (lane) this.cars.push({ x: lane.dir > 0 ? x0 : x1, y: lane.y, dir: lane.dir, speed: 38 + Math.random() * 30, variant: Math.floor(Math.random() * 6) });
+  /** Árvores do campo além da base (células visíveis fora dos bounds e fora das faixas estendidas das ruas). */
+  private pushField(push: (k: K, y: number, ref: Ent['ref'], area: AreaVis | null, scale: number) => void, vx0: number, vy0: number, vx1: number, vy1: number): void {
+    if (!this.base) return;
+    const bx0 = this.baseX;
+    const by0 = this.baseY;
+    const bx1 = bx0 + this.base.width;
+    const by1 = by0 + this.base.height;
+    const s = FIELD_CELL * TILE;
+    const { cx0, cy0, cx1, cy1 } = fieldCells(vx0 - 2 * TILE, vy0 - 4 * TILE, vx1 + 2 * TILE, vy1 + TILE);
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const x = cx * s;
+        const y = cy * s;
+        // célula que encosta na base (com 1 tile de folga): as árvores dela já vêm da área externa
+        if (cellTouches(cx, cy, bx0, by0, bx1, by1)) continue;
+        let onStreet = false;
+        for (const st of this.strips) {
+          const r = st.rect;
+          if (st.axis === 'h' ? y + s > r.y * TILE && y < (r.y + r.h) * TILE : x + s > r.x * TILE && x < (r.x + r.w) * TILE) {
+            onStreet = true;
+            break;
+          }
+        }
+        if (onStreet) continue;
+        const key = `${cx},${cy}`;
+        let p = this.field.get(key);
+        if (p === undefined) {
+          p = fieldProp(cx, cy);
+          if (this.field.size > 40_000) this.field.clear();
+          this.field.set(key, p);
+        }
+        if (p) push(K.Prop, p.y, p, null, 1);
+      }
     }
-    for (const c of this.cars) c.x += c.dir * c.speed * Math.min(dt, 0.1);
-    if (this.cars.length) this.cars = this.cars.filter((c) => c.x >= x0 - 10 && c.x <= x1 + 10);
   }
 
   private drawPingPong(now: number): void {

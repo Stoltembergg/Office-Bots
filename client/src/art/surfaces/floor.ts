@@ -23,20 +23,26 @@ function rnd01(a: number, b: number, c = 0, seed = 0): number {
   return h3(a, b, c, seed) / 4294967296;
 }
 
-/** Ruído de valor suave (bilinear) em coordenadas de mundo, 0..1. */
-function noise(x: number, y: number, cell: number, seed: number): number {
+/** Ruído de valor suave (bilinear) em coordenadas de mundo, 0..1. Com `period` (em células), a malha se repete:
+ * o ruído é contínuo também na volta (o tile de x = period·cell é o de x = 0). */
+function noise(x: number, y: number, cell: number, seed: number, period = 0): number {
   const gx = Math.floor(x / cell);
   const gy = Math.floor(y / cell);
   const fx = x / cell - gx;
   const fy = y / cell - gy;
   const sx = fx * fx * (3 - 2 * fx);
   const sy = fy * fy * (3 - 2 * fy);
-  const a = rnd01(gx, gy, 0, seed);
-  const b = rnd01(gx + 1, gy, 0, seed);
-  const c = rnd01(gx, gy + 1, 0, seed);
-  const d = rnd01(gx + 1, gy + 1, 0, seed);
+  const w = (g: number) => (period ? ((g % period) + period) % period : g);
+  const a = rnd01(w(gx), w(gy), 0, seed);
+  const b = rnd01(w(gx + 1), w(gy), 0, seed);
+  const c = rnd01(w(gx), w(gy + 1), 0, seed);
+  const d = rnd01(w(gx + 1), w(gy + 1), 0, seed);
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
+
+/** A grama se repete a cada GRASS_PERIOD tiles (24 tiles = 8 células de ruído de 48 px): um padrão de
+ * GRASS_PERIOD×GRASS_PERIOD tiles, ancorado em (0, 0) do mundo, pinta o gramado inteiro sem emenda. */
+export const GRASS_PERIOD = 24;
 
 export interface FloorOpts {
   seed: number;
@@ -132,7 +138,11 @@ function paintTile(b: PixelBuf, kind: FloorKind, tx: number, ty: number, o: Floo
     }
     case 'grass': {
       const g = ramp('#6cab57', 0.045);
-      const n = noise(tx * TILE, ty * TILE, 48, o.seed + 5);
+      // periódica: o tile (tx, ty) é o tile (tx mod P, ty mod P)
+      const px = ((tx % GRASS_PERIOD) + GRASS_PERIOD) % GRASS_PERIOD;
+      const py = ((ty % GRASS_PERIOD) + GRASS_PERIOD) % GRASS_PERIOD;
+      const r = (i: number) => rnd01(px, py, i, o.seed);
+      const n = noise(px * TILE, py * TILE, 48, o.seed + 5, (GRASS_PERIOD * TILE) / 48);
       const base = mix(g.dk, g.lt, n);
       b.rect(0, 0, TILE, TILE, base);
       for (let i = 0; i < 12; i++) {
@@ -166,6 +176,27 @@ function paintTile(b: PixelBuf, kind: FloorKind, tx: number, ty: number, o: Floo
       const col = mix('#4b4f58', '#565a63', n);
       b.rect(0, 0, TILE, TILE, col);
       for (let i = 0; i < 14; i++) b.set(Math.floor(r(i) * TILE), Math.floor(r(i + 30) * TILE), r(i + 60) < 0.5 ? '#5f636c' : '#43464e');
+      break;
+    }
+    case 'bridge': {
+      // chapas de metal da passarela: uma chapa por tile, brilho no topo, riscos, emenda escura embaixo e à direita, rebites
+      const n = noise(tx * TILE, ty * TILE, 32, o.seed + 13);
+      const base = mix('#8e969f', '#a3aab2', n);
+      b.rect(0, 0, TILE, TILE, base);
+      b.hline(0, TILE - 2, 0, '#b8bfc6');
+      for (let i = 0; i < 6; i++) {
+        const x = Math.floor(r(i) * 10);
+        b.hline(x, x + 2 + Math.floor(r(i + 20) * 3), 2 + Math.floor(r(i + 40) * 12), shade(base, -0.06));
+      }
+      b.hline(0, TILE - 1, TILE - 1, '#5f6670');
+      b.vline(TILE - 1, 0, TILE - 1, '#5f6670');
+      for (const [rx, ry] of [
+        [2, 2],
+        [12, 12],
+      ] as const) {
+        b.set(rx, ry, '#c4cad0');
+        b.set(rx + 1, ry + 1, '#6b727c');
+      }
       break;
     }
     default:

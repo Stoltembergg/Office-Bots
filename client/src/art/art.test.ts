@@ -456,6 +456,15 @@ describe('móveis', () => {
     }
   });
 
+  it('guarda-corpo da passarela: uma variante por borda do tile, todas opacas e diferentes entre si', () => {
+    const sprites = (['n', 's', 'w', 'e'] as const).map((v) => renderFurniture('railing', v).base);
+    for (const s of sprites) expect(s.buf.countOpaque()).toBeGreaterThan(20);
+    expect(new Set(sprites.map((s) => `${s.ax},${s.ay},${s.buf.w},${s.buf.h},${digest(s.buf.data)}`)).size).toBe(4);
+    // norte e sul: o guarda-corpo corre na horizontal (mais largo que alto); oeste e leste, na vertical
+    expect(sprites[0].buf.w).toBeGreaterThan(sprites[0].buf.h);
+    expect(sprites[2].buf.h).toBeGreaterThan(sprites[2].buf.w);
+  });
+
   it('preenche as regiões dinâmicas pedidas pelo contrato', () => {
     expect(renderFurniture('desk', 'wood').base.rects?.screen).toBeDefined();
     expect(renderFurniture('whiteboard').base.rects?.board).toBeDefined();
@@ -486,6 +495,33 @@ describe('móveis', () => {
     expect(normalizeFurniture('elevator', undefined, -3).state).toBe(0);
     expect(normalizeFurniture('desk', 'wood', 0, 13).vseed).toBe(1);
     expect(normalizeFurniture('stool', undefined, 0, 13).vseed).toBe(0);
+  });
+
+  it("door_frame: 'single' é o padrão (2 tiles); 'wide3' e 'closed' cobrem 3 tiles e só 'closed' fecha o vão", () => {
+    // A padrão é a moldura de hoje; 'wide' não existe (scene.ts apaga essa string das variantes) e cai na padrão.
+    expect(FURNITURE.door_frame.variants).toEqual(['single', 'wide3', 'closed']);
+    expect(normalizeFurniture('door_frame', undefined).variant).toBe('single');
+    expect(normalizeFurniture('door_frame', 'wide').variant).toBe('single');
+    const single = renderFurniture('door_frame', 'single').base;
+    const wide = renderFurniture('door_frame', 'wide3').base;
+    const closed = renderFurniture('door_frame', 'closed').base;
+    // Sem variante o mundo (room.ts, core.ts) recebe o mesmo desenho de 'single'.
+    expect(digest(renderFurniture('door_frame').base.buf.data)).toBe(digest(single.buf.data));
+    // Largura: o vão inteiro mais os batentes, sem passar da folha (3 px de margem de cada lado).
+    expect(single.buf.w).toBeGreaterThanOrEqual(2 * TILE);
+    expect(single.buf.w).toBeLessThanOrEqual(2 * TILE + 6);
+    for (const [name, s] of [['wide3', wide], ['closed', closed]] as const) {
+      expect(s.buf.w, name).toBeGreaterThanOrEqual(3 * TILE);
+      expect(s.buf.w, name).toBeLessThanOrEqual(3 * TILE + 6);
+      // Âncora no centro do trecho; sprite dentro da face (2 tiles acima do rodapé).
+      expect(Math.abs(s.ax - s.buf.w / 2), name).toBeLessThanOrEqual(1);
+      expect(s.ay - s.buf.h, name).toBeLessThanOrEqual(2 * TILE);
+    }
+    // Centro do vão: aberto nas molduras (a parede ou a passagem aparece por baixo), coberto na porta fechada.
+    const mid = (s: BufSprite) => s.buf.alpha(Math.floor(s.ax), s.ay - TILE);
+    expect(mid(single)).toBe(0);
+    expect(mid(wide)).toBe(0);
+    expect(mid(closed)).toBe(255);
   });
 });
 
@@ -573,13 +609,29 @@ describe('legibilidade das mesas, sofá e olhos', () => {
 });
 
 describe('pisos e paredes', () => {
-  const floors: FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street'];
+  const floors: FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street', 'bridge'];
   it('blocos de piso são opacos e determinísticos', () => {
     for (const k of floors) {
       const a = floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' });
       expect(a.countOpaque(), k).toBe(CHUNK_PX * CHUNK_PX);
       expect(floorChunk(k, 2, -1, { seed: 3, tint: '#c9d1dc', tint2: '#bdc6d3' }).data).toEqual(a.data);
     }
+  });
+
+  it('piso da passarela: chapas de metal com emenda e rebites, mais de duas cores por bloco', () => {
+    const a = floorChunk('bridge', 0, 0, { seed: 3 });
+    expect(a.countOpaque()).toBe(CHUNK_PX * CHUNK_PX);
+    const cores = new Set<number>();
+    for (let i = 0; i < a.data.length; i += 4) cores.add((a.data[i] << 16) | (a.data[i + 1] << 8) | a.data[i + 2]);
+    expect(cores.size).toBeGreaterThan(2);
+    // a emenda escura fecha a borda direita e a de baixo de cada tile (mais escura que a chapa, e igual nas duas bordas)
+    const px = (x: number, y: number) => (a.data[(y * CHUNK_PX + x) * 4] << 16) | (a.data[(y * CHUNK_PX + x) * 4 + 1] << 8) | a.data[(y * CHUNK_PX + x) * 4 + 2];
+    const lumAt = (x: number, y: number) => {
+      const c = px(x, y);
+      return 0.299 * (c >> 16) + 0.587 * ((c >> 8) & 255) + 0.114 * (c & 255);
+    };
+    expect(lumAt(TILE - 1, 3)).toBeLessThan(lumAt(7, 7) - 20);
+    expect(px(TILE - 1, 3)).toBe(px(3, TILE - 1));
   });
 
   it('a madeira continua entre blocos vizinhos (sem emenda na borda)', () => {

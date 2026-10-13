@@ -9,8 +9,6 @@ export const COL_W = 16;
 export const ROOM_H = 12;
 /** Altura do corredor que corta o prédio de leste a oeste. */
 export const CORRIDOR_H = 5;
-/** Colunas do núcleo (recepção/banheiros e copa/lounge). */
-export const CORE_COLS = 2;
 
 export const NORTH_Y = 0;
 export const CORRIDOR_Y = ROOM_H;

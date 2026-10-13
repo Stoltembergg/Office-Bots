@@ -7,8 +7,7 @@ import { DEFAULT_WORLD_OPTIONS, seasonalThemeFor, type Selection, type SocialEve
 import { loadWorldAssets, type WorldAssets } from './assets';
 import { Camera, overviewFrame } from './camera';
 import { createDebug, type WorldDebug } from './debug';
-import { BUILDING_H, COL_W } from './constants';
-import { inRect } from './layout/geometry';
+import { inRect, rectPx } from './layout/geometry';
 import { attachInput, type Hit } from './input';
 import { rebaseSnapshot } from './playback';
 import { Overlay } from './render/overlay';
@@ -46,7 +45,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   let hiddenAt = 0;
   let userMoved = false;
   let framed = false;
-  let lastCols = -1;
+  /** Chave (`x,y,w,h` em tiles) do retângulo de pé no último reenquadramento; vazia = ainda não enquadrou. */
+  let lastRectKey = '';
   const abort = new AbortController();
 
   // ------------------------------------------------------------------ tamanho/DPR
@@ -65,13 +65,15 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     updateBounds();
   };
 
-  const buildingRect = () => ({ x: 0, y: 0, w: sim.building.cols * COL_W * TILE, h: BUILDING_H * TILE });
+  /** Retângulo de pé do prédio (núcleo e colunas com sala), em px de mundo; não começa em x 0. */
+  const buildingRect = () => rectPx(sim.building.rect);
 
   const updateBounds = () => {
     const b = buildingRect();
-    camera.bounds = { x: b.x - 7 * TILE, y: b.y - 6 * TILE, w: b.w + 14 * TILE, h: b.h + 18 * TILE };
+    // o pan vai até a borda da área externa desenhada, não só até uma margem ao redor do prédio
+    camera.bounds = rectPx(renderer.exterior.bounds);
     const fit = camera.fitZoom(b, 16);
-    camera.minZoom = Math.min(1, Math.max(0.25, fit));
+    camera.minZoom = Math.min(1, Math.max(0.15, fit));
     camera.clamp();
   };
 
@@ -153,7 +155,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
     let bestDepth = -Infinity;
     const slack = Math.max(1, 3 / camera.zoom);
     for (const [id, h] of renderer.heads) {
-      if (!h.visible) continue;
+      // pedestres da rua (ids rua:…) são desenhados mas não são agentes: sem clique
+      if (!h.visible || !sim.chars.has(id)) continue;
       if (w.x < h.bx - slack || w.x > h.bx + h.bw + slack || w.y < h.by - slack || w.y > h.by + h.bh + slack) continue;
       if (h.depth > bestDepth) {
         bestDepth = h.depth;
@@ -244,8 +247,11 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
         events.length = 0;
       }
       renderer.sync(seasonalThemeFor(options.theme, new Date()));
-      if (sim.building.cols !== lastCols) {
-        lastCols = sim.building.cols;
+      // reenquadra só quando o retângulo de pé muda (não a cada relayout): sala nova numa coluna de pé não mexe na câmera
+      const rect = sim.building.rect;
+      const rectKey = `${rect.x},${rect.y},${rect.w},${rect.h}`;
+      if (rectKey !== lastRectKey) {
+        lastRectKey = rectKey;
         updateBounds();
         if (!framed && sim.initialized) {
           overview(false);
@@ -255,7 +261,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       const followCh = camera.follow ? sim.chars.get(camera.follow) : undefined;
       if (camera.follow && !followCh) camera.follow = null;
       camera.update(real, followCh ? camera.centerFor(followCh.x, followCh.y - 12, camera.zoom) : null, realDt);
-      renderer.frame(now, dt, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
+      renderer.frame(now, dt, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover }, { now: real, dt: realDt });
       overlay.draw(now, options, { agent: selection?.type === 'agent' ? selection.id : null, room: selection?.type === 'room' ? selection.id : null, hover });
       renderer.pruneHeads();
       // No timelapse o mundo fica mudo: o teclado e o elevador em alta velocidade só fariam barulho.
@@ -309,7 +315,7 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
   // ------------------------------------------------------------------ depuração
 
   const markMoved = () => (userMoved = true);
-  let debug = createDebug(sim, renderer, camera, markMoved);
+  let debug = createDebug(sim, renderer, camera, markMoved, store);
 
   // ------------------------------------------------------------------ timelapse
 
@@ -328,9 +334,9 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore): Worl
       renderer.clock = () => p.clock();
     }
     overlay = new Overlay(renderer.ctx, sim, renderer, camera);
-    debug = createDebug(sim, renderer, camera, markMoved);
+    debug = createDebug(sim, renderer, camera, markMoved, store);
     cues = new SoundCues(sim, camera);
-    lastCols = -1;
+    lastRectKey = '';
     setHover(null);
   };
 

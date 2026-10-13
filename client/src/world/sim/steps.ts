@@ -13,10 +13,10 @@ export type Step =
   | { t: 'act'; pose: Pose; ms: number; held?: HeldItem; dir?: Dir; icon?: IconName; machine?: string; seated?: boolean }
   /** Espera uma condição (ou o tempo máximo), numa pose. */
   | { t: 'until'; cond: () => boolean; minMs: number; maxMs: number; pose?: Pose; held?: HeldItem; dir?: Dir }
-  /** Surge dentro do elevador e sai para o tile da frente. */
-  | { t: 'elevOut'; elev: number; phase: number }
-  /** Entra no elevador e some. */
-  | { t: 'elevIn'; elev: number; phase: number }
+  /** Chega pela rua: surge na calçada (lado `side`: −1 oeste, +1 leste), aparece andando e sobe até a porta. */
+  | { t: 'walkIn'; side: -1 | 1; phase: number }
+  /** Vai embora pela rua: da porta desce até a calçada, vira para `side` e some andando. */
+  | { t: 'walkOut'; side: -1 | 1; phase: number }
   /** Usa a cabine do banheiro: entra, some, porta fecha; depois sai. */
   | { t: 'stall'; spot: string; ms: number; phase: number }
   /** Liga/desliga a luz da sala no interruptor (precisa estar no spot do interruptor). */

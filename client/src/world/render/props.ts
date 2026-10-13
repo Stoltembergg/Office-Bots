@@ -3,6 +3,8 @@
 // cinza-azulado escuro, 3–4 tons por material, luz vinda de cima/esquerda.
 import { mulberry32 } from '../../../../shared/hash';
 import type { ExteriorProp } from '../layout/types';
+import { pixelText } from '../../art/pixelfont';
+import type { Light } from './street-life';
 
 export interface PropSprite {
   canvas: HTMLCanvasElement;
@@ -215,6 +217,69 @@ function lampSprite(): PropSprite {
   return { canvas: c, ax: 5, ay: 34 };
 }
 
+/** Semáforo dos carros à beira da calçada: poste com a caixa de três luzes; `state` acende uma delas. */
+export function trafficLightSprite(state: Light): PropSprite {
+  const key = `traffic_light:${state}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const [c, ctx] = makeCanvas(10, 38);
+  shadowEllipse(ctx, 5, 36, 4, 1, 0.25);
+  // poste
+  ctx.fillStyle = '#2e3648';
+  ctx.fillRect(4, 14, 2, 22);
+  ctx.fillStyle = '#4a5468';
+  ctx.fillRect(4, 14, 1, 22);
+  // caixa
+  ctx.fillStyle = '#2e3648';
+  ctx.fillRect(1, 0, 8, 15);
+  ctx.fillStyle = '#3a4152';
+  ctx.fillRect(2, 1, 6, 13);
+  const lights: [string, string, number, Light][] = [
+    ['#6b2b2b', '#ff6b5a', 2, 'red'],
+    ['#6b5a1e', '#ffd24a', 6, 'yellow'],
+    ['#1f5a32', '#5bf08a', 10, 'green'],
+  ];
+  for (const [off, on, y, which] of lights) {
+    const lit = which === state;
+    ctx.fillStyle = lit ? on : off;
+    ctx.fillRect(3, y, 4, 3);
+    if (lit) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(4, y, 1, 1);
+    }
+  }
+  // base
+  ctx.fillStyle = '#3a4152';
+  ctx.fillRect(3, 34, 4, 2);
+  const s = { canvas: c, ax: 5, ay: 36 };
+  cache.set(key, s);
+  return s;
+}
+
+/** Placa de PARE: octógono vermelho com borda branca e o texto STOP, em um poste. */
+function stopSignSprite(): PropSprite {
+  const [c, ctx] = makeCanvas(22, 38);
+  shadowEllipse(ctx, 11, 36, 4, 1, 0.25);
+  ctx.fillStyle = '#2e3648';
+  ctx.fillRect(10, 19, 2, 17);
+  ctx.fillStyle = '#4a5468';
+  ctx.fillRect(10, 19, 1, 17);
+  // octógono de n px com os cantos cortados em `cut`
+  const octagon = (x0: number, y0: number, n: number, cut: number, color: string) => {
+    ctx.fillStyle = color;
+    for (let y = 0; y < n; y++) {
+      const inset = y < cut ? cut - y : y >= n - cut ? y - (n - cut - 1) : 0;
+      ctx.fillRect(x0 + inset, y0 + y, n - 2 * inset, 1);
+    }
+  };
+  octagon(0, 0, 20, 6, '#f4f4f0');
+  octagon(1, 1, 18, 5, '#c8322e');
+  pixelText(ctx, 'STOP', 3, 7, '#ffffff');
+  ctx.fillStyle = '#3a4152';
+  ctx.fillRect(9, 34, 4, 2);
+  return { canvas: c, ax: 11, ay: 36 };
+}
+
 function benchSprite(): PropSprite {
   const [c, ctx] = makeCanvas(26, 14);
   shadowEllipse(ctx, 13, 12, 11, 2, 0.22);
@@ -322,7 +387,7 @@ function totemSprite(): PropSprite {
 }
 
 export function propSprite(prop: ExteriorProp): PropSprite {
-  const key = prop.kind === 'lamp' || prop.kind === 'bench' || prop.kind === 'totem' ? prop.kind : `${prop.kind}:${prop.seed % 7}`;
+  const key = prop.kind === 'lamp' || prop.kind === 'bench' || prop.kind === 'totem' || prop.kind === 'stop_sign' ? prop.kind : `${prop.kind}:${prop.seed % 7}`;
   let s = cache.get(key);
   if (s) return s;
   switch (prop.kind) {
@@ -355,6 +420,13 @@ export function propSprite(prop: ExteriorProp): PropSprite {
       break;
     case 'totem':
       s = totemSprite();
+      break;
+    case 'stop_sign':
+      s = stopSignSprite();
+      break;
+    case 'traffic_light':
+      // o renderer desenha o estado atual do sinal; aqui só o padrão
+      s = trafficLightSprite('red');
       break;
     default:
       // 'paving' e outros tipos desenhados pelo próprio renderer
@@ -420,6 +492,48 @@ export function carSprite(variant: number, flip: boolean): PropSprite {
     ctx.fillRect(wx + 2, 15, 1, 1);
   }
   const s = { canvas: c, ax: 18, ay: 17 };
+  cache.set(key, s);
+  return s;
+}
+
+/** Carro visto por trás ou pela frente (ruas norte–sul), 20×36: `down` = indo para o sul (frente para a câmera). */
+export function carSpriteV(variant: number, down: boolean): PropSprite {
+  const key = `carv:${variant % CAR_COLORS.length}:${down ? 1 : 0}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const [body, dark, light] = CAR_COLORS[variant % CAR_COLORS.length];
+  const [c, ctx] = makeCanvas(20, 36);
+  shadowEllipse(ctx, 10, 33, 9, 2, 0.3);
+  const o = '#2e3648';
+  // rodas (para fora da carroceria)
+  for (const wy of [7, 24]) {
+    ctx.fillStyle = o;
+    ctx.fillRect(1, wy, 3, 6);
+    ctx.fillRect(16, wy, 3, 6);
+  }
+  // carroceria e teto
+  ctx.fillStyle = o;
+  ctx.fillRect(3, 2, 14, 31);
+  ctx.fillStyle = body;
+  ctx.fillRect(4, 3, 12, 29);
+  ctx.fillStyle = light;
+  ctx.fillRect(4, 3, 12, 1);
+  ctx.fillRect(4, 3, 1, 29);
+  ctx.fillStyle = dark;
+  ctx.fillRect(15, 3, 1, 29);
+  ctx.fillRect(4, 31, 12, 1);
+  // vidros: para-brisa do lado da frente, vidro traseiro do outro
+  ctx.fillStyle = '#3a5f86';
+  ctx.fillRect(5, down ? 21 : 9, 10, 5);
+  ctx.fillRect(5, down ? 10 : 22, 10, 3);
+  ctx.fillStyle = '#9cc7ec';
+  ctx.fillRect(6, down ? 22 : 10, 3, 1);
+  // faróis na frente, lanternas atrás
+  ctx.fillStyle = '#fff3c4';
+  for (const lx of [4, 14]) ctx.fillRect(lx, down ? 31 : 2, 2, 2);
+  ctx.fillStyle = '#e04a3a';
+  for (const lx of [4, 14]) ctx.fillRect(lx, down ? 2 : 31, 2, 1);
+  const s = { canvas: c, ax: 10, ay: 33 };
   cache.set(key, s);
   return s;
 }

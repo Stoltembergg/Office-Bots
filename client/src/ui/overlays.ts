@@ -59,6 +59,17 @@ export class Splash implements UiComponent {
   }
 }
 
+export const DEMO_SESSIONS_MIN = 1;
+export const DEMO_SESSIONS_MAX = 40;
+export const DEMO_SESSIONS_DEFAULT = 4;
+
+/** Número de sessões digitado no cartão: inteiro entre 1 e 40; vazio ou inválido vira o padrão (4). */
+export function demoSessionsFrom(raw: string): number {
+  const n = Number(raw.trim());
+  if (raw.trim() === '' || !Number.isFinite(n)) return DEMO_SESSIONS_DEFAULT;
+  return Math.min(DEMO_SESSIONS_MAX, Math.max(DEMO_SESSIONS_MIN, Math.floor(n)));
+}
+
 /** Conectado e sem nenhuma sessão: o cartão "escritório vazio" aparece (e os painéis não repetem o aviso). */
 export function officeIsEmpty(ctx: UiContext): boolean {
   const { store } = ctx;
@@ -72,6 +83,8 @@ export class EmptyState implements UiComponent {
   readonly el: HTMLElement;
   private hint: HTMLElement;
   private demoBtn: HTMLButtonElement;
+  private sessionsInput: HTMLInputElement;
+  private demoRow: HTMLElement;
   private busy = false;
 
   constructor(private ctx: UiContext) {
@@ -92,13 +105,26 @@ export class EmptyState implements UiComponent {
     art.append(img);
     this.hint = h('p', { class: 'ui-empty__text' });
     this.demoBtn = h('button', { class: 'ui-btn ui-btn--primary', type: 'button', text: tr('Ver demonstração'), on: { click: () => void this.startDemo() } });
+    this.sessionsInput = h('input', {
+      class: 'ui-input ui-empty__sessions',
+      attrs: { type: 'number', min: String(DEMO_SESSIONS_MIN), max: String(DEMO_SESSIONS_MAX), step: '1', value: String(DEMO_SESSIONS_DEFAULT), inputmode: 'numeric', 'aria-label': tr('Sessões na demonstração') },
+      on: { keydown: (e: KeyboardEvent) => e.key === 'Enter' && void this.startDemo() },
+    }) as HTMLInputElement;
+    this.demoRow = h(
+      'div',
+      { class: 'ui-empty__demo' },
+      h('label', { class: 'ui-empty__sessions-label', attrs: { for: 'ui-empty-sessions' }, text: tr('Sessões') }),
+      this.sessionsInput,
+      this.demoBtn,
+    );
+    this.sessionsInput.id = 'ui-empty-sessions';
     this.el = h(
       'section',
       { class: 'ui-empty', hidden: true, attrs: { 'aria-labelledby': 'ui-empty-title' } },
       art,
       h('h2', { class: 'ui-empty__title', text: tr('O escritório está vazio'), attrs: { id: 'ui-empty-title' } }),
       this.hint,
-      this.demoBtn,
+      this.demoRow,
     );
   }
 
@@ -110,14 +136,18 @@ export class EmptyState implements UiComponent {
     if (!show || !snap) return;
     setText(this.hint, emptyOfficeHint(snap.accounts));
     this.demoBtn.disabled = this.busy;
-    setHidden(this.demoBtn, store.mock);
+    this.sessionsInput.disabled = this.busy;
+    setHidden(this.demoRow, store.mock);
   }
 
   private async startDemo(): Promise<void> {
+    if (this.busy) return;
     this.busy = true;
+    const sessions = demoSessionsFrom(this.sessionsInput.value);
+    this.sessionsInput.value = String(sessions);
     this.ctx.invalidate();
     try {
-      const ok = await this.ctx.store.setDemo(true);
+      const ok = await this.ctx.store.setDemo(true, sessions);
       if (!ok) this.ctx.announce(tr('Não foi possível ligar a demonstração.'));
     } catch {
       this.ctx.announce(tr('Não foi possível falar com o servidor.'));

@@ -6,6 +6,7 @@ import { SPECIAL, type ShellOutcome } from '../../../shared/activity';
 import { hash32 } from '../../../shared/hash';
 import { TILE } from '../art/api';
 import type { Camera } from './camera';
+import { blockKey } from './layout/geometry';
 import type { Renderer } from './render/renderer';
 import { oldestShell } from './sim/shell';
 import type { Sim } from './sim/sim';
@@ -93,10 +94,20 @@ export interface WorldDebug {
 
 const NAMES = ['Lia', 'Otávio', 'Bruna', 'Caio', 'Iara', 'Rui', 'Nina', 'Davi', 'Tais', 'Ivo'];
 
-export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCameraMoved: () => void): WorldDebug {
+/** O que o depurador precisa do store: refletir salas e agentes injetados na barra e no cartão de vazio. */
+export interface DebugStore {
+  setInjected(extra: { rooms: RoomInfo[]; agents: AgentInfo[] }): void;
+}
+
+export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCameraMoved: () => void, store?: DebugStore): WorldDebug {
   let seq = 0;
   const now = () => Date.now();
-  const reapply = () => sim.reapply(now());
+  // primeiro o store (publica o snapshot mesclado, que o mundo aplica), depois o reapply do Sim para quem não tem store
+  // ou ainda não recebeu snapshot: na ordem inversa, um agente editado/removido voltaria ao estado antigo por uma passada
+  const reapply = () => {
+    store?.setInjected(sim.injected);
+    sim.reapply(now());
+  };
 
   const freeSlot = (): number => {
     const used = new Set<number>([...sim.rooms.values()].map((r) => r.slot));
@@ -176,7 +187,8 @@ export function createDebug(sim: Sim, renderer: Renderer, camera: Camera, onCame
 
   return {
     state: () => ({
-      cols: sim.building.cols,
+      blocks: sim.building.blocks.map((b) => ({ bx: b.id.bx, by: b.id.by, lo: b.columns.lo, hi: b.columns.hi })),
+      bridges: sim.building.bridges.map((b) => ({ child: blockKey(b.child), rects: b.rects })),
       camera: { x: Math.round(camera.x), y: Math.round(camera.y), zoom: camera.zoom },
       rooms: [...sim.rooms.values()].map((r) => ({
         id: r.id,

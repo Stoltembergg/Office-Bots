@@ -1,5 +1,6 @@
 // Itens montados na parede norte. Coordenadas de desenho: x = 0 na borda esquerda do trecho,
 // y = 0 na linha do rodapé; a face da parede vai de y = -32 (topo, com a tampa até -28) a 0.
+import { TILE } from '../api';
 import { ramp, shade } from '../core/color';
 import { rectAt, wallSheet, type BufFurniture } from '../core/sprite';
 import { ACCENTS, M, book, foliage, glass, mug, pick, pot, rngOf, smallSucculent } from './kit';
@@ -305,22 +306,57 @@ export function elevator(state: number): BufFurniture {
   return { base: s };
 }
 
-export function doorFrame(): BufFurniture {
-  const s = wallSheet(2, 3);
+/**
+ * Batente de porta. 'single' (padrão): moldura de 2 tiles sobre a passagem; 'wide3': a mesma moldura sobre
+ * 3 tiles; 'closed': porta fechada de 3 tiles (decorativa — a face por baixo não tem vão).
+ */
+export function doorFrame(variant: string | undefined): BufFurniture {
+  const tiles = variant === 'wide3' || variant === 'closed' ? 3 : 2;
+  const w = tiles * TILE;
+  const s = wallSheet(tiles, 3);
   const b = s.buf;
   const tr = ramp('#f2f1ed', 0.05);
+  if (variant === 'closed') closedLeaves(b, w);
   // Batentes laterais e verga.
   b.rect(-2, -27, 3, 27, tr.base);
   b.vline(-2, -27, -1, tr.hi);
   b.vline(0, -26, -1, tr.dk);
-  b.rect(31, -27, 3, 27, tr.base);
-  b.vline(31, -26, -1, tr.dk);
-  b.vline(33, -27, -1, tr.dd);
-  b.rect(-2, -30, 36, 3, tr.lt);
-  b.hline(-2, 33, -30, tr.hi);
-  b.hline(1, 30, -27, 'rgba(30,34,52,0.35)');
+  b.rect(w - 1, -27, 3, 27, tr.base);
+  b.vline(w - 1, -26, -1, tr.dk);
+  b.vline(w + 1, -27, -1, tr.dd);
+  b.rect(-2, -30, w + 4, 3, tr.lt);
+  b.hline(-2, w + 1, -30, tr.hi);
+  b.hline(1, w - 2, -27, 'rgba(30,34,52,0.35)');
   b.outline();
   return { base: s };
+}
+
+/** Duas folhas pintadas cobrindo o vão de `w` px (x 1..w−2, y −27..−1), com almofadas em relevo e puxadores. */
+function closedLeaves(b: import('../core/pixbuf').PixelBuf, w: number): void {
+  const leaf = ramp('#466f8c', 0.06);
+  const half = w / 2;
+  const lw = half - 1;
+  b.rect(1, -27, w - 2, 27, leaf.base);
+  for (const x0 of [1, half]) {
+    b.vline(x0, -27, -1, leaf.lt);
+    b.vline(x0 + lw - 1, -27, -1, leaf.dk);
+    // Almofadas (alta e baixa): sombra em cima/esquerda, luz embaixo/direita.
+    for (const py of [-25, -10]) {
+      b.rect(x0 + 3, py, lw - 6, 8, leaf.dk);
+      b.rect(x0 + 4, py + 1, lw - 8, 6, leaf.base);
+      b.hline(x0 + 3, x0 + lw - 4, py + 7, leaf.hi);
+      b.vline(x0 + lw - 4, py, py + 7, leaf.hi);
+    }
+  }
+  // Divisão entre as folhas e um puxador vertical (metal claro) em cada uma.
+  b.vline(half - 1, -27, -1, leaf.dd);
+  b.vline(half, -27, -1, leaf.lt);
+  for (const px of [half - 4, half + 2]) {
+    b.rect(px, -16, 2, 6, '#c9ced6');
+    b.vline(px, -16, -11, '#f4f6f8');
+  }
+  // Soleira.
+  b.hline(1, w - 2, -1, leaf.dd);
 }
 
 export function sign(): BufFurniture {

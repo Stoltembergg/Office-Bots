@@ -10,6 +10,77 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Anexo do outro lado da rua.** A nona sala abre um segundo prédio ao sul da rua, ligado ao lounge por uma
+  passarela em Z com guarda-corpo, por cima da rua. No lugar do núcleo, o anexo tem um lounge igual ao do principal
+  (sofá, poltronas, ping-pong, fliperamas, estante) mais um balcão com café e água, e banheiros; as salas se abrem
+  dos dois lados dele, na mesma ordem do principal
+  (da nona à décima sexta sala; nos números do depurador, vagas 8 a 15). Quem está no anexo toma café, bebe água e vai ao banheiro no próprio anexo, e a roda do espelho se
+  forma no banheiro mais perto de quem puxa. O anexo e a passarela só são desmontados quando a última sala do anexo
+  sai e ninguém mais está lá nem na passarela. No console do navegador, `habblaud.world.debug.state()` mostra
+  `bridges` (as passarelas de pé, com os trechos).
+- **Anexos laterais e ao norte.** Da décima sétima sala em diante, os anexos seguem a ordem do quarteirão: a leste do
+  principal, ao sul desse anexo, a oeste, ao sul do anexo oeste, ao norte da rua norte e assim por diante, em anéis.
+  Os anexos laterais se ligam ao pai pela ponta do corredor, com uma passarela reta na altura do corredor (a ponta
+  perde o vidro e fica aberta), por cima de uma rua norte–sul sem carros; os do sul se ligam ao lounge do anexo de
+  cima por uma passarela em Z, como o primeiro anexo ao lounge; o anexo ao norte se liga à copa, que ganhou uma porta
+  na parede norte, por uma passarela em Z por cima da rua norte. O lounge de cada anexo fica do lado da passarela e
+  tem a porta larga para ela; os banheiros ficam do outro lado do corredor.
+- **Vida na rua.** Em frente à entrada há uma faixa de pedestres com semáforo: os carros param no amarelo e no
+  vermelho (fazendo fila) e seguem no verde; pedestres passeiam pelas duas calçadas, atravessam na faixa quando o
+  sinal fecha para os carros e, quando se cruzam, às vezes param para conversar. Eles são figurantes: não são
+  clicáveis nem entram no escritório. Cada rua norte–sul cruza a principal num cruzamento de cidade: faixas de
+  pedestres nos quatro lados alinhadas às calçadas, linha de parada e STOP no chão e na placa para quem vem pela rua
+  norte–sul. Os carros dela param de verdade no STOP, só entram no cruzamento com a principal livre e cedem a quem
+  está na faixa; os da principal cedem a quem já está atravessando. Pedestres esperam na borda do asfalto.
+- **Terreno sem fim.** Além da área externa calculada, o gramado, as ruas (com calçadas, asfalto e faixa tracejada)
+  e as árvores continuam até onde a câmera for, em qualquer zoom; os carros nunca andam fora do asfalto.
+- **Demonstração com número de sessões.** O cartão "O escritório está vazio" pergunta quantas sessões a
+  demonstração deve manter abertas (1 a 40, padrão 4) ao lado de "Ver demonstração", e Configurações › Dados tem o
+  mesmo campo ("Sessões da demonstração"): vale ao ligar e, já ligada, ao mudar o número. `POST /api/demo` aceita
+  `sessions` (inteiro de 0 a 40): ligando, o simulador nasce com esse alvo; já ligado, só ajusta.
+
+### Alterado
+
+- **O prédio cresce para os dois lados.** A recepção, a copa, os banheiros e o lounge ficam no centro do prédio, e
+  as salas de projeto se abrem dos dois lados deles: a primeira a leste, a segunda a oeste, e assim por diante,
+  alternando leste e oeste — primeiro ao norte do corredor, depois ao sul —, até quatro salas de cada lado. Da
+  décima sétima em diante, abrem-se anexos novos (ver Adicionado). Sem nenhuma sala, sobra só o núcleo. A
+  compactação não muda: quando uma vaga fica livre, a sala da maior vaga se muda para ela, e o prédio encolhe pelos
+  dois lados.
+- **Entrada pela rua.** A recepção passou para o lado sul do corredor e a porta do prédio fica na fachada dela, dando
+  no caminho de pedra até a calçada, com totem e banco; os banheiros do principal ficaram ao norte. A entrada pela
+  ponta oeste do corredor (calçada, banco, totem e capacho) saiu. O corredor tem vidro nas pontas fechadas e os pátios
+  das vagas vazias fecham do lado que for ponta, a leste ou a oeste.
+- **Ruas e jardim.** Cada coluna de anexos traz uma rua norte–sul e o anexo ao norte traz a rua norte, com calçadas,
+  postes e faixa tracejada, e carros nas ruas norte–sul (a rua norte não tem). As árvores vêm de um campo
+  procedural único, dentro e fora da área externa, e não mudam de lugar quando um bloco nasce;
+  e a cerca viva de cada bloco fica só do lado que dá para uma rua. A câmera pode andar até a borda da área externa e
+  afastar mais (zoom mínimo 0,15).
+- **Chegada e saída pela porta.** Ninguém mais usa o elevador: quem chega surge na calçada, sobe o caminho de pedra
+  e entra pela porta da recepção; quem vai embora sai pela porta, desce até a calçada, vira para um lado e some
+  andando. O elevador ficou de decoração, com a porta fechada, e o "ding" (Configurações › Sons › Porta de entrada) toca na
+  porta quando alguém entra ou sai.
+- **A compactação só muda uma sala quando o prédio encolhe.** Como as vagas alternam leste e oeste, a sala da maior
+  vaga só se muda para a vaga livre se isso esvaziar uma coluna ou um anexo; antes, uma sala podia atravessar o
+  núcleo para levantar de novo a coluna do outro lado.
+- **A rua anda em tempo real.** No timelapse, carros e pedestres seguem o relógio de parede (eles são figurantes, não
+  história), em vez de disparar a 600×. Em Movimento › Calmo, ou com `prefers-reduced-motion`, a rua esvazia: quem
+  já está nela termina o trajeto e ninguém mais entra.
+- **Rodas e passeios no próprio prédio.** O fliperama e a torcida do pingue-pongue ficam no lounge mais perto de
+  quem puxa (nunca uma máquina em cada prédio); sofá, puff, janela e estante preferem o bloco em que o personagem
+  está. Os faróis dos carros das ruas norte–sul apontam para onde o carro anda.
+- **A demonstração abre os seis projetos originais primeiro** (os de "Meu dia" e das capturas) e só depois os extras.
+- O gramado além da área externa é um padrão único ancorado no mundo (a grama se repete a cada 24 tiles, sem emenda
+  com a base): custo constante em qualquer zoom, em vez de refazer centenas de células por quadro com o prédio
+  grande e a câmera afastada.
+- **Porta nos fundos do lounge.** O lounge ganha uma porta na parede sul quando sai dali a passarela do anexo (e a
+  copa, na parede norte, para o anexo ao norte); sem passarela, a parede é inteira.
+- A câmera, a luz das janelas, os pátios e os balões da visão geral acompanham o prédio quando ele cresce para o
+  oeste. No console do navegador, `habblaud.world.debug.state()` mostra `blocks` (as colunas de pé de cada bloco)
+  no lugar de `cols`.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo

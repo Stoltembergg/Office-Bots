@@ -749,3 +749,46 @@ export function bench(): BufFurniture {
   contact(b, 0, 13, 32, 3, 0.22);
   return { base: s };
 }
+
+// ------------------------------------------------------------------ passarela
+
+/**
+ * Guarda-corpo de metal numa borda do tile (variant = borda: 'n' | 's' | 'w' | 'e'). Dois corrimãos e dois
+ * montantes; nas bordas norte/sul corre na horizontal, nas laterais acompanha a profundidade do tile.
+ * Coordenadas do footprint (16×16, base em y = 16); altura 11 px.
+ */
+export function railing(variant: string | undefined): BufFurniture {
+  const s = floorSheet(1, 1, 14, 2, 2);
+  const b = s.buf;
+  const st = M.steel;
+  const dk = M.steelDark;
+  const post = (x: number, y0: number, y1: number) => {
+    b.vline(x, y0, y1, dk.base);
+    b.vline(x + 1, y0, y1, st.hi);
+  };
+  if (variant === 'w' || variant === 'e') {
+    // Desenhado no centro do tile, com a âncora dentro do sprite; quem posiciona leva para a borda com
+    // dx = -8 (oeste) ou +8 (leste). O brilho do montante fica do lado de dentro da passarela, voltado para o piso.
+    const dkX = variant === 'w' ? 7 : 8;
+    const hiX = variant === 'w' ? 8 : 7;
+    const postV = (y0: number, y1: number) => {
+      b.vline(dkX, y0, y1, dk.base);
+      b.vline(hiX, y0, y1, st.hi);
+    };
+    postV(-11, 0);
+    postV(5, 16);
+    b.vline(dkX, -11, 5, st.hi);
+    b.vline(hiX, -6, 10, st.base);
+    contact(b, 6, 0, 4, 16, 0.18);
+  } else {
+    const base = variant === 's' ? 16 : 0;
+    post(1, base - 11, base);
+    post(13, base - 11, base);
+    b.hline(1, 14, base - 11, st.hi);
+    b.hline(1, 14, base - 10, st.base);
+    b.hline(1, 14, base - 6, st.base);
+    b.hline(1, 14, base - 5, dk.base);
+    contact(b, 0, base, 16, 2, 0.25);
+  }
+  return { base: s };
+}

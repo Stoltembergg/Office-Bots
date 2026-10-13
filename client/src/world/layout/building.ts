@@ -1,28 +1,26 @@
-// Montagem do prédio: núcleo + corredor + salas de projeto -> grade de caminhabilidade e spots.
+// Montagem do prédio: por bloco, núcleo (no principal) ou saguão + WC (nos anexos) e corredor sobre as colunas de pé;
+// as passarelas entre blocos; mais as salas de projeto -> grade de caminhabilidade com origem e spots.
 import { FURNITURE } from '../../art/api';
-import { BUILDING_H, COL_W } from '../constants';
 import { BLOCKED, FREE, SEAT, WalkGrid } from '../path/grid';
+import { layoutBridge } from './bridge';
 import { furnitureBlocks, furnitureIsSeat } from './builder';
-import { layoutCafe, layoutLounge, layoutReception, layoutRestroom } from './core';
+import { coreAreas, type CoreDoors } from './core';
 import { layoutCorridor } from './corridor';
-import { buildingRect } from './geometry';
+import { bridgesFor, coreDoorsFor, hubDoor, isPrincipal, worldBounds, type BlockLayout, type BridgeLayout } from './geometry';
+import { hubAreas } from './hub';
 import type { AreaLayout, SpotDef, TileRect } from './types';
 
 export interface BuildingLayout {
-  cols: number;
+  blocks: BlockLayout[];
+  /** Passarelas entre os blocos (uma por anexo, até o pai). */
+  bridges: BridgeLayout[];
+  /** `worldBounds(blocks, bridges)`, em tiles: união dos retângulos de pé e dos trechos das passarelas. */
   rect: TileRect;
-  core: AreaLayout[];
-  corridor: AreaLayout;
+  /** Áreas fixas: núcleo do principal, saguão e WC de cada anexo, corredores e passarelas. */
+  areas: AreaLayout[];
   rooms: AreaLayout[];
   grid: WalkGrid;
   spots: SpotDef[];
-}
-
-let coreCache: AreaLayout[] | null = null;
-
-/** Áreas fixas do núcleo (calculadas uma vez). */
-export function coreAreas(): AreaLayout[] {
-  return (coreCache ??= [layoutReception(), layoutRestroom(), layoutCafe(), layoutLounge()]);
 }
 
 /** Marca na grade as células caminháveis de uma área, os bloqueios e os assentos. */
@@ -40,18 +38,28 @@ export function paintArea(grid: WalkGrid, area: AreaLayout): void {
   }
 }
 
-export function buildWalkGrid(cols: number, areas: readonly AreaLayout[], version = 0): WalkGrid {
-  const grid = new WalkGrid(cols * COL_W, BUILDING_H, version);
+/** Grade com a origem e o tamanho de `bounds` (tiles), pintada com as áreas dadas. */
+export function buildWalkGrid(bounds: TileRect, areas: readonly AreaLayout[], version = 0): WalkGrid {
+  const grid = WalkGrid.forRect(bounds, version);
   for (const a of areas) paintArea(grid, a);
   return grid;
 }
 
-export function assembleBuilding(cols: number, rooms: readonly AreaLayout[], version = 0): BuildingLayout {
-  const core = coreAreas();
-  const corridor = layoutCorridor(cols);
-  const all = [...core, corridor, ...rooms];
-  const grid = buildWalkGrid(cols, all, version);
+export function assembleBuilding(blocks: readonly BlockLayout[], rooms: readonly AreaLayout[], version = 0): BuildingLayout {
+  const bridges = bridgesFor(blocks);
+  const core: AreaLayout[] = [];
+  const corridors: AreaLayout[] = [];
+  for (const block of blocks) {
+    if (isPrincipal(block.id)) core.push(...coreAreas(block.id, coreDoorsFor(bridges)));
+    else core.push(...hubAreas(block.id, hubDoor(block.id, bridges)));
+    corridors.push(layoutCorridor(block, bridges));
+  }
+  const walkways = bridges.map(layoutBridge);
+  const areas = [...core, ...corridors, ...walkways];
+  const rect = worldBounds(blocks, bridges);
+  const all = [...areas, ...rooms];
+  const grid = buildWalkGrid(rect, all, version);
   const spots: SpotDef[] = [];
   for (const a of all) spots.push(...a.spots);
-  return { cols, rect: buildingRect(cols), core, corridor, rooms: [...rooms], grid, spots };
+  return { blocks: [...blocks], bridges, rect, areas, rooms: [...rooms], grid, spots };
 }

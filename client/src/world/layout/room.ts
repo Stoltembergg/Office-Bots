@@ -13,7 +13,7 @@ import { FURNITURE, type Dir, type FurnitureKind, type RoomTheme, type WallStyle
 import { mulberry32 } from '../../../../shared/hash';
 import { DOOR_W, DOOR_X, TILE } from '../constants';
 import { AreaBuilder, type SpotOpts } from './builder';
-import { slotRect, slotSide } from './geometry';
+import { blockColumnRect, slotAddress } from './geometry';
 import type { AreaLayout, SpotDef, SpotKind } from './types';
 
 export interface RoomInput {
@@ -67,8 +67,9 @@ export function roomVariant(seed: number): RoomVariant {
 }
 
 export function layoutProjectRoom(room: RoomInput, theme: RoomTheme): AreaLayout {
-  const rect = slotRect(room.slot);
-  const side = slotSide(room.slot);
+  const addr = slotAddress(room.slot);
+  const rect = blockColumnRect(addr.block, addr.col, addr.side);
+  const side = addr.side;
   const rng = mulberry32(room.seed ^ 0x5eed);
   const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rng() * arr.length) % arr.length];
   const v = roomVariant(room.seed);

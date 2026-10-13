@@ -43,9 +43,9 @@ const SCREEN_PT: Record<ScreenMode, string> = {
   off: 'desligado', standby: 'em espera', idle: 'descanso', code: 'código', terminal: 'terminal', browser: 'navegador', search: 'busca', chat: 'chat', docs: 'documento', tasks: 'tarefas', alert: 'alerta',
   progress: 'progresso', show: 'programa', game: 'videogame',
 };
-const FLOORS: readonly FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street'];
+const FLOORS: readonly FloorKind[] = ['carpet', 'wood', 'tile_check', 'tile_white', 'concrete', 'marble', 'grass', 'sidewalk', 'street', 'bridge'];
 const FLOOR_PT: Record<FloorKind, string> = {
-  carpet: 'carpete', wood: 'madeira', tile_check: 'xadrez', tile_white: 'azulejo', concrete: 'cimento polido', marble: 'mármore', grass: 'grama', sidewalk: 'calçada', street: 'asfalto',
+  carpet: 'carpete', wood: 'madeira', tile_check: 'xadrez', tile_white: 'azulejo', concrete: 'cimento polido', marble: 'mármore', grass: 'grama', sidewalk: 'calçada', street: 'asfalto', bridge: 'passarela',
 };
 const ICONS: readonly IconName[] = [
   'alert', 'question', 'zzz', 'check', 'heart', 'coffee', 'music', 'idea', 'sweat', 'star', 'lightning', 'chat', 'box', 'wave',
@@ -670,7 +670,9 @@ function furniture(): void {
       ctx.fillStyle = (i + Math.floor(i / cols)) % 2 ? '#e3e6ea' : '#e9ecef';
       ctx.fillRect(ox, oy, cw, ch);
       if (def.mount === 'wall') {
-        art.drawWallFace(ctx, ox, ay - 2 * TILE, cw, wallStyle, c.kind === 'door_frame' || c.kind === 'elevator' ? { doorways: [{ x: ax - TILE, w: 2 * TILE }] } : {});
+        // Vão aberto atrás das portas: 2 tiles no elevador e no door_frame 'single', 3 nas outras variantes.
+        const gap = c.kind === 'elevator' || (c.kind === 'door_frame' && c.variant === 'single') ? 2 : c.kind === 'door_frame' ? 3 : 0;
+        art.drawWallFace(ctx, ox, ay - 2 * TILE, cw, wallStyle, gap ? { doorways: [{ x: ax - (gap * TILE) / 2, w: gap * TILE }] } : {});
       } else {
         dotted(ctx, ax - (def.footprint.w * TILE) / 2, ay - def.footprint.h * TILE, def.footprint.w * TILE, def.footprint.h * TILE);
       }

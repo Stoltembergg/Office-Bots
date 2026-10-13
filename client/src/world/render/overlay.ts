@@ -8,6 +8,8 @@ import { TILE } from '../../art/api';
 import type { WorldOptions } from '../api';
 import type { Camera } from '../camera';
 import { COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
+import { blockKey, blockRect, inRect, PRINCIPAL, type BlockLayout, type BridgeLayout } from '../layout/geometry';
+import type { AreaKind } from '../layout/types';
 import type { Character } from '../sim/character';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
@@ -52,6 +54,8 @@ const CORE_NAMES: Record<string, string> = {
   'core:copa': tr('Copa'),
   'core:lounge': tr('Lounge'),
 };
+/** Nomes das áreas sem id fixo (as dos anexos), por kind. */
+const KIND_NAMES: Partial<Record<AreaKind, string>> = { hub: 'Lounge', restroom: 'Banheiros' };
 
 /** 'shell' = espera de shell: balão escuro de terminal com texto verde. 'say' = fala das rodas (papo, torcida, apostas). */
 type Tone = 'info' | 'alert' | 'deliver' | 'shell' | 'say';
@@ -180,6 +184,28 @@ export function rationBubbles(items: readonly { room: string; prio: number; chan
     keep.add(i);
   }
   return keep;
+}
+
+/**
+ * Chave do racionamento da visão geral: (bloco, coluna local, faixa norte/corredor/sul) do tile em que o
+ * personagem está. A coluna é contada pelo ENVELOPE do bloco (não pelo retângulo de pé), então vale também
+ * em colunas vazias; fora de todo bloco, usa o primeiro (sem bloco algum, o envelope do principal).
+ * Nunca lança: a chave só agrupa balões. Pura (testável).
+ */
+export function bubbleAreaKey(tx: number, ty: number, blocks: readonly BlockLayout[], bridges: readonly BridgeLayout[] = []): string {
+  const inBlock = blocks.find((b) => inRect(b.rect, tx, ty));
+  if (!inBlock) {
+    // fora de todo bloco: sobre uma passarela, a passarela é a área (um balão por passarela)
+    const bridge = bridges.find((br) => br.rects.some((r) => inRect(r, tx, ty)));
+    if (bridge) return `${bridge.id}:bridge`;
+  }
+  const block: BlockLayout | undefined = inBlock ?? blocks[0];
+  const id = block ? block.id : PRINCIPAL;
+  const env = block ? block.envelope : blockRect(PRINCIPAL);
+  const col = Math.floor((tx - env.x) / COL_W);
+  const ly = ty - env.y;
+  const band = ly < CORRIDOR_Y ? 'n' : ly < SOUTH_Y ? 'c' : 's';
+  return `${blockKey(id)}:${col}:${band}`;
 }
 
 export class Overlay {
@@ -389,13 +415,14 @@ export class Overlay {
     if (zoom >= OVERVIEW_ZOOM) return;
     const rin = this.rationIn;
     const idx = this.rationIdx;
+    const blocks = this.sim.building.blocks;
     rin.length = 0;
     idx.length = 0;
     for (const it of items) {
       if (it.type !== 'bubble' || (it.tone !== 'info' && it.tone !== 'shell' && it.tone !== 'say') || it.prio >= 75) continue;
-      // por área FÍSICA (onde o personagem está agora), que é o que polui a tela
+      // por área FÍSICA (bloco, coluna local e faixa em que o personagem está agora), que é o que polui a tela
       const ch = it.ch;
-      rin.push({ room: `${Math.floor(ch.tx / COL_W)}:${ch.ty < CORRIDOR_Y ? 'n' : ch.ty < SOUTH_Y ? 'c' : 's'}`, prio: it.prio, changedAt: it.changedAt });
+      rin.push({ room: bubbleAreaKey(ch.tx, ch.ty, blocks, this.sim.building.bridges), prio: it.prio, changedAt: it.changedAt });
       idx.push(it);
     }
     if (!idx.length) return;
@@ -437,8 +464,9 @@ export class Overlay {
         // endereço antigo de uma mudança: o nome já está na sala nova
         if (!room.present || room.ghost || (anim && anim.walls < 0.6)) continue;
         this.drawRoomPill(room.info.name, cx, cy, colW - 8, room.accounts, this.countIn(room.id), room.theme.accent, room.lightOn);
-      } else if (CORE_NAMES[vis.id]) {
-        this.drawCorePill(CORE_NAMES[vis.id], cx, cy, colW - 8);
+      } else {
+        const name = CORE_NAMES[vis.id] ?? KIND_NAMES[vis.layout.kind];
+        if (name) this.drawCorePill(name, cx, cy, colW - 8);
       }
     }
   }

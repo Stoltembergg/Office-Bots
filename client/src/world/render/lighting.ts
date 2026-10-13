@@ -7,12 +7,15 @@
 // montagem de salas); por frame, um drawImage em 'multiply' e alguns sprites de brilho em cache.
 import { TILE, type ArtModule, type ScreenMode } from '../../art/api';
 import { mulberry32 } from '../../../../shared/hash';
-import { BUILDING_H, COL_W, CORRIDOR_H, CORRIDOR_Y } from '../constants';
+import { CORRIDOR_H } from '../constants';
 import type { ExteriorLayout, SlotShell } from '../layout/exterior';
+import type { ExteriorProp } from '../layout/types';
+import { blockAt, standingKey } from '../layout/geometry';
 import type { RoomState } from '../sim/room-state';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
 import { ambientAt, ambientDistance, approachAmbient, effectiveHour, isNeutral, mixRgb, rgbCss, sunbeamAt, WHITE, type Ambient, type DaylightMode, type Rgb } from './daylight';
+import { lightMode } from './light-mode';
 import { glowSprite } from './props';
 import { furnitureSprites, wallItemOrigin, wallSprites, type AreaVis, type FurnVis, type WallVis } from './scene';
 
@@ -34,9 +37,11 @@ const FIREFLIES = 26;
 export interface LightScene {
   readonly areas: ReadonlyMap<string, AreaVis>;
   readonly exterior: ExteriorLayout;
+  /** Postes além da base, na janela visível (a fileira continua até onde a câmera for). */
+  readonly lampsBeyond: readonly ExteriorProp[];
   readonly shells: readonly SlotShell[];
   readonly shellWindows: readonly WallVis[];
-  readonly cars: readonly { x: number; y: number; dir: 1 | -1 }[];
+  readonly cars: readonly { axis: 'h' | 'v'; x: number; y: number; dir: 1 | -1 }[];
   roomInSlot(slot: number): RoomState | undefined;
   deskScreen(f: FurnVis, area: AreaVis): ScreenMode;
 }
@@ -147,6 +152,7 @@ export class Lighting {
   private override: number | null = null;
   private map: HTMLCanvasElement | null = null;
   private mapCtx: CanvasRenderingContext2D | null = null;
+  private layer: HTMLCanvasElement | null = null;
   private mapKey = '';
   private mapX = 0;
   private mapY = 0;
@@ -208,29 +214,69 @@ export class Lighting {
     if (!map) return;
     const mx0 = this.mapX;
     const my0 = this.mapY;
-    const mx1 = mx0 + map.width * MAP_SCALE;
-    const my1 = my0 + map.height * MAP_SCALE;
-    ctx.save();
-    ctx.globalCompositeOperation = 'multiply';
     // parte visível do mapa (em pixels inteiros do mapa)
     const sx = Math.max(0, Math.floor((view.x0 - mx0) / MAP_SCALE) - 1);
     const sy = Math.max(0, Math.floor((view.y0 - my0) / MAP_SCALE) - 1);
     const ex = Math.min(map.width, Math.ceil((view.x1 - mx0) / MAP_SCALE) + 1);
     const ey = Math.min(map.height, Math.ceil((view.y1 - my0) / MAP_SCALE) + 1);
+    // o mapa e o tom de fora vão numa camada de tela (source-over: fora por baixo de tudo, mapa por cima) e
+    // essa camada é multiplicada uma vez só. Em duas formas separadas em 'multiply', a borda antisserrilhada de
+    // cada uma cobria só parte do pixel na emenda em zoom fracionário e sobrava uma coluna clara
+    const layer = this.screenLayer(ctx.canvas.width, ctx.canvas.height);
+    if (!layer) return;
+    const l = layer.getContext('2d')!;
+    l.setTransform(1, 0, 0, 1, 0, 0);
+    l.globalCompositeOperation = 'source-over';
+    l.fillStyle = rgbCss(amb.outside);
+    l.fillRect(0, 0, layer.width, layer.height);
+    l.setTransform(ctx.getTransform());
+    l.imageSmoothingEnabled = false;
     // sem suavização: pixels nítidos como o resto da arte (e bem mais barato de ampliar)
-    if (ex > sx && ey > sy) ctx.drawImage(map, sx, sy, ex - sx, ey - sy, mx0 + sx * MAP_SCALE, my0 + sy * MAP_SCALE, (ex - sx) * MAP_SCALE, (ey - sy) * MAP_SCALE);
-    // além do mapa: o mesmo tom do exterior
-    ctx.fillStyle = rgbCss(amb.outside);
-    const w = view.x1 - view.x0 + 4;
-    if (view.y0 < my0) ctx.fillRect(view.x0 - 2, view.y0 - 2, w, my0 - view.y0 + 2);
-    if (view.y1 > my1) ctx.fillRect(view.x0 - 2, my1, w, view.y1 - my1 + 2);
-    const top = Math.max(view.y0 - 2, my0);
-    const bottom = Math.min(view.y1 + 2, my1);
-    if (bottom > top) {
-      if (view.x0 < mx0) ctx.fillRect(view.x0 - 2, top, mx0 - view.x0 + 2, bottom - top);
-      if (view.x1 > mx1) ctx.fillRect(mx1, top, view.x1 - mx1 + 2, bottom - top);
+    if (ex > sx && ey > sy) l.drawImage(map, sx, sy, ex - sx, ey - sy, mx0 + sx * MAP_SCALE, my0 + sy * MAP_SCALE, (ex - sx) * MAP_SCALE, (ey - sy) * MAP_SCALE);
+    // halos dos postes além da base: na mesma camada, com o mesmo sprite e tamanho dos postes da base, para a
+    // rua de fora ficar com o mesmo tom da de dentro
+    const n = amb.night;
+    if (n >= 0.12) {
+      const k = Math.min(1, (n - 0.12) / 0.5);
+      const street = haloSprite(STREET_WARM, 64);
+      l.globalCompositeOperation = 'lighten';
+      const lampHalo = (x: number, y: number) => {
+        l.globalAlpha = k;
+        l.drawImage(street, x - 60, y + 6 - 42, 120, 84);
+        l.globalAlpha = 0.7 * k;
+        l.drawImage(street, x - 15, y - 30 - 12, 30, 24);
+      };
+      for (const prop of scene.lampsBeyond) lampHalo(prop.x, prop.y);
+      // postes da base perto da borda do mapa: o halo deles foi cortado na borda do mapa; repintado aqui, inteiro
+      // ('lighten' é o máximo por canal, então sobre o trecho já pintado não muda nada)
+      const mx1 = mx0 + map.width * MAP_SCALE;
+      const my1 = my0 + map.height * MAP_SCALE;
+      for (const prop of scene.exterior.props) {
+        if (prop.kind !== 'lamp') continue;
+        if (prop.x - 60 < mx0 || prop.x + 60 > mx1 || prop.y - 42 < my0 || prop.y + 48 > my1) lampHalo(prop.x, prop.y);
+      }
+      l.globalAlpha = 1;
+      l.globalCompositeOperation = 'source-over';
     }
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(layer, 0, 0);
     ctx.restore();
+  }
+
+  /** Camada do tamanho da tela para montar a luz ambiente (reaproveitada entre quadros). */
+  private screenLayer(w: number, h: number): HTMLCanvasElement | null {
+    if (!this.layer || this.layer.width !== w || this.layer.height !== h) {
+      try {
+        this.layer = document.createElement('canvas');
+        this.layer.width = w;
+        this.layer.height = h;
+      } catch {
+        this.layer = null;
+      }
+    }
+    return this.layer;
   }
 
   /** Áreas comuns acendem com gente dentro (banheiro com sensor de presença, copa, lounge). */
@@ -250,10 +296,9 @@ export class Lighting {
     }
   }
 
-  /** Copa, lounge e banheiros: luz por presença. Recepção e corredor ficam sempre acesos. */
+  /** Copa, lounge, banheiros e o saguão dos anexos: luz por presença. Recepção e corredores ficam sempre acesos. */
   private presenceLit(vis: AreaVis): boolean {
-    const kind = vis.layout.kind;
-    return kind === 'cafe' || kind === 'lounge' || kind === 'restroom';
+    return lightMode(vis.layout.kind) === 'presence';
   }
 
   private someoneIn(r: { x: number; y: number; w: number; h: number }): boolean {
@@ -320,7 +365,8 @@ export class Lighting {
   /** Tudo o que muda o mapa, em passos discretos (evita refazê-lo a cada frame). */
   private lightKey(scene: LightScene, now: number): string {
     const a = this.ambient;
-    let k = `${Math.round(a.night * 200)}|${a.outside.join(',')}|${a.inside.join(',')}|${a.dim.join(',')}|${this.sim.building.cols}`;
+    const blocks = standingKey(this.sim.building.blocks);
+    let k = `${Math.round(a.night * 200)}|${a.outside.join(',')}|${a.inside.join(',')}|${a.dim.join(',')}|${blocks}`;
     for (const vis of scene.areas.values()) {
       const { lit, cover } = this.areaLight(vis, now);
       k += `|${vis.id}:${Math.round(lit * 24)}:${Math.round(cover * 20)}`;
@@ -345,11 +391,17 @@ export class Lighting {
       if (scene.roomInSlot(sh.slot)) continue;
       const r = sh.rect;
       m.fillStyle = corridorLit;
-      if (r.y === 0) m.fillRect(r.x * TILE, (r.y + r.h - 2) * TILE, r.w * TILE, 2 * TILE);
+      if (sh.side === 'north') m.fillRect(r.x * TILE, (r.y + r.h - 2) * TILE, r.w * TILE, 2 * TILE);
       else m.fillRect(r.x * TILE, r.y * TILE, r.w * TILE, TILE);
     }
     const lit = new Map<AreaVis, number>();
     for (const vis of scene.areas.values()) {
+      if (lightMode(vis.layout.kind) === 'bridge') {
+        // passarela: acesa como o corredor, só nos trechos (o retângulo da área cobre o Z inteiro); sem halo de janela
+        m.fillStyle = corridorLit;
+        for (const f of vis.layout.floors) m.fillRect(f.x, f.y, f.w, f.h);
+        continue;
+      }
       const l = this.areaLight(vis, now);
       if (l.cover <= 0.01) continue;
       // quanto de luz a área "irradia" (janelas): salas pela luz, áreas comuns vazias na penumbra
@@ -425,23 +477,31 @@ export class Lighting {
     halo: (img: HTMLCanvasElement, cx: number, cy: number, w: number, h: number, a: number) => void,
     warm: HTMLCanvasElement,
   ): void {
-    const bw = this.sim.building.cols * COL_W * TILE;
-    const bh = BUILDING_H * TILE;
+    const blocks = this.sim.building.blocks;
     for (const [vis, l] of lit) {
       if (l < 0.3) continue;
       const r = vis.layout.rect;
-      if (r.y === 0) {
-        // janelas da parede norte -> gramado ao norte do prédio
-        for (const w of vis.wallItems) if (w.kind === 'window') halo(warm, w.cx, -12, 58, 30, 0.55 * k * l);
-      } else if (vis.layout.kind !== 'corridor' && r.y + r.h >= BUILDING_H) {
-        // salas ao sul: brilho suave sobre a cerca viva e a calçada
-        for (const fx of [0.25, 0.75]) halo(warm, (r.x + r.w * fx) * TILE, bh + 16, 96, 30, 0.35 * k * l);
+      const env = blockAt(blocks, r.x, r.y)?.envelope;
+      if (!env) continue;
+      if (r.y === env.y) {
+        // janelas da parede norte -> gramado ao norte do bloco
+        for (const w of vis.wallItems) if (w.kind === 'window') halo(warm, w.cx, env.y * TILE - 12, 58, 30, 0.55 * k * l);
+      } else if (vis.layout.kind !== 'corridor' && r.y + r.h >= env.y + env.h) {
+        // áreas ao sul do bloco: brilho suave sobre o jardim (no principal, a cerca viva e a calçada)
+        for (const fx of [0.25, 0.75]) halo(warm, (r.x + r.w * fx) * TILE, (env.y + env.h) * TILE + 16, 96, 30, 0.35 * k * l);
       }
     }
-    // fachadas de vidro do corredor (entrada a oeste e ponta leste)
-    const cy = (CORRIDOR_Y + CORRIDOR_H / 2) * TILE;
-    halo(warm, -20, cy, 56, 92, 0.6 * k);
-    halo(warm, bw + 20, cy, 56, 92, 0.45 * k);
+    // fachadas de vidro nas pontas de cada corredor (pontas do retângulo de pé do bloco, não do envelope); uma ponta
+    // aberta para a passarela horizontal não tem vidro nem halo
+    for (const vis of scene.areas.values()) {
+      if (vis.layout.kind !== 'corridor') continue;
+      const r = vis.layout.rect;
+      const cy = (r.y + r.h / 2) * TILE;
+      // uma ponta aberta ainda tem vidro nos cantos (ly 0 e 4): o que decide é a linha do meio do corredor
+      const glassAt = (tx: number) => vis.layout.furniture.some((f) => f.kind === 'glass_partition' && f.tx === tx && f.ty === r.y + 2);
+      if (glassAt(r.x)) halo(warm, r.x * TILE - 20, cy, 56, 92, 0.6 * k);
+      if (glassAt(r.x + r.w - 1)) halo(warm, (r.x + r.w) * TILE + 20, cy, 56, 92, 0.45 * k);
+    }
     // janelas do corredor que dão para os pátios dos slots vazios
     for (const w of scene.shellWindows) {
       const slot = Number(w.areaId.slice(6));
@@ -501,6 +561,12 @@ export class Lighting {
         ctx.globalAlpha = 0.6 * n;
         ctx.drawImage(warm, Math.round(prop.x - 14), Math.round(prop.y - 43), 28, 28);
       }
+      // cabeça acesa dos postes além da base (o halo no chão vai na camada de luz, em drawAmbient)
+      for (const prop of scene.lampsBeyond) {
+        if (!inView(prop.x, prop.y, 80)) continue;
+        ctx.globalAlpha = 0.6 * n;
+        ctx.drawImage(warm, Math.round(prop.x - 14), Math.round(prop.y - 43), 28, 28);
+      }
       this.drawHeadlights(ctx, scene, view, n);
       if (n > 0.6 && !this.reduced) this.drawFireflies(ctx, scene, view, now, (n - 0.6) / 0.4);
     }
@@ -536,8 +602,11 @@ export class Lighting {
       }
       ctx.restore();
     };
+    const blocks = this.sim.building.blocks;
     for (const vis of scene.areas.values()) {
-      if (vis.layout.rect.y !== 0) continue;
+      const r = vis.layout.rect;
+      const env = blockAt(blocks, r.x, r.y)?.envelope;
+      if (!env || r.y !== env.y) continue;
       if (vis.room && vis.room.phase !== 'ready') continue;
       const ws = vis.wallItems.filter((w) => w.kind === 'window');
       if (!ws.length) continue;
@@ -545,9 +614,9 @@ export class Lighting {
       draw(ws, { x: p.x, y: p.y + 2 * TILE, w: p.w, h: p.h - 3 * TILE });
     }
     for (const sh of scene.shells) {
-      if (sh.rect.y !== 0 || scene.roomInSlot(sh.slot)) continue;
+      if (sh.side !== 'north' || scene.roomInSlot(sh.slot)) continue;
       const ws = scene.shellWindows.filter((w) => w.areaId === `shell:${sh.slot}`);
-      draw(ws, { x: sh.rect.x * TILE, y: CORRIDOR_Y * TILE, w: sh.rect.w * TILE, h: CORRIDOR_H * TILE });
+      draw(ws, { x: sh.rect.x * TILE, y: (sh.rect.y + sh.rect.h) * TILE, w: sh.rect.w * TILE, h: CORRIDOR_H * TILE });
     }
   }
 
@@ -574,7 +643,16 @@ export class Lighting {
     const beam = glowSprite('#fff1c4', 64);
     const tail = glowSprite('#ff4a3a', 16);
     for (const car of scene.cars) {
-      if (car.x < view.x0 - 80 || car.x > view.x1 + 80 || car.y < view.y0 - 30 || car.y > view.y1 + 30) continue;
+      if (car.x < view.x0 - 80 || car.x > view.x1 + 80 || car.y < view.y0 - 80 || car.y > view.y1 + 80) continue;
+      if (car.axis === 'v') {
+        // rua norte–sul: o facho sai pela frente, para cima ou para baixo; a lanterna fica atrás
+        const front = car.y + car.dir * 14;
+        ctx.globalAlpha = 0.55 * n;
+        ctx.drawImage(beam, Math.round(car.x - 8), Math.round(front + (car.dir > 0 ? 0 : -46)), 16, 46);
+        ctx.globalAlpha = 0.8 * n;
+        ctx.drawImage(tail, Math.round(car.x - 4), Math.round(car.y - car.dir * 14 - 4), 8, 8);
+        continue;
+      }
       const front = car.x + car.dir * 16;
       ctx.globalAlpha = 0.55 * n;
       ctx.drawImage(beam, Math.round(front + (car.dir > 0 ? 0 : -46)), Math.round(car.y - 15), 46, 16);
@@ -603,15 +681,17 @@ export class Lighting {
     }
   }
 
-  /** Vaga-lumes perto de arbustos, flores e árvores (posições fixas pela semente). */
+  /** Vaga-lumes perto de arbustos, flores e árvores: semente por posição do prop, para não mudarem de lugar quando um bloco nasce. */
   private seedFireflies(ext: ExteriorLayout): void {
     this.fliesFor = ext;
     this.flies = [];
-    const rng = mulberry32(0xf1e5 + ext.bounds.w);
     const spots = ext.props.filter((p) => p.kind === 'bush' || p.kind === 'flowers' || p.kind === 'tree');
     if (!spots.length) return;
-    for (let i = 0; i < FIREFLIES; i++) {
-      const p = spots[Math.floor(rng() * spots.length)];
+    // densidade igual à de antes (FIREFLIES por cena de referência), decidida prop a prop
+    const chance = Math.min(1, FIREFLIES / spots.length);
+    for (const p of spots) {
+      const rng = mulberry32(((Math.round(p.x) * 73856093) ^ (Math.round(p.y) * 19349663) ^ 0xf1e5) >>> 0);
+      if (rng() >= chance) continue;
       this.flies.push({
         x: p.x + (rng() - 0.5) * 28,
         y: p.y - 6 - rng() * 14,

@@ -55,7 +55,7 @@ llamadas externas.
 
 ## Cómo se ve
 
-**Vista general.** El edificio tiene recepción con ascensores, cocina, baños y salón; cada proyecto con una sesión
+**Vista general.** El edificio tiene recepción, cocina, baños y salón, y la entrada es por la puerta de la recepción; cada proyecto con una sesión
 abierta tiene su propia sala a lo largo del pasillo. Arriba, los contadores y el uso de cada cuenta; a la izquierda,
 las salas y los agentes; abajo, el feed de actividad.
 
@@ -76,7 +76,7 @@ las salas y los agentes; abajo, el feed de actividad.
   <tr>
     <td width="42%"><img src="docs/screenshots/collab.png" alt="Subagente entregando el resultado al agente principal mientras otra agente pide permiso" /></td>
     <td width="58%">
-      <b>Colaboración a la vista.</b> Los subagentes son compañeros con nombre propio y gafete: llegan por el ascensor,
+      <b>Colaboración a la vista.</b> Los subagentes son compañeros con nombre propio y gafete: llegan por la puerta de entrada,
       trabajan en la sala del proyecto y, al terminar, van hasta el agente que los llamó a entregarle el resultado (📦)
       antes de irse.<br /><br />
       <b>Te necesita.</b> Cuando un agente espera un permiso o una respuesta en la terminal, corre a su escritorio y
@@ -102,7 +102,7 @@ las salas y los agentes; abajo, el feed de actividad.
 </table>
 
 **La luz se apaga.** Cuando cierras la última sesión de un proyecto, el último personaje va hasta el interruptor,
-apaga la luz y sale por el ascensor; luego la sala se desmonta y se convierte en jardín hasta que llegue un proyecto
+apaga la luz y sale por la puerta; luego la sala se desmonta y se convierte en jardín hasta que llegue un proyecto
 nuevo. Si el jardín quedó entre dos salas, la sala más lejana se muda ahí: se monta en el lugar libre, el equipo
 camina hasta ella y la dirección antigua se apaga y se desmonta. Así el edificio no se queda con huecos y se encoge
 solo.
@@ -164,7 +164,7 @@ npm start
 
 Abre **http://localhost:4747**. Para desarrollar, usa `npm run dev` (servidor + Vite con recarga automática).
 
-Ahora abre Claude Code en cualquier proyecto y mira cómo tu agente llega por el ascensor. 🎉
+Ahora abre Claude Code en cualquier proyecto y mira cómo tu agente llega por la puerta de entrada. 🎉
 
 ### 3. Instala el mod de Habblaud en Claude Code (recomendado)
 
@@ -383,7 +383,7 @@ necesitas.
 | **Te necesita** | Corre a su escritorio y levanta la mano, con una alerta parpadeando: está esperando un permiso o una respuesta en la terminal. |
 | **Esperando el shell** | Terminó su turno pero dejó un comando en ejecución (pruebas, build, deploy…), así que se queda en su escritorio con un reloj de arena girando sobre la cabeza y la terminal mostrando el progreso: come palomitas mirando, a los 3 min se cruza de brazos y da vueltas en la silla, a los 10 min junta telarañas y a los 25 min se queda dormido; cuando el comando termina, se levanta y lo celebra con confeti (o le cae una nube de lluvia, si falló). Pasados 40 s, si hay compañeros sin nada que hacer, puede salir a una ronda, con el reloj de arena en la cabeza. |
 | **Ocioso** | Terminó su turno y pasea: café en la cocina, bebedero, baño, sofá del salón, celular en el puf, espejo. Con compañeros sin nada que hacer, se une a una ronda: TV, videojuegos, ping-pong, charla en la cocina, piedra, papel o tijera (consulta [Vida social](#vida-social)). Tras 10 min sin actividad, se queda dormido, pero un compañero puede despertarlo para una ronda. |
-| **Subagente completado** | Va hasta el agente que lo llamó, le entrega el resultado y sale por el ascensor. |
+| **Subagente completado** | Va hasta el agente que lo llamó, le entrega el resultado y sale por la puerta. |
 | **Sesión cerrada** | Se va; si era el último de la sala, apaga la luz antes de salir. |
 
 Cada personaje tiene un **nombre brasileño único** (Marina, Henrique, Luan…) que se mantiene mientras exista la
@@ -454,7 +454,7 @@ para probar un horario, usa `?hora=21:30` en la URL.
 
 Los **sonidos** vienen desactivados. Al activarlos en **Configuración › Sonidos**, se sintetizan en el propio
 navegador (sin archivos de audio) y suenan bajito: el teclado de quien trabaja en las salas a la vista, el "ding" del
-ascensor cuando alguien llega o se va, la campana cuando alguien te necesita, el chasquido de tarea completada y el
+la puerta de entrada cuando alguien llega o se va, la campana cuando alguien te necesita, el chasquido de tarea completada y el
 ping-pong y el arcade de las rondas. Hay un volumen general y cada categoría se activa y desactiva por separado. Con la
 pestaña oculta, solo suena la campana.
 

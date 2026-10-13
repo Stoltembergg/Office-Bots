@@ -4,6 +4,7 @@ import type { UiComponent, UiContext } from './context';
 import { h, iconButton, setAttr, setHidden, setText } from './dom';
 import { ICONS } from './icons';
 import { notificationState, type Notifier } from './notify';
+import { DEMO_SESSIONS_DEFAULT, DEMO_SESSIONS_MAX, DEMO_SESSIONS_MIN, demoSessionsFrom } from './overlays';
 import type { UiPrefs } from './prefs';
 import { SoundSettingsGroup } from './settings-sound';
 import type { SoundControl } from './sound';
@@ -90,6 +91,7 @@ export class SettingsPopover implements UiComponent {
   private language: ReturnType<typeof segmented<LanguageChoice>>;
   private soundGroup: SoundSettingsGroup;
   private demoGroup: HTMLElement;
+  private demoSessions: HTMLInputElement;
   /** Só na página do celular (porta remota com login): sair deste aparelho. */
   private remoteGroup: HTMLElement;
   private logoutBtn: HTMLButtonElement;
@@ -145,6 +147,11 @@ export class SettingsPopover implements UiComponent {
     this.theme.row.append(h('span', { class: 'ui-set__hint', text: tr('Automático: Halloween em outubro e Natal de 1º de novembro a 26 de dezembro; no resto do ano, o visual original. Nenhum: sempre o original.') }));
     this.soundGroup = new SoundSettingsGroup(ctx, sound);
 
+    this.demoSessions = h('input', {
+      class: 'ui-set__num',
+      attrs: { type: 'number', min: String(DEMO_SESSIONS_MIN), max: String(DEMO_SESSIONS_MAX), step: '1', value: String(DEMO_SESSIONS_DEFAULT), inputmode: 'numeric', id: 'ui-set-demo-sessions' },
+      on: { change: () => void this.applyDemoSessions() },
+    }) as HTMLInputElement;
     // Nomes dos idiomas sempre na própria língua, para quem não entende o idioma atual achar o seu.
     this.language = segmented<LanguageChoice>(
       tr('Idioma da interface'),
@@ -160,6 +167,12 @@ export class SettingsPopover implements UiComponent {
       { class: 'ui-set-group' },
       h('h3', { text: tr('Dados') }),
       sw('demo', tr('Modo demonstração'), tr('Coloca agentes fictícios no escritório, junto com os reais.'), () => void this.toggleDemo()),
+      h(
+        'div',
+        { class: 'ui-set' },
+        h('div', { class: 'ui-set__text' }, h('label', { class: 'ui-set__label', text: tr('Sessões da demonstração'), attrs: { for: 'ui-set-demo-sessions' } }), h('span', { class: 'ui-set__hint', text: tr('Quantas sessões fictícias manter abertas ({0} a {1}). Vale ao ligar e, já ligado, ao mudar o número.', [DEMO_SESSIONS_MIN, DEMO_SESSIONS_MAX]) })),
+        this.demoSessions,
+      ),
     );
 
     this.logoutBtn = h('button', { class: 'ui-btn', type: 'button', text: tr('Sair'), on: { click: () => void this.logout() } }) as HTMLButtonElement;
@@ -272,6 +285,7 @@ export class SettingsPopover implements UiComponent {
       setAttr(r.btn, 'aria-checked', String(on));
       r.btn.disabled = key === 'demo' && this.demoBusy;
     }
+    this.demoSessions.disabled = this.demoBusy;
     this.bubbles.set(p.bubbles);
     this.liveliness.set(p.liveliness);
     this.daylight.set(p.daylight);
@@ -310,10 +324,34 @@ export class SettingsPopover implements UiComponent {
     this.render();
     const enable = !this.ctx.store.snapshot?.meta.demo;
     try {
-      const ok = await this.ctx.store.setDemo(enable);
+      const ok = await this.ctx.store.setDemo(enable, enable ? this.sessionsValue() : undefined);
       this.ctx.announce(ok ? (enable ? tr('Modo demonstração ligado.') : tr('Modo demonstração desligado.')) : tr('Não foi possível mudar o modo demonstração.'));
     } catch {
       this.ctx.announce(tr('Não foi possível falar com o servidor.'));
+    } finally {
+      this.demoBusy = false;
+      this.ctx.invalidate();
+    }
+  }
+
+  /** Número do campo, normalizado (1..40; vazio ou inválido vira o padrão) e devolvido ao campo. */
+  private sessionsValue(): number {
+    const n = demoSessionsFrom(this.demoSessions.value);
+    this.demoSessions.value = String(n);
+    return n;
+  }
+
+  /** Mudou o número com a demonstração ligada: ajusta o alvo no servidor na hora. */
+  private async applyDemoSessions(): Promise<void> {
+    const n = this.sessionsValue();
+    if (!this.ctx.store.snapshot?.meta.demo || this.demoBusy) return;
+    this.demoBusy = true;
+    this.render();
+    try {
+      const ok = await this.ctx.store.setDemo(true, n);
+      this.ctx.announce(ok ? `Demonstração com ${n} ${n === 1 ? 'sessão' : 'sessões'}.` : 'Não foi possível mudar o número de sessões.');
+    } catch {
+      this.ctx.announce('Não foi possível falar com o servidor.');
     } finally {
       this.demoBusy = false;
       this.ctx.invalidate();

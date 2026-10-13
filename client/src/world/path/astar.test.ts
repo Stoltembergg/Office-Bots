@@ -92,4 +92,26 @@ describe('A* 4 direções', () => {
     expect(g.nearestWalkable(0, 0)).toEqual({ x: 1, y: 1 });
     expect(g.nearestWalkable(1, 1)).toEqual({ x: 1, y: 1 });
   });
+
+  it('acha caminho numa grade com origem negativa (tiles com x e y negativos)', () => {
+    // a mesma planta do 1º caso, mas com a grade começando em (−16, −41)
+    const g = WalkGrid.forRect({ x: -16, y: -41, w: 5, h: 4 });
+    ['.....', '.###.', '...#.', '.#...'].forEach((r, y) => [...r].forEach((c, x) => g.set(x - 16, y - 41, c === '#' ? BLOCKED : FREE)));
+    const pf = new PathFinder(g);
+    const out: number[] = [];
+    expect(pf.find(-16, -41, -12, -38, out)).toBe(true);
+    const p = pairs(out);
+    expect(p[p.length - 1]).toEqual([-12, -38]);
+    expect(p.length).toBe(7);
+    let prev: [number, number] = [-16, -41];
+    for (const [x, y] of p) {
+      expect(Math.abs(x - prev[0]) + Math.abs(y - prev[1])).toBe(1);
+      expect(g.inside(x, y)).toBe(true);
+      expect(g.walkable(x, y)).toBe(true);
+      prev = [x, y];
+    }
+    // o (0, 0) do mundo fica fora desta grade: não é destino nem partida válidos
+    expect(pf.find(-16, -41, 0, 0, out)).toBe(false);
+    expect(pf.find(0, 0, -12, -38, out)).toBe(false);
+  });
 });

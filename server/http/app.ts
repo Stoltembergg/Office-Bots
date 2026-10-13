@@ -23,6 +23,9 @@ import type { DeliveryIndex } from '../deliveries/deliveries';
 import type { FileFetcher } from '../deliveries/fetcher';
 import { HOST_WAIT_MS } from '../host-wait';
 
+/** Teto de sessões da demonstração pedidas pela interface (o simulador aguenta mais, mas o prédio não precisa). */
+const DEMO_SESSIONS_MAX = 40;
+
 export interface ApiDeps {
   office: Office;
   hub: Hub;
@@ -275,9 +278,13 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
   };
 
   const handleDemo = async (req: IncomingMessage, res: ServerResponse) => {
-    const body = (await readJson(req)) as { enabled?: unknown };
-    if (typeof body?.enabled !== 'boolean') throw new HttpError(400, tr('esperado {enabled: boolean}'));
-    office.setDemo(body.enabled);
+    const body = (await readJson(req)) as { enabled?: unknown; sessions?: unknown };
+    if (typeof body?.enabled !== 'boolean') throw new HttpError(400, tr('esperado {enabled: boolean, sessions?: inteiro de 0 a 40}'));
+    const sessions = body.sessions;
+    if (sessions !== undefined && (typeof sessions !== 'number' || !Number.isInteger(sessions) || sessions < 0 || sessions > DEMO_SESSIONS_MAX)) {
+      throw new HttpError(400, tr('esperado sessions: inteiro de 0 a {0}', [DEMO_SESSIONS_MAX]));
+    }
+    office.setDemo(body.enabled, sessions);
     sendJson(res, 200, { ok: true, demo: office.isDemo() });
   };
 

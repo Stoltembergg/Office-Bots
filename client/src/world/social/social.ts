@@ -9,7 +9,7 @@ import type { AgentSocial, SocialEvent } from '../api';
 import { mulberry32 } from '../../../../shared/hash';
 import { TILE } from '../constants';
 import { CAFE_ID, LOUNGE_ID, RECEPTION_ID, RESTROOM_ID } from '../layout/core';
-import type { SpotDef } from '../layout/types';
+import type { AreaKind, SpotDef } from '../layout/types';
 import { FREE } from '../path/grid';
 import { isLongIdle } from '../sim/behavior';
 import { facing, type Character } from '../sim/character';
@@ -64,6 +64,8 @@ const LOSS_COLOR = '#ff8a8a';
 
 const KIND_LIST = Object.keys(KINDS) as GatherKind[];
 const PLACES: Readonly<Record<string, string>> = { [LOUNGE_ID]: tr('Lounge'), [CAFE_ID]: tr('Copa'), [RECEPTION_ID]: tr('Recepção'), [RESTROOM_ID]: tr('Banheiros') };
+/** Lugar do evento para as áreas sem id fixo (as dos anexos), por kind. */
+const KIND_PLACES: Partial<Record<AreaKind, string>> = { hub: tr('Lounge'), restroom: tr('Banheiros') };
 /** O que se perde/ganha em cada jogo (texto do extrato: "Perdeu no jokenpô para Rafaela"). */
 const MATCH_WHAT: Partial<Record<GatherKind, string>> = {
   rps: tr('no jokenpô'),
@@ -397,7 +399,7 @@ export class Social {
     const cy = spots.reduce((a, s) => a + s.ty, 0) / spots.length;
     const grid = this.sim.building.grid;
     const busy = this.sim.busyTiles(ch.id);
-    const taken = new Set(g.members.filter((m) => m.tile && !m.left).map((m) => m.tile!.y * grid.w + m.tile!.x));
+    const taken = new Set(g.members.filter((m) => m.tile && !m.left).map((m) => grid.key(m.tile!.x, m.tile!.y)));
     let best: { x: number; y: number } | null = null;
     let bestD = Infinity;
     // de preferência na fileira de trás (rosto para a câmera, olhando a partida); depois dos lados
@@ -406,7 +408,7 @@ export class Social {
       for (let dx = -2; dx <= 3; dx++) {
         const x = Math.round(cx) + dx;
         const y = Math.round(cy) + dy;
-        const k = y * grid.w + x;
+        const k = grid.key(x, y);
         if (grid.get(x, y) !== FREE || busy.has(k) || taken.has(k)) continue;
         if (spots.some((s) => s.tx === x && s.ty === y)) continue;
         // bem atrás de um jogador, some atrás dele
@@ -450,13 +452,18 @@ export class Social {
         return { seats: order.slice(0, n), pool: order };
       }
       case 'arcade': {
-        const a = spots.ofKind('arcade').filter(free);
-        return a.length >= 2 && n <= 2 ? { seats: a.slice(0, 2), pool: a.slice(0, 2) } : null;
+        // as duas máquinas do lounge mais perto de quem puxa (cada anexo tem as suas): nunca uma em cada prédio
+        const byArea = new Map<string, SpotDef[]>();
+        for (const s of spots.ofKind('arcade').filter(free)) byArea.set(s.areaId, [...(byArea.get(s.areaId) ?? []), s]);
+        const dist = (s: SpotDef) => Math.abs(s.tx - ch.tx) + Math.abs(s.ty - ch.ty);
+        const a = [...byArea.values()].filter((m) => m.length >= 2).sort((p, q) => dist(p[0]) - dist(q[0]))[0];
+        return a && n <= 2 ? { seats: a.slice(0, 2), pool: a.slice(0, 2) } : null;
       }
       case 'pingpong': {
         const g = spots.findFreeGroup('pingpong', { filter: (grp) => grp.every(free) });
         if (!g) return null;
-        const watch = spots.ofKind('watch').filter(free);
+        // a torcida fica na sala da mesa (o lounge de cada bloco tem a sua)
+        const watch = spots.ofKind('watch').filter((s) => free(s) && s.areaId === g[0].areaId);
         if (n > 2 + watch.length) return null;
         return { seats: [...g, ...watch].slice(0, n), pool: [...g, ...watch] };
       }
@@ -469,9 +476,23 @@ export class Social {
       case 'kitchen':
         return this.kitchenSeats(n, free, ch.rng);
       case 'mirror': {
-        const sinks = spots.ofKind('sink').filter((s) => s.areaId === RESTROOM_ID && free(s)).sort((a, b) => a.tx - b.tx);
-        if (n === 1) return sinks.length ? { seats: [sinks[Math.floor(ch.rng() * sinks.length)]], pool: [] } : null;
-        for (let i = 0; i + 1 < sinks.length; i++) if (sinks[i + 1].tx === sinks[i].tx + 1) return { seats: [sinks[i], sinks[i + 1]], pool: [] };
+        // pias livres de qualquer banheiro (kind restroom: o do núcleo ou o do anexo; a pia do saguão e a da copa não
+        // contam), agrupadas por área e com o banheiro mais perto de quem puxa primeiro
+        const byArea = new Map<string, SpotDef[]>();
+        for (const s of spots.ofKind('sink')) {
+          if (!free(s)) continue;
+          if (this.sim.building.areas.find((a) => a.id === s.areaId)?.kind !== 'restroom') continue;
+          const list = byArea.get(s.areaId) ?? [];
+          list.push(s);
+          byArea.set(s.areaId, list);
+        }
+        const dist = (list: SpotDef[]) => Math.min(...list.map((s) => Math.abs(s.tx - ch.tx) + Math.abs(s.ty - ch.ty)));
+        const rooms = [...byArea.values()].sort((a, b) => dist(a) - dist(b));
+        for (const sinks of rooms) {
+          sinks.sort((a, b) => a.tx - b.tx);
+          if (n === 1) return { seats: [sinks[Math.floor(ch.rng() * sinks.length)]], pool: [] };
+          for (let i = 0; i + 1 < sinks.length; i++) if (sinks[i + 1].tx === sinks[i].tx + 1) return { seats: [sinks[i], sinks[i + 1]], pool: [] };
+        }
         return null;
       }
     }
@@ -1232,7 +1253,8 @@ export class Social {
     if (this.events.length >= MAX_EVENTS) this.events.shift();
     const first = g.members.find((m) => m.spot);
     const area = first?.spot ? this.sim.spots.get(first.spot)?.areaId : undefined;
-    const place = (area && (PLACES[area] ?? this.sim.rooms.get(area)?.info.name)) || tr('Escritório');
+    const kind = area ? this.sim.building.areas.find((a) => a.id === area)?.kind : undefined;
+    const place = (area && (PLACES[area] ?? this.sim.rooms.get(area)?.info.name ?? (kind && KIND_PLACES[kind]))) || tr('Escritório');
     this.events.push({ id: `social:${g.id}:${++this.eventSeq}`, at: now, icon, agentId, text, place });
   }
 

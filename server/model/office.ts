@@ -791,11 +791,24 @@ export class Office {
 
   // ---------------------------------------------------------------- demonstração
 
-  setDemo(enabled: boolean): void {
-    if (enabled === this.isDemo()) return;
+  /** Quantas sessões a demonstração mantém abertas (null = desligada). */
+  demoSessions(): number | null {
+    return this.demo ? this.demo.sessions() : null;
+  }
+
+  /** Liga/desliga; `sessions` é o alvo de sessões (ligando, o simulador nasce com ele; já ligado, só ajusta). */
+  setDemo(enabled: boolean, sessions?: number): void {
+    if (enabled === this.isDemo()) {
+      if (enabled && this.demo && sessions !== undefined && sessions !== this.demo.sessions()) {
+        this.demo.setSessions(sessions, this.now());
+        this.demoSnap = this.demo.snapshot(this.now());
+        this.markDirty();
+      }
+      return;
+    }
     const now = this.now();
     if (enabled) {
-      this.demo = new DemoSimulator({ idPrefix: 'demo:' }, now);
+      this.demo = new DemoSimulator({ idPrefix: 'demo:', ...(sessions !== undefined ? { sessions } : {}) }, now);
       this.demoSnap = this.demo.snapshot(now);
     } else {
       this.demo = null;

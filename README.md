@@ -55,11 +55,17 @@ external calls.
 
 ## What it looks like
 
-**Overview.** The building has a lobby with elevators, a kitchen, restrooms and a lounge; each project with an open
-session gets its own room along the hallway. At the top, the counters and each account's usage; on the left, the rooms
-and agents; at the bottom, the activity feed.
+**Overview.** The lobby, kitchen, restrooms and lounge sit at the center of the building, and the entrance is the
+lobby door, which opens onto a stone path down to the sidewalk: that's where everyone arrives and leaves. Each
+project with an open session gets its own room along the hallway, on either side of the core — the first to the
+east, the second to the west, and so on, up to four rooms per side. The ninth room opens an annex across the street,
+linked to the lounge by a footbridge: instead of the core, a lounge with coffee and water, plus restrooms; rooms open
+on both sides of it, as in the main building. From the seventeenth on, new annexes open: east and west, linked
+through the end of the hallway by footbridges, and south of each of them, linked to the lounge above, with streets
+between them all; from the forty-ninth, an annex north of the north street, linked to the kitchen. At the top, the
+counters and each account's usage; on the left, the rooms and agents; at the bottom, the activity feed.
 
-![Habblaud overview: building with lobby, kitchen, restrooms, lounge and project rooms; sidebar with rooms and agents; account usage at the top; activity feed at the bottom](docs/screenshots/overview.png)
+![Habblaud overview: building with lobby, kitchen, restrooms, lounge and rooms on both sides, an annex across the street linked by a footbridge; sidebar with rooms and agents; account usage at the top; activity feed at the bottom](docs/screenshots/overview.png)
 
 <table>
   <tr>
@@ -76,7 +82,7 @@ and agents; at the bottom, the activity feed.
   <tr>
     <td width="42%"><img src="docs/screenshots/collab.png" alt="Subagent delivering the result to the main agent while another agent asks for permission" /></td>
     <td width="58%">
-      <b>Collaboration in plain sight.</b> Subagents are coworkers with their own names and badges: they arrive by elevator, work in
+      <b>Collaboration in plain sight.</b> Subagents are coworkers with their own names and badges: they arrive through the front door, work in
       the project's room and, when they finish, walk over to the agent that called them to deliver the result (📦) before leaving.<br /><br />
       <b>Needs you.</b> When an agent is waiting for a permission or an answer in the terminal, it rushes to its desk and
       raises a hand, with a blinking alert — and a notice pops up on screen (optionally with sound and a browser notification).
@@ -100,10 +106,12 @@ and agents; at the bottom, the activity feed.
 </table>
 
 **The lights go out.** When you close a project's last session, the last character walks to the light switch,
-turns off the lights and leaves by elevator — and the room is taken apart, becoming a garden until a new project
-arrives. If the garden ended up between two rooms, the farthest room moves there: it's set up in the empty spot,
-everyone walks over to it, and the old address goes dark and is taken apart. That way the building has no gaps and
-shrinks on its own.
+turns off the lights, leaves through the door and walks off down the sidewalk — and the room is taken apart,
+becoming a garden until a new project arrives. If a free spot was left before the last occupied one and moving
+the room in the highest spot there would shrink the building (empty a column or an annex), it moves: it's set up in the empty spot, everyone walks over to it, and the old address goes
+dark and is taken apart. That way the building has no gaps and shrinks on its own, on both sides of the core (spots
+alternate east and west). When the annex's last room leaves, the annex and the footbridge are taken apart too —
+unless someone is still there, or on the footbridge; then they wait for them to leave.
 
 | 1. The room is set up, still dark | 2. Someone turns on the lights and everyone works | 3. The last one leaves and turns off the lights | 4. The room becomes a garden |
 | --- | --- | --- | --- |
@@ -162,7 +170,7 @@ npm start
 
 Open **http://localhost:4747**. For development, use `npm run dev` (server + Vite with hot reload).
 
-Now open Claude Code in any project and watch your agent arrive by elevator. 🎉
+Now open Claude Code in any project and watch your agent walk up the sidewalk and in through the front door. 🎉
 
 ### 3. Install the Habblaud mod in Claude Code (recommended)
 
@@ -370,7 +378,7 @@ uninstallers leave `settings.json.habblaud-backup-<data>` copies in each account
 | **Needs you** | Rushes to the desk and raises a hand, with a blinking alert: it's waiting for a permission or an answer in the terminal. |
 | **Waiting on shell** | Finished its turn but left a command running (tests, build, deploy…), so it stays at the desk with an hourglass flipping over its head and the terminal in progress: it eats popcorn while watching, after 3 min it crosses its arms and spins in its chair, after 10 min it gathers cobwebs and after 25 min it dozes off; when the command finishes, it stands up and celebrates with confetti (or gets a rain cloud, if it failed). After 40 s, if there are coworkers with nothing to do, it may head out to a hangout — with the hourglass over its head. |
 | **Idle** | Finished its turn and wanders around: coffee in the kitchen, the water cooler, the restroom, the lounge couch, the phone on the beanbag, the mirror. With idle coworkers around, it joins a hangout: TV, video games, ping-pong, a kitchen chat, rock-paper-scissors (see [Social life](#social-life)). After 10 min without moving, it dozes off — but a coworker may wake it up for a hangout. |
-| **Subagent done** | Walks over to the agent that called it, delivers the result and leaves by elevator. |
+| **Subagent done** | Walks over to the agent that called it, delivers the result and leaves through the front door. |
 | **Session ended** | Leaves; if it was the last one in the room, it turns off the lights on the way out. |
 
 Each character has a **unique Brazilian name** (Marina, Henrique, Luan…) that stays as long as the session exists, and
@@ -436,7 +444,7 @@ draws strips of light on the floor — short at noon, long and orange in the lat
 cycle** you can choose automatic, always day or always night; to test a time, use `?hora=21:30` in the URL.
 
 **Sounds** come turned off. Turned on in **Settings › Sounds**, they're synthesized in the browser itself (no audio
-files) and quiet: the typing of whoever is working in the rooms in view, the elevator "ding" when someone arrives or
+files) and quiet: the typing of whoever is working in the rooms in view, the front-door "ding" when someone arrives or
 leaves, the bell when someone needs you, the click of a finished task and the ping-pong and arcade sounds of the hangouts.
 There's a master volume and each category can be turned on and off separately. With the tab hidden, only the bell rings.
 

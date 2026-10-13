@@ -82,7 +82,7 @@ function build(kind: FurnitureKind, variant: string | undefined, state: number, 
     case 'elevator':
       return W.elevator(state);
     case 'door_frame':
-      return W.doorFrame();
+      return W.doorFrame(variant);
     case 'sign':
       return W.sign();
     case 'mirror':
@@ -125,6 +125,8 @@ function build(kind: FurnitureKind, variant: string | undefined, state: number, 
       return C.receptionDesk(seed);
     case 'bench':
       return C.bench();
+    case 'railing':
+      return C.railing(variant);
   }
 }
 

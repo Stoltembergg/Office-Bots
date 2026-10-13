@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OfficeSnapshot } from '../../../shared/types';
+import type { AgentInfo, OfficeSnapshot, RoomInfo } from '../../../shared/types';
 import { mockOptionsFrom, OfficeStore, pageBuild, reconnectDelay, type EventSourceLike } from './store';
 
 /** EventSource falso: o teste dispara open/error e muda o readyState. */
@@ -215,6 +215,71 @@ const snap = (rev: number, build?: string): OfficeSnapshot => ({
   agents: [],
   accounts: [],
   meta: { demo: false, sources: [], startedAt: 1, version: '0.1.0', build },
+});
+
+describe('salas e agentes injetados pelo depurador', () => {
+  const r: RoomInfo = { id: '/a', name: 'a', path: '/a', slot: 0, seed: 7, createdAt: 1 };
+  const a: AgentInfo = {
+    id: 'ana',
+    kind: 'main',
+    roomId: '/a',
+    name: 'ana',
+    look: 'f',
+    role: 'Agente principal',
+    sessionId: 's-ana',
+    account: '.claude',
+    status: 'working',
+    recent: [],
+    tasks: [],
+    startedAt: 1,
+    lastEventAt: 1,
+    statusSince: 1,
+    stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 },
+    seed: 3,
+  };
+  const apply = (s: OfficeStore, x: OfficeSnapshot) => (s as unknown as { applySnapshot(s: OfficeSnapshot): void }).applySnapshot(x);
+
+  it('setInjected mescla no snapshot publicado, avisa, e não duplica o que já veio do servidor', () => {
+    const store = new OfficeStore();
+    let n = 0;
+    store.on('snapshot', () => n++);
+    apply(store, snap(1));
+    store.setInjected({ rooms: [r], agents: [a] });
+    expect(store.snapshot?.rooms.map((x) => x.id)).toEqual(['/a']);
+    expect(store.snapshot?.agents.map((x) => x.id)).toEqual(['ana']);
+    expect(store.agentsInRoom('/a').map((x) => x.id)).toEqual(['ana']);
+    expect(n).toBe(2);
+    // o snapshot seguinte do servidor continua mesclado, sem duplicar quem já veio nele
+    apply(store, { ...snap(2), rooms: [r] });
+    expect(store.snapshot?.rooms.map((x) => x.id)).toEqual(['/a']);
+    expect(store.snapshot?.agents.map((x) => x.id)).toEqual(['ana']);
+    store.setInjected({ rooms: [], agents: [] });
+    expect(store.snapshot?.rooms).toEqual([r]);
+    expect(store.snapshot?.agents).toEqual([]);
+  });
+
+  it('no timelapse, o ao vivo guardado não carrega o injetado: removê-lo durante o replay vale ao voltar', () => {
+    const store = new OfficeStore();
+    apply(store, snap(1));
+    store.setInjected({ rooms: [r], agents: [a] });
+    store.pushReplay(snap(9));
+    expect(store.liveSnapshot?.rooms.map((x) => x.id)).toEqual(['/a']);
+    store.setInjected({ rooms: [], agents: [] });
+    expect(store.liveSnapshot?.rooms).toEqual([]);
+    store.stopReplay();
+    expect(store.snapshot?.rooms).toEqual([]);
+    expect(store.snapshot?.agents).toEqual([]);
+    expect(store.snapshot?.rev).toBe(1);
+  });
+
+  it('sem snapshot do servidor ainda, setInjected não publica nada', () => {
+    const store = new OfficeStore();
+    let n = 0;
+    store.on('snapshot', () => n++);
+    store.setInjected({ rooms: [r], agents: [a] });
+    expect(store.snapshot).toBeNull();
+    expect(n).toBe(0);
+  });
 });
 
 describe('detecção de versão nova', () => {

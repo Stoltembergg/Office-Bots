@@ -21,22 +21,13 @@ import { hash32, mulberry32 } from '../hash';
 import { describeMessage, MESSAGE_TOOL } from '../messages';
 import { pickName } from '../names';
 import { demoGitHubEvent } from './github';
+import { EXTRA_PROJECTS, type DemoProject } from './projects-extra';
 import { demoCodexPermission, demoPermission, type DemoPermissionKind } from './permission';
 import { tr } from '../i18n';
 
-interface DemoProject {
-  name: string;
-  files: string[];
-  prompts: string[];
-  tasks: string[];
-  queries: string[];
-  commands: string[];
-  greps: string[];
-}
-
 const ROOT = '/Users/dev/projetos';
 
-const PROJECTS: DemoProject[] = [
+const BASE_PROJECTS: DemoProject[] = [
   {
     name: 'loja-virtual',
     files: ['src/pages/Checkout.tsx', 'src/components/Cart.tsx', 'src/api/orders.ts', 'src/hooks/useCart.ts', 'src/styles/theme.css', 'tests/cart.test.ts', 'package.json'],
@@ -93,8 +84,11 @@ const PROJECTS: DemoProject[] = [
   },
 ];
 
-/** Projetos do demo (o histórico fictício do "Meu dia" usa todos, não só as salas abertas no momento). */
-export const DEMO_PROJECT_NAMES: readonly string[] = PROJECTS.map((p) => p.name);
+/** Todos os projetos do demo: os originais e os extras (uma sala própria para cada sessão, até 42). */
+const PROJECTS: DemoProject[] = [...BASE_PROJECTS, ...EXTRA_PROJECTS];
+
+/** Projetos do histórico fictício do "Meu dia" (só os originais; os extras existem para as salas abertas). */
+export const DEMO_PROJECT_NAMES: readonly string[] = BASE_PROJECTS.map((p) => p.name);
 
 const SUB_TYPES = ['Explore', 'general-purpose', 'Plan', 'code-reviewer', 'test-runner'];
 const SUB_TASKS = [
@@ -299,9 +293,18 @@ export class DemoSimulator {
     this.pendingNotices = [];
   }
 
+  /** Alvo atual de sessões principais abertas. */
+  sessions(): number {
+    return this.target;
+  }
+
   /** Muda quantas sessões principais manter abertas (o gerador de timelapse varia isso ao longo do dia). */
-  setSessions(n: number): void {
+  setSessions(n: number, now?: number): void {
     this.target = Math.max(0, Math.floor(n));
+    if (now === undefined) return;
+    // Com `now`, as que faltam abrem de uma vez (senão o tick abriria uma a cada 25-70 s).
+    const open = [...this.agents.values()].filter((a) => a.info.kind === 'main' && a.phase !== 'leaving').length;
+    for (let i = open; i < this.target; i++) this.spawnSession(now, false);
   }
 
   /**
@@ -518,9 +521,12 @@ export class DemoSimulator {
   private spawnSession(now: number, warm: boolean): void {
     const k = this.mainsSpawned++;
     const activeRooms = new Set([...this.rooms.values()].map((r) => r.name));
-    // 35% de chance de reaproveitar uma sala existente (2 sessões no mesmo projeto).
-    const reuse = activeRooms.size > 0 && this.rng() < 0.35;
-    const candidates = PROJECTS.filter((p) => (reuse ? activeRooms.has(p.name) : !activeRooms.has(p.name)));
+    // Cada sessão abre a sua sala; só reaproveita uma (35%) quando todos os projetos já têm sala.
+    const reuse = activeRooms.size > 0 && this.rng() < 0.35 && activeRooms.size >= PROJECTS.length;
+    // sem sala: primeiro os 6 projetos originais (os de "Meu dia" e das capturas), depois os extras
+    const fresh = PROJECTS.filter((p) => !activeRooms.has(p.name));
+    const freshBase = fresh.filter((p) => BASE_PROJECTS.includes(p));
+    const candidates = reuse ? PROJECTS.filter((p) => activeRooms.has(p.name)) : freshBase.length ? freshBase : fresh;
     let project = this.pick(candidates.length ? candidates : PROJECTS);
     // Abertura: a 2ª sessão é do Codex e entra na sala da 1ª (Claude Code e Codex dividindo a sala). O sorteio da
     // sala acontece igual (a sequência das outras sessões não muda); só o resultado é trocado.

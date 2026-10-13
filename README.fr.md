@@ -56,7 +56,7 @@ aucun identifiant et ne fait aucun appel externe.
 
 ## À quoi ça ressemble
 
-**Vue d'ensemble.** L'immeuble a un accueil avec des ascenseurs, une cuisine, des toilettes et un salon ; chaque projet
+**Vue d'ensemble.** L'immeuble a un accueil, une cuisine, des toilettes et un salon, et l'entrée se fait par la porte de l'accueil ; chaque projet
 qui a une session ouverte reçoit sa salle le long du couloir. En haut, les compteurs et l'utilisation de chaque compte ;
 à gauche, les salles et les agents ; en bas, le fil d'activité.
 
@@ -78,7 +78,7 @@ qui a une session ouverte reçoit sa salle le long du couloir. En haut, les comp
     <td width="42%"><img src="docs/screenshots/collab.png" alt="Un sous-agent remet son résultat à l'agent principal pendant qu'une autre agente demande la permission" /></td>
     <td width="58%">
       <b>La collaboration bien visible.</b> Les sous-agents sont des collègues avec leur propre nom et un badge : ils
-      arrivent par l'ascenseur, travaillent dans la salle du projet et, une fois leur travail terminé, vont remettre le
+      arrivent par la porte d'entrée, travaillent dans la salle du projet et, une fois leur travail terminé, vont remettre le
       résultat (📦) à l'agent qui les a appelés avant de partir.<br /><br />
       <b>A besoin de vous.</b> Quand un agent attend une permission ou une réponse dans le terminal, il court à son bureau
       et lève la main, avec un signal qui clignote — et une alerte s'affiche à l'écran (en option avec un son et une
@@ -104,7 +104,7 @@ qui a une session ouverte reçoit sa salle le long du couloir. En haut, les comp
 </table>
 
 **La lumière s'éteint.** Quand vous fermez la dernière session d'un projet, le dernier personnage va jusqu'à
-l'interrupteur, éteint la lumière et sort par l'ascenseur — puis la salle est démontée et devient un jardin jusqu'à
+l'interrupteur, éteint la lumière et sort par la porte — puis la salle est démontée et devient un jardin jusqu'à
 l'arrivée d'un nouveau projet. Si le jardin se retrouve entre deux salles, la salle la plus éloignée déménage : elle est
 montée à l'emplacement libre, l'équipe s'y rend à pied, et l'ancienne adresse s'éteint et est démontée. Ainsi,
 l'immeuble ne garde pas de trous et rétrécit tout seul.
@@ -166,7 +166,7 @@ npm start
 
 Ouvrez **http://localhost:4747**. Pour développer, utilisez `npm run dev` (serveur + Vite avec rechargement automatique).
 
-Ouvrez maintenant Claude Code dans n'importe quel projet et regardez votre agent arriver par l'ascenseur. 🎉
+Ouvrez maintenant Claude Code dans n'importe quel projet et regardez votre agent arriver par la porte d'entrée. 🎉
 
 ### 3. Installez le mod Habblaud dans Claude Code (recommandé)
 
@@ -386,7 +386,7 @@ n'en avez plus besoin.
 | **A besoin de vous** | Court à son bureau et lève la main, avec un signal qui clignote : il attend une permission ou une réponse dans le terminal. |
 | **Attend le shell** | A fini son tour mais a laissé une commande tourner (tests, build, déploiement…) ; il reste donc à son bureau avec un sablier qui tourne au-dessus de la tête et le terminal en pleine progression : il mange du pop-corn en regardant, après 3 min il croise les bras et tourne sur sa chaise, après 10 min il se couvre de toiles d'araignée et après 25 min il pique un somme ; quand la commande se termine, il se lève et fête ça avec des confettis (ou récolte un nuage de pluie si elle a échoué). Au bout de 40 s, s'il y a des collègues sans rien à faire, il peut rejoindre un groupe — sablier sur la tête. |
 | **Inactif** | A fini son tour et se promène : café à la cuisine, fontaine à eau, toilettes, canapé du salon, téléphone sur le pouf, miroir. Avec des collègues sans rien à faire, il rejoint un groupe : télé, jeux vidéo, ping-pong, pause à la cuisine, chifoumi (voir [Vie sociale](#vie-sociale)). Après 10 min sans bouger, il pique un somme — mais un collègue peut le réveiller pour rejoindre un groupe. |
-| **Sous-agent terminé** | Va jusqu'à l'agent qui l'a appelé, lui remet le résultat et sort par l'ascenseur. |
+| **Sous-agent terminé** | Va jusqu'à l'agent qui l'a appelé, lui remet le résultat et sort par la porte. |
 | **Session terminée** | S'en va ; si c'était le dernier de la salle, il éteint la lumière avant de sortir. |
 
 Chaque personnage a un **prénom brésilien unique** (Marina, Henrique, Luan…) qu'il garde tant que la session existe, et
@@ -455,7 +455,7 @@ jour ou toujours nuit ; pour tester une heure, utilisez `?hora=21:30` dans l'URL
 
 Les **sons** sont désactivés par défaut. Une fois activés dans **Réglages › Sons**, ils sont synthétisés par le
 navigateur lui-même (sans fichiers audio) et discrets : le clavier de ceux qui travaillent dans les salles visibles, le
-« ding » de l'ascenseur quand quelqu'un arrive ou s'en va, la cloche quand quelqu'un a besoin de vous, le petit
+« ding » de la porte d'entrée quand quelqu'un arrive ou s'en va, la cloche quand quelqu'un a besoin de vous, le petit
 claquement d'une tâche terminée, et le ping-pong et l'arcade des groupes. Il y a un volume général, et chaque catégorie
 s'active et se désactive séparément. Quand l'onglet est masqué, seule la cloche sonne.
 

@@ -51,7 +51,6 @@ export class PathFinder {
     const grid = this.grid;
     if (!grid.inside(sx, sy) || !grid.walkable(gx, gy)) return false;
     if (sx === gx && sy === gy) return true;
-    const w = grid.w;
     const cells = grid.cells;
     if (++this.gen >= 0xffffffff) {
       this.stamp.fill(0);
@@ -59,8 +58,8 @@ export class PathFinder {
       this.gen = 1;
     }
     const gen = this.gen;
-    const start = sy * w + sx;
-    const goal = gy * w + gx;
+    const start = grid.key(sx, sy);
+    const goal = grid.key(gx, gy);
     this.heapSize = 0;
     this.stamp[start] = gen;
     this.g[start] = 0;
@@ -72,20 +71,20 @@ export class PathFinder {
     while (this.heapSize > 0) {
       const cur = this.pop();
       if (cur === goal) {
-        this.reconstruct(goal, start, w, out);
+        this.reconstruct(goal, start, out);
         return true;
       }
       if (this.closed[cur] === gen) continue;
       this.closed[cur] = gen;
-      const cx = cur % w;
-      const cy = (cur - cx) / w;
+      const cx = grid.xOf(cur);
+      const cy = grid.yOf(cur);
       const gCur = this.g[cur];
       const dIn = this.dirIn[cur];
       for (let k = 0; k < 4; k++) {
         const nx = cx + DX[k];
         const ny = cy + DY[k];
-        if (nx < 0 || ny < 0 || nx >= w || ny >= grid.h) continue;
-        const ni = ny * w + nx;
+        if (!grid.inside(nx, ny)) continue;
+        const ni = grid.key(nx, ny);
         const cell = cells[ni];
         if (cell === BLOCKED) continue;
         if (this.closed[ni] === gen) continue;
@@ -106,15 +105,15 @@ export class PathFinder {
     return false;
   }
 
-  private reconstruct(goal: number, start: number, w: number, out: number[]): void {
+  private reconstruct(goal: number, start: number, out: number[]): void {
+    const grid = this.grid;
     let n = 0;
     for (let i = goal; i !== start && i >= 0; i = this.from[i]) n++;
     out.length = n * 2;
     let k = n - 1;
     for (let i = goal; i !== start && i >= 0; i = this.from[i]) {
-      const x = i % w;
-      out[k * 2] = x;
-      out[k * 2 + 1] = (i - x) / w;
+      out[k * 2] = grid.xOf(i);
+      out[k * 2 + 1] = grid.yOf(i);
       k--;
     }
   }

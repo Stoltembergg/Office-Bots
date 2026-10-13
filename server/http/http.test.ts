@@ -193,6 +193,22 @@ describe('API HTTP', () => {
     expect((await fetch(`${env.base}/api/demo`)).status).toBe(405);
   });
 
+  it('POST /api/demo com sessions: liga com esse alvo, ajusta se já ligado e recusa valores inválidos', async () => {
+    const post = (body: string) => fetch(`${env.base}/api/demo`, { method: 'POST', headers: JSON_HEADERS, body });
+    expect((await post('{"enabled":true,"sessions":1.5}')).status).toBe(400);
+    expect((await post('{"enabled":true,"sessions":-1}')).status).toBe(400);
+    expect((await post('{"enabled":true,"sessions":41}')).status).toBe(400);
+    expect((await post('{"enabled":true,"sessions":"4"}')).status).toBe(400);
+    expect((await snapshotOf(env.base)).meta.demo).toBe(false);
+    expect(await (await post('{"enabled":true,"sessions":7}')).json()).toEqual({ ok: true, demo: true });
+    expect(env.office.demoSessions()).toBe(7);
+    expect((await snapshotOf(env.base)).agents.filter((a) => a.id.startsWith('demo:') && a.kind === 'main').length).toBeGreaterThan(3);
+    expect(await (await post('{"enabled":true,"sessions":2}')).json()).toEqual({ ok: true, demo: true });
+    expect(env.office.demoSessions()).toBe(2);
+    expect(await (await post('{"enabled":false}')).json()).toEqual({ ok: true, demo: false });
+    expect(env.office.demoSessions()).toBeNull();
+  });
+
   it('DNS rebinding: Host de outro domínio é recusado em qualquer rota', async () => {
     const port = new URL(env.base).port;
     for (const path of ['/api/snapshot', '/api/stream', '/', '/bundle/main-abc12345.js']) {
