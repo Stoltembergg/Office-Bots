@@ -16,6 +16,7 @@ import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
 import { drawFxBanner } from './github-fx';
 import type { HeadInfo, Renderer } from './renderer';
+import { tr } from '../../../../shared/i18n';
 
 // A Pixelify Sans tem o "C" maiúsculo quase fechado (lê-se "Oopa" em vez de "Copa") em qualquer
 // peso/tamanho usado no canvas; os textos do mundo usam a fonte do sistema, sempre legível.
@@ -48,10 +49,10 @@ const OVERVIEW_PER_ROOM = 1;
 const OVERVIEW_TOTAL = 4;
 
 const CORE_NAMES: Record<string, string> = {
-  'core:recepcao': 'Recepção',
-  'core:banheiros': 'Banheiros',
-  'core:copa': 'Copa',
-  'core:lounge': 'Lounge',
+  'core:recepcao': tr('Recepção'),
+  'core:banheiros': tr('Banheiros'),
+  'core:copa': tr('Copa'),
+  'core:lounge': tr('Lounge'),
 };
 /** Nomes das áreas sem id fixo (as dos anexos), por kind. */
 const KIND_NAMES: Partial<Record<AreaKind, string>> = { hub: 'Lounge', restroom: 'Banheiros' };
@@ -163,7 +164,7 @@ export function headIconLift(ch: Pick<Character, 'mode' | 'icon'>): number {
 /** Texto do balão de espera: só o motivo (o amarelo e o ✋ já dizem "precisa de você"). */
 export function waitBubbleText(waitingFor: string | undefined): string {
   const why = (waitingFor ?? '').trim().replace(/^precisa de você:?\s*/i, '');
-  return why ? why.charAt(0).toUpperCase() + why.slice(1) : 'Responder no terminal';
+  return why ? why.charAt(0).toUpperCase() + why.slice(1) : tr('Responder no terminal');
 }
 
 /**

@@ -2,6 +2,7 @@
 // Recebe o OfficeStore (dados) e o WorldApi (canvas) e monta: barra superior com uso por conta,
 // barra lateral, gaveta de detalhes, feed, avisos, configurações, ajuda e estados de carregamento/vazio.
 // DOM incremental: os snapshots (até ~5/s) só marcam a UI como "suja"; tudo é reconciliado uma vez por quadro.
+import { access, onAccessChange } from '../net/access';
 import '@fontsource/pixelify-sans/400.css';
 import '@fontsource/pixelify-sans/500.css';
 import '@fontsource/pixelify-sans/600.css';
@@ -10,7 +11,7 @@ import './styles.css';
 
 import type { OfficeStore } from '../net/store';
 import type { Selection, WorldApi } from '../world/api';
-import type { PanelName, UiComponent, UiContext } from './context';
+import type { PanelName, TerminalRouter, UiComponent, UiContext } from './context';
 import { DayLauncher } from './daystats-launcher';
 import { RoomRenamer } from './roomrename';
 import { h } from './dom';
@@ -18,6 +19,7 @@ import { Drawer } from './drawer';
 import { FeedPanel } from './feed';
 import { HelpDialog } from './help';
 import { HistoryPopover } from './history';
+import { Deliveries } from './deliveries';
 import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
 import { hasCodexPermission } from './provider';
@@ -29,12 +31,14 @@ import { SettingsPopover } from './settings';
 import { Sidebar } from './sidebar';
 import { SoundControl } from './sound';
 import { TERMINAL_UNAVAILABLE_HINT, TerminalPanel } from './terminal';
+import { PtyPanel } from './pty';
 import { TimelapsePlayer } from './timelapse';
 import { Toasts } from './toasts';
 import { UpdateToaster } from './version';
 import { TopBar } from './topbar';
 import { UpdateBanner } from './update';
 import { FreeArea } from './viewport';
+import { tr } from '../../../shared/i18n';
 
 /** Relógio dos tempos relativos ("há 5 s"). */
 const CLOCK_MS = 5_000;
@@ -83,7 +87,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
       world.setOptions(worldOptionsFrom(prefs));
       invalidate();
     },
-    now: () => Date.now() + skew,
+    now: () => timelapse?.replayTime ?? Date.now() + skew,
     account: (id) => store.snapshot?.accounts.find((a) => a.id === id),
     agent: (id) => store.agent(id),
     selection: () => selection,
@@ -149,11 +153,66 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const notifier = new Notifier(ctx, sound.board);
   topbar = new TopBar(ctx);
   sidebar = new Sidebar(ctx);
-  const terminal = new TerminalPanel(ctx);
+  // Terminal interativo (Claude Code de verdade, dentro do navegador): abrir, assumir e encerrar sessões.
+  const pty = new PtyPanel(ctx);
+  const terminal = new TerminalPanel(ctx, pty);
   // Histórico de sessões (terminal): botão no grupo dos painéis da barra superior.
   const history = new HistoryPopover(ctx, terminal);
   topbar.panelGroup.prepend(history.button);
-  drawer = new Drawer(ctx, terminal);
+  // Terminal do agente: o interativo se a sessão roda aqui; senão o de leitura, com "Assumir daqui" para
+  // continuar nesta janela (sem o de leitura, o interativo mostra o aviso de "em outro terminal").
+  pty.onShow = () => terminal.close();
+  const router: TerminalRouter = {
+    get openAgentId() {
+      return pty.isOpen ? pty.agentId : terminal.agentId;
+    },
+    get available() {
+      return pty.enabled || (!!store.snapshot?.meta.terminal && !store.replaying);
+    },
+    interactive: (id) => !!pty.ptyOf(id),
+    get interactiveEnabled() {
+      return pty.enabled;
+    },
+    newSession: (cwd, account) => pty.newSession(cwd, account),
+    open(id, opener) {
+      const readOnly = !!store.snapshot?.meta.terminal && !store.replaying;
+      if (pty.ptyOf(id) || (pty.enabled && !readOnly && ctx.agent(id)?.kind === 'main')) pty.openAgent(id);
+      else {
+        pty.close();
+        terminal.open(id, opener);
+      }
+    },
+    toggle(id, opener) {
+      if (router.openAgentId === id) {
+        pty.close();
+        terminal.close();
+      } else router.open(id, opener);
+    },
+  };
+  ctx.terminals = router;
+  // Entregas: o que os agentes terminaram (primeiro botão do grupo: é o que mais se usa pelo celular).
+  const deliveries = new Deliveries(ctx, terminal);
+  topbar.panelGroup.prepend(deliveries.button);
+  // Links com ?agent= / ?delivery= (abrem o agente ou a entrega ao carregar).
+  const openLink = (url: URL) => {
+    const agent = url.searchParams.get('agent');
+    const delivery = url.searchParams.get('delivery');
+    if (!agent && !delivery) return;
+    const go = () => {
+      if (delivery) void deliveries.openById(delivery);
+      else if (agent && ctx.agent(agent)) ctx.select({ type: 'agent', id: agent }, { focus: true });
+    };
+    if (store.snapshot) go();
+    else {
+      const off = store.on('snapshot', () => {
+        off();
+        setTimeout(go, 300);
+      });
+    }
+    if (url.search && location.search === url.search) window.history.replaceState(null, '', location.pathname);
+  };
+  if (typeof location !== 'undefined') openLink(new URL(location.href));
+  drawer = new Drawer(ctx, terminal, pty);
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
   const updateToaster = new UpdateToaster(ctx, (n) => toasts.push(n));
@@ -174,7 +233,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const scrim = h('div', { class: 'ui-scrim', attrs: { 'aria-hidden': 'true' }, on: { click: () => ctx.togglePanel('sidebar', false) } });
 
   root.classList.add('ui-root');
-  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, help.el, renamer.el, live, splash.el);
+  root.append(timelapse.vignette, topbar.el, sidebar.el, scrim, feed.el, drawer.el, terminal.el, pty.el, timelapse.el, timelapse.badge, toasts.el, banner.el, update.el, empty.el, tip.el, settings.el, history.el, deliveries.el, help.el, renamer.el, live, splash.el);
   area = new FreeArea(world, { root, topbar: topbar.el, sidebar: sidebar.el, drawer: drawer.el, feed: feed.el }, () => ({
     sidebar: panels.sidebar,
     feed: panels.feed,
@@ -183,7 +242,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   }));
   drawer.onLayoutChange = () => applyLayout();
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, history, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, pty, history, deliveries, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;
@@ -224,11 +283,13 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
 
   // ---------------------------------------------------------------- eventos
   store.on('snapshot', (snap) => {
-    // No timelapse o "agora" da interface é o instante reproduzido (serverTime do snapshot reconstruído).
-    if (store.connection === 'open' || store.replaying) skew = snap.serverTime - Date.now();
+    // Ao vivo, o "agora" da interface segue o relógio do servidor (o aparelho pode estar adiantado ou atrasado).
+    // No timelapse, quem manda é o instante reproduzido pelo player (parado quando pausado).
+    if (store.connection === 'open' && !store.replaying) skew = snap.serverTime - Date.now();
     invalidate();
   });
   store.on('connection', () => invalidate());
+  onAccessChange(() => invalidate());
   world.onSelect((sel) => {
     const prev = selection;
     selection = sel;
@@ -292,7 +353,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
       case 'F':
         e.preventDefault();
         if (selection?.type === 'agent') drawer.toggleFollow();
-        else ctx.announce('Selecione um agente para seguir.');
+        else ctx.announce(tr('Selecione um agente para seguir.'));
         break;
       case 't':
       case 'T':
@@ -311,7 +372,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
         e.preventDefault();
         const next = nextPermissionAgent(store.snapshot?.agents ?? [], selection?.type === 'agent' ? selection.id : undefined);
         if (next) focusPermission(ctx, next.id);
-        else ctx.announce('Nenhum pedido de permissão ou pergunta para responder agora.');
+        else ctx.announce(tr('Nenhum pedido de permissão ou pergunta para responder agora.'));
         break;
       }
       case 'o':
@@ -335,13 +396,17 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
     }
   }
 
-  /** Atalho T: abre o terminal do agente selecionado (ou fecha o que estiver aberto). */
+  /**
+   * Atalho T: abre a janela de terminal do agente selecionado (ver `router`) ou fecha a que estiver aberta.
+   */
   function toggleTerminal(): void {
     const id = selection?.type === 'agent' ? selection.id : null;
+    if (id !== null && pty.enabled && ctx.agent(id)?.kind === 'main') return router.toggle(id);
+    if (id === null && pty.isOpen) return pty.close();
     if (terminal.isOpen && (id === null || terminal.agentId === id)) terminal.close();
-    else if (id === null) ctx.announce('Selecione um agente para abrir o terminal.');
-    else if (!store.snapshot?.meta.terminal) ctx.announce(`${TERMINAL_UNAVAILABLE_HINT}.`);
-    else if (!ctx.agent(id)) ctx.announce('O agente já saiu do escritório.');
+    else if (id === null) ctx.announce(tr('Selecione um agente para abrir o terminal.'));
+    else if (!store.snapshot?.meta.terminal || !access().terminal) ctx.announce(`${TERMINAL_UNAVAILABLE_HINT}.`);
+    else if (!ctx.agent(id)) ctx.announce(tr('O agente já saiu do escritório.'));
     else terminal.open(id);
   }
 
