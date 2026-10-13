@@ -8,6 +8,7 @@ import {
   concludedByIdle,
   END_TURN_QUIET_MS,
   IDLE_TIMEOUT_MS,
+  listSubagentFiles,
   parseJournal,
   parseSubagentMeta,
   PENDING_TOOL_TIMEOUT_MS,
@@ -301,5 +302,108 @@ describe('readSubagentMeta', () => {
     const file = join(tmp.dir, 'agent-a1.meta.json');
     writeFileSync(file, '{oops');
     expect(readSubagentMeta(file)).toBeUndefined();
+  });
+});
+
+describe('listSubagentFiles', () => {
+  let tmp: ReturnType<typeof tempDir>;
+  beforeEach(() => {
+    tmp = tempDir();
+  });
+  afterEach(() => tmp.cleanup());
+
+  /** Cria arquivos vazios (e as pastas) relativos à sessão temporária. */
+  const touch = (...rels: string[]): void => {
+    for (const rel of rels) {
+      const full = join(tmp.dir, rel);
+      mkdirSync(join(full, '..'), { recursive: true });
+      writeFileSync(full, '');
+    }
+  };
+  const list = () => listSubagentFiles(tmp.dir).sort((a, b) => a.path.localeCompare(b.path));
+  const sub = join('subagents');
+
+  it('SUBAG-36: agente solto em subagents/ sai sem a chave runId', () => {
+    touch(join(sub, 'agent-a1.jsonl'));
+    const items = list();
+    expect(items).toStrictEqual([
+      {
+        agentId: 'a1',
+        path: join(tmp.dir, sub, 'agent-a1.jsonl'),
+        metaPath: join(tmp.dir, sub, 'agent-a1.meta.json'),
+      },
+    ]);
+    expect('runId' in items[0]).toBe(false);
+  });
+
+  it('SUBAG-37: agente de workflows/<runId>/ sai com o runId igual ao nome da pasta', () => {
+    touch(join(sub, 'workflows', 'r1', 'agent-z.jsonl'));
+    expect(list()).toStrictEqual([
+      {
+        agentId: 'z',
+        path: join(tmp.dir, sub, 'workflows', 'r1', 'agent-z.jsonl'),
+        metaPath: join(tmp.dir, sub, 'workflows', 'r1', 'agent-z.meta.json'),
+        runId: 'r1',
+      },
+    ]);
+  });
+
+  it('SUBAG-38: agente solto e agentes de vários runs saem todos, cada um com o runId certo', () => {
+    touch(
+      join(sub, 'agent-a1.jsonl'),
+      join(sub, 'workflows', 'r1', 'agent-b1.jsonl'),
+      join(sub, 'workflows', 'r2', 'agent-c1.jsonl'),
+    );
+    const porId = Object.fromEntries(list().map((f) => [f.agentId, f.runId]));
+    expect(list()).toHaveLength(3);
+    expect(porId).toStrictEqual({ a1: undefined, b1: 'r1', c1: 'r2' });
+    expect('runId' in list().find((f) => f.agentId === 'a1')!).toBe(false);
+  });
+
+  it('SUBAG-39: metaPath é agent-<id>.meta.json na pasta do .jsonl, exista o meta ou não', () => {
+    touch(join(sub, 'agent-a1.jsonl'), join(sub, 'agent-a1.meta.json'), join(sub, 'workflows', 'r1', 'agent-b1.jsonl'));
+    const porId = Object.fromEntries(list().map((f) => [f.agentId, f.metaPath]));
+    expect(porId).toStrictEqual({
+      a1: join(tmp.dir, sub, 'agent-a1.meta.json'),
+      b1: join(tmp.dir, sub, 'workflows', 'r1', 'agent-b1.meta.json'),
+    });
+  });
+
+  it('SUBAG-40: só agent-<id>.jsonl é listado; metadados, journal e nomes parecidos são ignorados', () => {
+    touch(
+      join(sub, 'agent-a1.jsonl'),
+      join(sub, 'agent-a1.meta.json'),
+      join(sub, 'journal.jsonl'),
+      join(sub, 'agent-.jsonl'),
+      join(sub, 'agent-a.meta.jsonl'),
+      join(sub, 'notes.jsonl'),
+      join(sub, 'agent-a.jsonl.bak'),
+    );
+    expect(list().map((f) => f.agentId)).toStrictEqual(['a1']);
+  });
+
+  it('SUBAG-41: o id aceita letras maiúsculas e minúsculas, dígitos, _ e - por inteiro', () => {
+    touch(join(sub, 'agent-a1-B_2.jsonl'));
+    expect(list().map((f) => f.agentId)).toStrictEqual(['a1-B_2']);
+  });
+
+  it('SUBAG-42: sessão inexistente ou sem subagents/ devolve lista vazia sem lançar', () => {
+    expect(listSubagentFiles(join(tmp.dir, 'nao-existe'))).toStrictEqual([]);
+    expect(listSubagentFiles(tmp.dir)).toStrictEqual([]);
+  });
+
+  it('SUBAG-43: arquivo comum e pasta de execução vazia em workflows/ não listam nada nem lançam', () => {
+    touch(join(sub, 'workflows', 'agent-w.jsonl'), join(sub, 'workflows', 'notas.txt'));
+    mkdirSync(join(tmp.dir, sub, 'workflows', 'vazio'), { recursive: true });
+    expect(listSubagentFiles(tmp.dir)).toStrictEqual([]);
+  });
+
+  it('SUBAG-44: só um nível de execução: pasta mais funda e direto em workflows/ são ignorados', () => {
+    touch(
+      join(sub, 'workflows', 'r1', 'fundo', 'agent-q.jsonl'),
+      join(sub, 'workflows', 'agent-w.jsonl'),
+      join(sub, 'workflows', 'r1', 'agent-ok.jsonl'),
+    );
+    expect(list().map((f) => f.agentId)).toStrictEqual(['ok']);
   });
 });
