@@ -2593,7 +2593,6 @@ export const ES: Readonly<Record<string, string>> = {
   "arquivos do Grok": "archivos de Grok",
   "{0} · {1} tokens": "{0} · {1} tokens",
   "100% = seu maior gasto": "100% = tu mayor gasto",
-  "Gasto em 5 h": "Gasto en 5 h",
   "Gasto em 7 dias": "Gasto en 7 días",
-  "O Grok não informa limite de uso: 100% é o seu maior gasto já registrado numa janela de 5 h (ou numa semana), somado do usage.json de cada sessão. O custo é o preço da API da xAI; no plano por assinatura, é só uma referência.": "Grok no informa un límite de uso: 100% es tu mayor gasto registrado en una ventana de 5 h (o en una semana), sumado del usage.json de cada sesión. El costo es el precio de la API de xAI; en el plan por suscripción, es solo una referencia.",
+  "O Grok só tem o limite da semana, e não informa quanto é: 100% é o seu maior gasto já registrado numa semana, somado do usage.json de cada sessão. O custo é o preço da API da xAI; no plano por assinatura, é só uma referência.": "Grok solo tiene el límite semanal, y no informa cuánto es: 100% es tu mayor gasto registrado en una semana, sumado del usage.json de cada sesión. El costo es el precio de la API de xAI; en el plan por suscripción, es solo una referencia.",
 };
