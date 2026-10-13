@@ -25,3 +25,11 @@ describe('HostQueue', () => {
     await expect(p).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/auxiliar/) });
   });
 });
+
+describe('HostQueue sem o auxiliar', () => {
+  it('pedido que ninguém busca falha no prazo, mesmo sem nenhum poll', async () => {
+    const q = new HostQueue({ timeoutMs: 30 });
+    const r = await q.submit({ op: 'stop', account: '.codex', codexHome: '/h', thread: 't' });
+    expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/auxiliar/) });
+  });
+});

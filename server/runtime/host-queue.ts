@@ -38,7 +38,11 @@ export class HostQueue {
   /** Resolve com o ack, ou falha no prazo (o prazo é conferido quando o auxiliar busca). */
   submit(a: WithoutId<HostAction>): Promise<HostResult> {
     const action = { ...a, id: randomUUID() } as HostAction;
-    return new Promise((done) => this.waiting.set(action.id, { action, sent: false, at: this.now(), done }));
+    return new Promise((done) => {
+      this.waiting.set(action.id, { action, sent: false, at: this.now(), done });
+      // Sem o auxiliar ninguém chama poll(): o prazo também corre sozinho, para o pedido não ficar pendurado.
+      setTimeout(() => this.expire(), (this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS) + 1).unref?.();
+    });
   }
 
   poll(): HostAction[] {
@@ -76,7 +80,7 @@ export class HostQueue {
 }
 
 /**
- * CodexAppServerLike que manda tudo pela fila (o CodexRuntime no container usa este, com o TUI nulo: achar e
+ * CodexAppServerLike que manda tudo pela fila (o CodexRuntime no container usa este, com `delegate`: achar e
  * encerrar o processo acontecem no auxiliar). `startThread` não devolve o id: quem abre de verdade é o host.
  */
 export function hostAppServer(queue: HostQueue, account: () => string, codexHome: string): CodexAppServerLike {
