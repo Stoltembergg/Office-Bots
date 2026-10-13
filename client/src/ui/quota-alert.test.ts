@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CYCLE_TOLERANCE_MS, decideQuota, QUOTA_KEY, QUOTA_THRESHOLDS, type QuotaCycle } from './quota-alert';
+import { CYCLE_TOLERANCE_MS, decideQuota, QUOTA_KEY, QUOTA_THRESHOLDS, quotaNoticeText, type QuotaCycle } from './quota-alert';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -99,5 +99,29 @@ describe('decideQuota', () => {
     expect(a.notify).toBe(95);
     expect(cycle.done).toEqual([80]);
     expect(QUOTA_KEY).toBe('habblaud:quota-alerts');
+  });
+});
+
+describe('quotaNoticeText', () => {
+  it('QUOTA-06: 80% da sessão de 5 h', () => {
+    expect(quotaNoticeText('Conta C', 'fiveHour', 80, 82, 'às 14:30')).toBe('⚠️ Conta C: 82% da sessão de 5 h usados (reinicia às 14:30)');
+  });
+
+  it('QUOTA-06: 80% da semana', () => {
+    expect(quotaNoticeText('Conta C', 'sevenDay', 80, 81, 'qui., 20:00')).toBe('⚠️ Conta C: 81% da semana usados (reinicia qui., 20:00)');
+  });
+
+  it('QUOTA-06: 95% da sessão de 5 h', () => {
+    expect(quotaNoticeText('Conta C', 'fiveHour', 95, 96, 'às 14:30')).toBe('🚨 Conta C: perto do limite, 96% da sessão de 5 h usados (reinicia às 14:30)');
+  });
+
+  it('QUOTA-06: 95% da semana', () => {
+    expect(quotaNoticeText('Conta C', 'sevenDay', 95, 95, 'amanhã às 01:30')).toBe('🚨 Conta C: perto do limite, 95% da semana usados (reinicia amanhã às 01:30)');
+  });
+
+  it('QUOTA-06: o texto de 95 mostra o percentual real lido (97), não o limiar', () => {
+    const t = quotaNoticeText('Conta C', 'fiveHour', 95, 97, 'às 14:30');
+    expect(t).toContain('97%');
+    expect(t).not.toContain('95%');
   });
 });

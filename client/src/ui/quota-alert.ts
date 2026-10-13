@@ -1,8 +1,10 @@
 // Aviso de limite de uso: decide, para cada conta e janela (sessão de 5 h ou semana), se um limiar (80% e 95%)
 // foi cruzado agora e ainda não foi avisado neste ciclo. Funções puras: sem DOM, relógio nem armazenamento
 // (o componente quota-watch.ts cuida do armazenamento e do push). Testes em ui/quota-alert.test.ts.
+import { tr } from '../../../shared/i18n';
 
 export type QuotaThreshold = 80 | 95;
+export type QuotaWindowKey = 'fiveHour' | 'sevenDay';
 
 /** Limiares avisados, em ordem crescente. */
 export const QUOTA_THRESHOLDS = [80, 95] as const;
@@ -46,4 +48,16 @@ export function decideQuota(s: QuotaSample): QuotaDecision {
   const top = reached.length > 0 ? reached[reached.length - 1] : undefined;
   const notify = top !== undefined && !fresh && prevPct !== undefined && prevPct < top ? top : null;
   return { notify, cycle: next, skip: false };
+}
+
+/** O texto do aviso: `label` é a conta, `pct` o percentual real lido, `reset` o reinício de `formatResetAt`. */
+export function quotaNoticeText(label: string, key: QuotaWindowKey, threshold: QuotaThreshold, pct: number, reset: string): string {
+  if (threshold === 95) {
+    return key === 'fiveHour'
+      ? tr('🚨 {0}: perto do limite, {1}% da sessão de 5 h usados (reinicia {2})', [label, pct, reset])
+      : tr('🚨 {0}: perto do limite, {1}% da semana usados (reinicia {2})', [label, pct, reset]);
+  }
+  return key === 'fiveHour'
+    ? tr('⚠️ {0}: {1}% da sessão de 5 h usados (reinicia {2})', [label, pct, reset])
+    : tr('⚠️ {0}: {1}% da semana usados (reinicia {2})', [label, pct, reset]);
 }
