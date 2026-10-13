@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { discoverClaudeDirs, expandHome, splitList } from './accounts/detect';
 import { parseAllowedHosts } from './http/guard';
 import { normalizeCwd } from './model/rooms';
+import { parseRemoteConfig, type RemoteConfig } from './http/remote';
 import { parseGithubRepo } from './updates/checker';
+import { tr } from '../shared/i18n';
 
 export interface ServerConfig {
   port: number;
@@ -58,6 +60,10 @@ export interface ServerConfig {
   updateCheck: boolean;
   /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
   codex: boolean;
+  /** Segunda porta, com login, para o celular na rede local (http/remote.ts); ausente = desligada. */
+  remote?: RemoteConfig;
+  /** Por que o acesso remoto ficou desligado quando as variáveis estão incompletas. */
+  remoteWarning?: string;
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -133,10 +139,10 @@ export function terminalOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
   if (flag && !isTruthy(flag)) return `HABBLAUD_TERMINAL=${flag}`;
   if (inDocker) {
     const bind = env.HABBLAUD_BIND?.trim();
-    if (!bind) return 'HABBLAUD_BIND não chegou ao container, então a porta pode estar exposta na rede';
-    return isLoopbackBind(bind) ? undefined : `a porta está exposta na rede: HABBLAUD_BIND=${bind}`;
+    if (!bind) return tr('HABBLAUD_BIND não chegou ao container, então a porta pode estar exposta na rede');
+    return isLoopbackBind(bind) ? undefined : tr('a porta está exposta na rede: HABBLAUD_BIND={0}', [bind]);
   }
-  return isLoopbackBind(host) ? undefined : `a porta está exposta na rede: HABBLAUD_HOST=${host}`;
+  return isLoopbackBind(host) ? undefined : tr('a porta está exposta na rede: HABBLAUD_HOST={0}', [host]);
 }
 
 /**
@@ -148,7 +154,7 @@ export function messagesOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
   const flag = env.HABBLAUD_MENSAGENS?.trim();
   if (flag && !isTruthy(flag)) return `HABBLAUD_MENSAGENS=${flag}`;
   const terminal = terminalOffReason(env, host, inDocker);
-  return terminal ? `mesma trava do terminal: ${terminal}` : undefined;
+  return terminal ? tr('mesma trava do terminal: {0}', [terminal]) : undefined;
 }
 
 /**
@@ -169,6 +175,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   const host = env.HABBLAUD_HOST?.trim() || '127.0.0.1';
   const pkg = readPackage(rootDir);
   const projectRoots = splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home));
+  const remote = parseRemoteConfig(env, inDocker);
   return {
     port: Number.isFinite(port) && port > 0 && port < 65536 ? port : 4747,
     host,
@@ -189,5 +196,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    remote: remote.config,
+    remoteWarning: remote.warning,
   };
 }
