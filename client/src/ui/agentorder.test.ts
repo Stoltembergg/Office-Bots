@@ -165,3 +165,56 @@ describe('moveAgent', () => {
     expect(st.data.size).toBe(0);
   });
 });
+
+describe('teto de projetos lembrados', () => {
+  const mover = (room: string) => moveAgent(room, ITEMS, idOf, sessionOf, 'a1', 'a2', false);
+  const projetos = (st: ReturnType<typeof memoryStorage>) => Object.keys(JSON.parse(st.data.get(KEY)!) as object);
+  const gravar = (st: ReturnType<typeof memoryStorage>, de: number, ate: number) => {
+    for (let n = de; n <= ate; n++) mover(`p${n}`);
+    return projetos(st);
+  };
+
+  it('AGORD-18: com 60 projetos gravados sobram os 50 mais recentes', () => {
+    const st = install();
+    const chaves = gravar(st, 0, 59);
+    expect(chaves).toHaveLength(50);
+    expect(chaves[0]).toBe('p10');
+    expect(chaves[chaves.length - 1]).toBe('p59');
+    expect(chaves).not.toContain('p9');
+  });
+
+  it('AGORD-19: com exatamente 50 projetos nenhum cai; o 51º descarta o primeiro', () => {
+    const st = install();
+    const cinquenta = gravar(st, 0, 49);
+    expect(cinquenta).toHaveLength(50);
+    expect(cinquenta).toContain('p0');
+
+    mover('p50');
+    const depois = projetos(st);
+    expect(depois).toHaveLength(50);
+    expect(depois).not.toContain('p0');
+    expect(depois).toContain('p1');
+  });
+
+  it('AGORD-20: regravar um projeto o torna o mais recente e ele só cai depois dos mais antigos', () => {
+    const st = install();
+    gravar(st, 0, 49);
+    mover('p0');
+    mover('p50');
+    const chaves = projetos(st);
+    expect(chaves).toHaveLength(50);
+    expect(chaves).toContain('p0');
+    expect(chaves).not.toContain('p1');
+  });
+
+  it('AGORD-21: armazenamento que já tem 60 projetos fica com exatamente 50 ao gravar um novo', () => {
+    const antigo: Record<string, string[]> = {};
+    for (let n = 0; n < 60; n++) antigo[`q${n}`] = ['s1'];
+    const st = withOrder(antigo);
+    mover('novo');
+    const chaves = projetos(st);
+    expect(chaves).toHaveLength(50);
+    expect(chaves[0]).toBe('q11');
+    expect(chaves[chaves.length - 1]).toBe('novo');
+  });
+});
