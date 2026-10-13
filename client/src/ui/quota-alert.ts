@@ -2,6 +2,11 @@
 // foi cruzado agora e ainda não foi avisado neste ciclo. Funções puras: sem DOM, relógio nem armazenamento
 // (o componente quota-watch.ts cuida do armazenamento e do push). Testes em ui/quota-alert.test.ts.
 import { tr } from '../../../shared/i18n';
+import { isDemoId } from '../../../shared/timeline';
+import type { AccountInfo, Notice } from '../../../shared/types';
+import { FIVE_HOURS_MS, formatResetAt, usageWindowView, WEEK_MS } from './format';
+import { providerOf, showsProviderTag } from './provider';
+import { cardState } from './usage';
 
 export type QuotaThreshold = 80 | 95;
 export type QuotaWindowKey = 'fiveHour' | 'sevenDay';
@@ -60,4 +65,67 @@ export function quotaNoticeText(label: string, key: QuotaWindowKey, threshold: Q
   return key === 'fiveHour'
     ? tr('⚠️ {0}: {1}% da sessão de 5 h usados (reinicia {2})', [label, pct, reset])
     : tr('⚠️ {0}: {1}% da semana usados (reinicia {2})', [label, pct, reset]);
+}
+
+export type QuotaAccount = Pick<AccountInfo, 'id' | 'name' | 'provider' | 'usage' | 'usageStatus'>;
+export interface QuotaInput {
+  accounts: readonly QuotaAccount[];
+  now: number;
+  hidden: readonly string[];
+  state: QuotaState;
+  last: QuotaLast;
+}
+export interface QuotaResult {
+  notices: Notice[];
+  state: QuotaState;
+  last: QuotaLast;
+  /** O estado devolvido difere do recebido (só então vale gravar). */
+  changed: boolean;
+}
+
+const QUOTA_WINDOWS: readonly (readonly [QuotaWindowKey, number])[] = [
+  ['fiveHour', FIVE_HOURS_MS],
+  ['sevenDay', WEEK_MS],
+];
+
+/**
+ * Avalia as contas de um quadro do snapshot e devolve os avisos a mostrar, o estado dos ciclos e as leituras
+ * anteriores atualizados. Pula conta `demo:`, oculta ou com o cartão fora de `ok`; janela renovada não vale.
+ * Não muta as entradas.
+ */
+export function evaluateQuota(i: QuotaInput): QuotaResult {
+  const state: QuotaState = { ...i.state };
+  const last: QuotaLast = { ...i.last };
+  const notices: Notice[] = [];
+  for (const a of i.accounts) {
+    if (isDemoId(a.id)) continue;
+    if (i.hidden.includes(a.id)) {
+      // Oculta não avisa e esquece a leitura anterior: ao reexibir, a primeira leitura é só linha de base (QUOTA-17).
+      for (const [key] of QUOTA_WINDOWS) delete last[`${a.id}|${key}`];
+      continue;
+    }
+    if (cardState(a) !== 'ok' || !a.usage) continue;
+    const label = a.name + (showsProviderTag(providerOf(a), a.name) ? ' · Codex' : '');
+    for (const [key, windowMs] of QUOTA_WINDOWS) {
+      const win = a.usage[key];
+      const view = usageWindowView(win, a.usage.fetchedAt, i.now, windowMs);
+      if (!win || !view || view.pct === null) continue;
+      const k = `${a.id}|${key}`;
+      const d = decideQuota({ pct: view.pct, resetsAt: win.resetsAt, prevPct: last[k], cycle: state[k] });
+      if (d.skip) continue;
+      last[k] = view.pct;
+      if (d.cycle) state[k] = d.cycle;
+      if (d.notify !== null && win.resetsAt !== undefined) {
+        notices.push({
+          id: `quota:${a.id}:${key}:${d.notify}:${win.resetsAt}`,
+          level: 'warn',
+          text: quotaNoticeText(label, key, d.notify, view.pct, formatResetAt(win.resetsAt, i.now)),
+          at: i.now,
+        });
+      }
+    }
+  }
+  // Ciclo que já acabou não precisa mais ser lembrado.
+  for (const k of Object.keys(state)) if (state[k].resetsAt + CYCLE_TOLERANCE_MS <= i.now) delete state[k];
+  return { notices, state, last, changed: JSON.stringify(state) !== JSON.stringify(i.state) };
 }

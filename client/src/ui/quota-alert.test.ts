@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CYCLE_TOLERANCE_MS, decideQuota, QUOTA_KEY, QUOTA_THRESHOLDS, quotaNoticeText, type QuotaCycle } from './quota-alert';
+import type { AccountUsage, UsageWindow } from '../../../shared/types';
+import { CYCLE_TOLERANCE_MS, decideQuota, evaluateQuota, QUOTA_KEY, QUOTA_THRESHOLDS, quotaNoticeText, type QuotaAccount, type QuotaCycle, type QuotaInput, type QuotaLast, type QuotaState } from './quota-alert';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -123,5 +124,170 @@ describe('quotaNoticeText', () => {
     const t = quotaNoticeText('Conta C', 'fiveHour', 95, 97, 'às 14:30');
     expect(t).toContain('97%');
     expect(t).not.toContain('95%');
+  });
+});
+
+describe('evaluateQuota', () => {
+  const NOW = 2_000 * HOUR;
+  const FIVE = NOW + 3 * HOUR;
+  const WEEK = NOW + 3 * 24 * HOUR;
+  const win = (utilization: number, resetsAt: number | undefined = FIVE): UsageWindow => ({ utilization, resetsAt });
+  const acc = (over: Partial<QuotaAccount> & { five?: UsageWindow; week?: UsageWindow } = {}): QuotaAccount => {
+    const { five, week, ...rest } = over;
+    const usage: AccountUsage = { source: 'statusline', fetchedAt: NOW - MIN, ...(five ? { fiveHour: five } : {}), ...(week ? { sevenDay: week } : {}) };
+    return { id: '.claude-c', name: 'Conta C', usage, usageStatus: 'ok', ...rest };
+  };
+  const input = (accounts: QuotaAccount[], over: Partial<QuotaInput> = {}): QuotaInput => ({ accounts, now: NOW, hidden: [], state: {}, last: {}, ...over });
+  /** Roda os quadros em sequência, passando adiante o estado e as leituras anteriores. */
+  const run = (frames: QuotaAccount[][], over: Partial<QuotaInput> = {}) => {
+    let state: QuotaState = {};
+    let last: QuotaLast = {};
+    const out: ReturnType<typeof evaluateQuota>[] = [];
+    for (const accounts of frames) {
+      const r = evaluateQuota(input(accounts, { state, last, ...over }));
+      state = r.state;
+      last = r.last;
+      out.push(r);
+    }
+    return out;
+  };
+
+  it('QUOTA-01 e QUOTA-07: linha de base e depois cruzamento dão 1 aviso, de nível warn, sem agentId nem roomId', () => {
+    const [a, b, c] = run([[acc({ five: win(70) })], [acc({ five: win(82) })], [acc({ five: win(83) })]]);
+    expect(a.notices).toEqual([]);
+    expect(b.notices).toHaveLength(1);
+    const n = b.notices[0];
+    expect(n.level).toBe('warn');
+    expect(n.id).toBe(`quota:.claude-c:fiveHour:80:${FIVE}`);
+    expect(n.at).toBe(NOW);
+    expect(n.text).toContain('Conta C: 82% da sessão de 5 h usados (reinicia ');
+    expect('agentId' in n).toBe(false);
+    expect('roomId' in n).toBe(false);
+    expect(c.notices).toEqual([]);
+  });
+
+  it('QUOTA-08 e QUOTA-06: conta do Codex segue a mesma regra; "Codex" no nome não repete o sufixo e "Conta X" vira "Conta X · Codex"', () => {
+    const codex = (name: string, u: number) => acc({ id: '.codex', name, provider: 'codex', five: win(u) });
+    const x = run([[codex('Conta X', 70)], [codex('Conta X', 85)]])[1].notices;
+    expect(x).toHaveLength(1);
+    expect(x[0].text).toContain('Conta X · Codex: 85%');
+    const c = run([[codex('Codex', 70)], [codex('Codex', 85)]])[1].notices;
+    expect(c).toHaveLength(1);
+    expect(c[0].text).toContain('⚠️ Codex: 85%');
+    expect(c[0].text).not.toContain('Codex · Codex');
+    expect(c[0].text).not.toContain('· Codex:');
+  });
+
+  it('QUOTA-10: usageStatus stale não avisa nem atualiza a leitura anterior', () => {
+    const [a, b] = run([[acc({ five: win(70) })], [acc({ five: win(90), usageStatus: 'stale' })]]);
+    expect(b.notices).toEqual([]);
+    expect(b.last).toEqual(a.last);
+    expect(b.state).toEqual(a.state);
+    // a leitura anterior continua 70: quando os números voltam a valer, o cruzamento é avisado
+    const d = evaluateQuota(input([acc({ five: win(85) })], { state: b.state, last: b.last }));
+    expect(d.notices).toHaveLength(1);
+  });
+
+  it('QUOTA-11: janela que renovou depois da leitura (resetsAt no passado) não avisa', () => {
+    const [a, b] = run([[acc({ five: win(70) })], [acc({ five: win(95, NOW - 1) })]]);
+    expect(b.notices).toEqual([]);
+    expect(b.last).toEqual(a.last); // a leitura de uma janela renovada não vira "leitura anterior"
+    expect(b.state).toEqual(a.state);
+  });
+
+  it('QUOTA-12: conta sem cota (noQuota) e leitura sem janelas não avisam nem viram 0% ou 100%', () => {
+    const noQuota = acc({ usage: { source: 'codex', noQuota: true, fetchedAt: NOW }, provider: 'codex', name: 'Codex' });
+    const empty = acc({ id: '.claude-d', usage: { source: 'cache', fetchedAt: NOW } });
+    const none = acc({ id: '.claude-e', usage: undefined, usageStatus: 'disabled' });
+    const r = run([[noQuota, empty, none], [noQuota, empty, none]]);
+    for (const x of r) {
+      expect(x.notices).toEqual([]);
+      expect(x.last).toEqual({});
+      expect(x.state).toEqual({});
+    }
+  });
+
+  it('QUOTA-16: conta com id demo: não avisa', () => {
+    const d = (u: number) => acc({ id: 'demo:conta', five: win(u) });
+    const r = run([[d(70)], [d(97)]]);
+    expect(r[1].notices).toEqual([]);
+    expect(r[1].state).toEqual({});
+  });
+
+  it('QUOTA-17 e QUOTA-09: conta oculta não avisa e, reexibida já em 90%, também não (linha de base)', () => {
+    const a = (u: number) => [acc({ five: win(u) })];
+    let state: QuotaState = {};
+    let last: QuotaLast = {};
+    const step = (accounts: QuotaAccount[], hidden: string[]) => {
+      const r = evaluateQuota(input(accounts, { state, last, hidden }));
+      state = r.state;
+      last = r.last;
+      return r.notices;
+    };
+    expect(step(a(70), [])).toEqual([]);
+    expect(step(a(85), ['.claude-c'])).toEqual([]); // oculta, cruzou
+    expect(step(a(90), [])).toEqual([]); // reexibida acima do limiar: linha de base
+    expect(step(a(96), [])).toHaveLength(1); // e o 95 ainda avisa
+  });
+
+  it('QUOTA-01: sessão de 5 h e semana cruzando 80% no mesmo quadro dão 2 avisos, um por janela', () => {
+    const f = (five: number, week: number) => [acc({ five: win(five), week: win(week, WEEK) })];
+    const r = run([f(70, 70), f(82, 81)])[1].notices;
+    expect(r).toHaveLength(2);
+    expect(r[0].id).toBe(`quota:.claude-c:fiveHour:80:${FIVE}`);
+    expect(r[1].id).toBe(`quota:.claude-c:sevenDay:80:${WEEK}`);
+    expect(r[0].text).toContain('da sessão de 5 h');
+    expect(r[1].text).toContain('da semana');
+  });
+
+  it('QUOTA-01: várias contas cruzando juntas avisam todas, na ordem do snapshot', () => {
+    const f = (u: number) => [acc({ id: '.claude-b', name: 'Conta B', five: win(u) }), acc({ id: '.claude-a', name: 'Conta A', five: win(u) })];
+    const r = run([f(70), f(88)])[1].notices;
+    expect(r.map((n) => n.id.split(':')[1])).toEqual(['.claude-b', '.claude-a']);
+  });
+
+  it('QUOTA-13: janela sem resetsAt não avisa', () => {
+    const f = (u: number) => [acc({ five: { utilization: u } })];
+    const r = run([f(70), f(97)]);
+    expect(r[1].notices).toEqual([]);
+    expect(r[1].state).toEqual({});
+  });
+
+  it('QUOTA-05: poda do estado os ciclos que já acabaram e mantém os em curso', () => {
+    const state: QuotaState = {
+      'velha|fiveHour': { resetsAt: NOW - CYCLE_TOLERANCE_MS, done: [80] },
+      'viva|fiveHour': { resetsAt: NOW + HOUR, done: [80] },
+    };
+    const r = evaluateQuota(input([], { state }));
+    expect(Object.keys(r.state)).toEqual(['viva|fiveHour']);
+    expect(r.changed).toBe(true);
+    expect(evaluateQuota(input([], { state: r.state })).changed).toBe(false);
+  });
+
+  it('QUOTA-22: não muta as entradas (congeladas em profundidade)', () => {
+    const deepFreeze = <T,>(o: T): T => {
+      if (o && typeof o === 'object') for (const v of Object.values(o)) deepFreeze(v);
+      return Object.freeze(o);
+    };
+    const accounts = deepFreeze([acc({ five: win(85), week: win(90, WEEK) })]);
+    const state = deepFreeze<QuotaState>({ '.claude-c|fiveHour': { resetsAt: FIVE, done: [] }, 'velha|fiveHour': { resetsAt: NOW - HOUR, done: [80] } });
+    const last = deepFreeze<QuotaLast>({ '.claude-c|fiveHour': 70 });
+    const hidden = deepFreeze(['x']);
+    const r = evaluateQuota({ accounts, now: NOW, hidden, state, last });
+    expect(r.notices).toHaveLength(1);
+    expect(r.state).not.toBe(state);
+    expect(state['.claude-c|fiveHour'].done).toEqual([]);
+  });
+
+  it('QUOTA-01: utilization que não é número finito não avisa', () => {
+    const f = (u: number) => [acc({ five: win(u) })];
+    expect(run([f(70), f(Number.NaN)])[1].notices).toEqual([]);
+    expect(run([f(70), f(Number.POSITIVE_INFINITY)])[1].notices).toEqual([]);
+  });
+
+  it('QUOTA-01: 79,5% conta como 80% (o mesmo arredondamento do cartão)', () => {
+    const r = evaluateQuota(input([acc({ five: win(79.5) })], { last: { '.claude-c|fiveHour': 70 }, state: { '.claude-c|fiveHour': { resetsAt: FIVE, done: [] } } }));
+    expect(r.notices).toHaveLength(1);
+    expect(r.notices[0].text).toContain('80%');
   });
 });
