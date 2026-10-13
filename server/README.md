@@ -412,9 +412,11 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   JSON-RPC: assina só as threads que o daemon já tem carregadas (`thread/loaded/list` na descoberta e `thread/started`
   das que outro cliente carrega; o `thread/resume` é sem overrides e nunca vai a uma thread descarregada, porque faria
   o daemon carregá-la) e repassa os pedidos de aprovação de comando e de arquivo ao registro (`registerParallel`, modo
-  `'parallel'`): sem prazo, sem página aberta, com as `decisions` que o Codex oferece (ausentes = as quatro; sem
-  `accept`, `acceptForSession` nem `decline`, como só `cancel` = nenhum cartão, vale o terminal, com uma linha no log;
-  o escritório nunca manda `cancel`); o comando do cartão é o de dentro do invólucro do shell
+  `'parallel'`; um pedido de rede, com `networkApprovalContext`, e um `kind: "writeStdin"` nunca viram cartão e ficam
+  só no terminal, e `kind` ausente vale `"command"`): sem prazo, sem página aberta, com as `decisions` que o Codex
+  oferece (ausentes = as quatro; sem `accept`, `acceptForSession` nem `decline`, como só `cancel` = nenhum cartão,
+  vale o terminal, com uma linha no log; o escritório nunca manda `cancel`); o comando do cartão é o de dentro do
+  invólucro do shell
   (`unwrapCommand`); vale a 1ª resposta, do escritório ou do terminal, e o `serverRequest/resolved` fecha o cartão. A
   decisão do escritório vai ao app-server (503 com o canal fora); recusar não leva motivo; "nesta sessão" =
   `acceptForSession`. Numa thread assinada, o hook recebe `{skip: 'parallel'}`. Assinada, a thread fica carregada no

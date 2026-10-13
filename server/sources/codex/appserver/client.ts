@@ -3,10 +3,10 @@
 // processo nem confere o daemon (isso é do serviço): só WebSocket (`GET /rpc`, espera o 101) + JSON-RPC,
 // initialize/initialized, descoberta e inscrição de threads e os pedidos de aprovação de comando e de arquivo.
 //
-// Só `item/commandExecution/requestApproval` e `item/fileChange/requestApproval` viram evento, e só eles podem
-// ser respondidos. Qualquer outro pedido do servidor (perguntas, permissões, ferramentas dinâmicas, renovação
-// de token, atestado, elicitação MCP, aprovações v1) NUNCA recebe resposta: a primeira resposta vence, e uma
-// resposta do Habblaud quebraria a sessão do TUI.
+// Só `item/commandExecution/requestApproval` (de um comando: nem rede nem writeStdin) e
+// `item/fileChange/requestApproval` viram evento, e só eles podem ser respondidos. Qualquer outro pedido do servidor
+// (perguntas, permissões, ferramentas dinâmicas, renovação de token, atestado, elicitação MCP, aprovações v1) NUNCA
+// recebe resposta: a primeira resposta vence, e uma resposta do Habblaud quebraria a sessão do TUI.
 import { EventEmitter } from 'node:events';
 import type { CodexDecision } from '../../../../shared/types';
 import { RpcError, RpcPeer } from './rpc';
@@ -99,6 +99,15 @@ export function patchFromChanges(changes: unknown): string {
     if (diff) lines.push(diff.replace(/\n$/, ''));
   }
   return lines.length ? ['*** Begin Patch', ...lines, '*** End Patch'].join('\n') : '';
+}
+
+/**
+ * Pedido de comando que o cartão mostra como é: `kind` "command" (ausente vale "command", nos servidores antigos) e sem
+ * `networkApprovalContext`. Um pedido de rede (o cartão mostraria um comando, ou nada, e "aprovar nesta sessão"
+ * liberaria o host) e um `writeStdin` (o cartão não mostraria o que vai ser digitado) ficam só com o terminal.
+ */
+function isPlainCommand(p: Rec): boolean {
+  return (p.kind === undefined || p.kind === null || p.kind === 'command') && (p.networkApprovalContext === undefined || p.networkApprovalContext === null);
 }
 
 function decisionsOf(raw: unknown): CodexDecision[] | undefined {
@@ -298,6 +307,7 @@ export class CodexAppServerClient extends EventEmitter {
     const threadId = str(p?.threadId);
     // O mesmo id de novo é o replay do resume: um pedido só.
     if (!p || !threadId || this.approvals.has(id) || this.released.has(threadId)) return;
+    if (method === COMMAND_APPROVAL && !isPlainCommand(p)) return;
     this.approvals.set(id, { threadId, answered: false });
     const req: ApprovalRequest = { requestId: id, threadId, kind: method === COMMAND_APPROVAL ? 'command' : 'fileChange' };
     if (req.kind === 'command') {

@@ -419,6 +419,32 @@ describe('CodexAppServerClient: aprovações', () => {
     expect(fake.responses()).toEqual([]);
   });
 
+  it('pedido de rede e digitação num terminal (writeStdin): nenhum evento e nunca respondidos; vale o terminal', async () => {
+    // Arrange: o cartão mostraria um comando (ou nada) num pedido de rede, e "aprovar nesta sessão" liberaria o host; num
+    // writeStdin, não mostraria o que vai ser digitado.
+    const { fake, client, ev } = await ready();
+    const network = { host: 'registry.npmjs.org', protocol: 'https' };
+
+    // Act
+    fake.request(50, COMMAND, { ...BASE, threadId: THREAD, itemId: 'net-1', networkApprovalContext: network });
+    fake.request(51, COMMAND, { ...BASE, threadId: THREAD, itemId: 'net-2', command: 'npm install', networkApprovalContext: network });
+    fake.request(52, COMMAND, { ...BASE, threadId: THREAD, itemId: 'stdin-1', kind: 'writeStdin', command: 'yes' });
+    fake.request(53, COMMAND, { ...BASE, threadId: THREAD, itemId: 'cmd-1', kind: 'command', command: 'ls', networkApprovalContext: null });
+    fake.request(54, COMMAND, { ...BASE, threadId: THREAD, itemId: 'cmd-2', command: 'pwd' });
+    await until(() => ev.approvals.length === 2);
+    for (const id of [50, 51, 52]) client.respond(id, 'acceptForSession');
+    fake.notify('serverRequest/resolved', { threadId: THREAD, requestId: 50 });
+    await flush();
+
+    // Assert: `kind` ausente vale "command" (servidores antigos).
+    expect(ev.approvals.map((a) => [a.requestId, a.command])).toEqual([
+      [53, 'ls'],
+      [54, 'pwd'],
+    ]);
+    expect(ev.resolved).toEqual([]);
+    expect(fake.responses()).toEqual([]);
+  });
+
   it('thread/closed e unsubscribe fecham os pedidos abertos daquela thread (o resolved dela não vem mais)', async () => {
     // Arrange
     const { fake, client, ev } = await ready();

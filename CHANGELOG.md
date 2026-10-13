@@ -26,12 +26,13 @@ mudou.
   sessões no daemon do app-server, mostra o pedido de aprovação no cartão **Pede permissão** e no terminal juntos, sem
   prazo: vale o que você responder primeiro, e o cartão fecha sozinho quando a resposta é no terminal. Os botões são
   **Aprovar**, **Aprovar nesta sessão** (quando o Codex oferece) e **Recusar** (sem motivo); o cartão mostra o
-  comando de dentro, sem o `pwsh.exe -Command` em volta. Funciona sem os hooks, com o Habblaud no modo Node e o
-  terminal ligado; o Habblaud só se junta a um daemon que já está rodando e às conversas que ele já tem carregadas,
-  nunca inicia nem configura o daemon nem carrega uma conversa, e solta cada uma 60 s depois de o turno fechar (assina
-  de novo quando um turno abre), para não segurar a sessão de um terminal que você fechou (o Codex a descarrega num
-  prazo dele depois de ficar ociosa e sem ninguém inscrito, de 1 a 2 minutos no teste com o 0.160.1 e de até 30 no
-  código do Codex, e a trava some). No Windows, ele usa o
+  comando de dentro, sem o `pwsh.exe -Command` em volta. Um pedido de acesso à rede e o texto que o Codex quer digitar
+  num terminal aberto ficam só no terminal, porque o cartão não mostraria o que está sendo aprovado. Funciona sem os
+  hooks, com o Habblaud no modo Node e o terminal ligado; o Habblaud só se junta a um daemon que já está rodando e às
+  conversas que ele já tem carregadas, nunca inicia nem configura o daemon nem carrega uma conversa, e solta cada uma
+  60 s depois de o turno fechar (assina de novo quando um turno abre), para não segurar a sessão de um terminal que
+  você fechou (o Codex a descarrega num prazo dele depois de ficar ociosa e sem ninguém inscrito, de 1 a 2 minutos no
+  teste com o 0.160.1 e de até 30 no código do Codex, e a trava some). No Windows, ele usa o
   `codex.exe` do PATH (com o Codex instalado só pelo npm, aponte `HABBLAUD_CODEX_BIN` para o executável nativo).
   `HABBLAUD_CODEX_APPSERVER=0` desliga. Nos demais clientes do Codex (o app, a extensão do VS Code e a CLI fora do
   daemon), vale o hook, com os 25 s de espera.
