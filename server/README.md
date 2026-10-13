@@ -341,9 +341,10 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   data de criação; sessão retomada continua no arquivo antigo; um thread revertido tem mais de um arquivo e vale o de
   última linha mais recente, com o mtime só desempatando) e `archived_sessions/`, lidos com `FileTail`. Ao abrir:
   a 1ª linha (`session_meta`) e `scanBackward`, do fim para o começo em blocos de 1 MB, até a fronteira de turno mais
-  recente (teto de 64 MB; um turno do Codex passa de vários MB, e uma janela fixa do fim mostraria "ocioso" no meio
-  do trabalho); o tail continua de onde a varredura parou, e o começo anterior vai em segundo plano (números, título e
-  linha do tempo longa). Formatos "paginated" (padrão) e "legacy"; `.zst` é ignorado com aviso. Status por
+  recente (um turno do Codex passa de vários MB, e uma janela fixa do fim mostraria "ocioso" no meio do trabalho;
+  a leitura é síncrona, então tem teto de 8 MB, e uma linha acima de 8 MB é pulada como no tail); o tail continua de
+  onde a varredura parou, e o começo anterior vai em segundo plano, em stream (números, título e linha do tempo
+  longa; se a varredura bateu no teto sem achar a fronteira, o turno sai do começo). Formatos "paginated" (padrão) e "legacy"; `.zst` é ignorado com aviso. Status por
   `task_started`/`task_complete`/`turn_aborted`; atividades por `item_completed` (`CommandExecution` como o Bash,
   `FileChange`, `McpToolCall`, mensagens e raciocínio). Só o 1º `session_meta` vale, e num subagente com fork as
   linhas herdadas do pai (`ordinal < subagent_history_start_ordinal`) ficam de fora. Segredos mascarados antes de

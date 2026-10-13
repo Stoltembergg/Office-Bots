@@ -550,7 +550,7 @@ export class CodexSource implements AgentSource, CodexLive {
     if (head.meta) this.setMeta(t, head.meta);
     const tail = new FileTail(path);
     tail.seekEnd(); // fixa o arquivo (inode) e o tamanho antes da varredura
-    const scan = scanBackward(path, { size: tail.size, isBoundary: boundaryAfter(this.tailBytes) });
+    const scan = scanBackward(path, { size: tail.size, isBoundary: boundaryAfter(this.tailBytes), maxBytes: this.opts.scanMaxBytes });
     tail.offset = scan.end;
     t.tail = tail;
     t.rolloutPath = path;
@@ -570,7 +570,7 @@ export class CodexSource implements AgentSource, CodexLive {
     }
     this.applySummary(t);
     this.watchers.watchFile(t, path);
-    if (scan.start > 0) this.queuePrefix(t, path, scan.start);
+    if (scan.start > 0) this.queuePrefix(t, path, scan.start, scan.hitBoundary);
   }
 
   private setMeta(t: ThreadTracker, meta: RolloutMeta): void {
@@ -745,9 +745,11 @@ export class CodexSource implements AgentSource, CodexLive {
 
   /**
    * Começo de um rollout grande (os bytes antes da varredura, sem sobreposição com ela): números, título e a linha do
-   * tempo longa. O status não sai daqui: a varredura já tem a fronteira de turno.
+   * tempo longa. O status só sai daqui quando a varredura bateu no teto sem achar a fronteira de turno (`hitBoundary`
+   * falso): como nenhuma fronteira veio depois, o turno termina como o começo o deixou. Uma fronteira lida ao vivo
+   * nesse meio-tempo vence.
    */
-  private queuePrefix(t: ThreadTracker, path: string, end: number): void {
+  private queuePrefix(t: ThreadTracker, path: string, end: number, hitBoundary: boolean): void {
     const state = t.state;
     this.prefixChain = this.prefixChain
       .then(async () => {
@@ -760,6 +762,12 @@ export class CodexSource implements AgentSource, CodexLive {
         state.model ??= prefix.state.model;
         if (!state.tasks.length && prefix.state.tasks.length) state.tasks = prefix.state.tasks;
         if (prefix.state.firstAt !== undefined && (state.firstAt === undefined || prefix.state.firstAt < state.firstAt)) state.firstAt = prefix.state.firstAt;
+        if (!hitBoundary && state.turnOpen === undefined && prefix.state.turnOpen !== undefined) {
+          state.turnOpen = prefix.state.turnOpen;
+          this.settleStatus(t);
+          this.turnTo(t, state.turnOpen);
+          this.statusToOffice(t);
+        }
         this.applySummary(t);
         if (t.inOffice) this.opts.office.mergeHistory(t.key, prefix.activities);
       })

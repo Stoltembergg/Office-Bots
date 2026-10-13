@@ -60,9 +60,20 @@ describe('lineTimestamp', () => {
 });
 
 describe('scanBackward', () => {
-  it('limites padrão: blocos de 1 MiB, teto de 64 MiB', () => {
+  it('limites padrão: blocos de 1 MiB, teto de 8 MiB (a leitura é síncrona: o resto do arquivo é lido depois, em stream)', () => {
     expect(SCAN_BLOCK_BYTES).toBe(1024 * 1024);
-    expect(SCAN_MAX_BYTES).toBe(64 * 1024 * 1024);
+    expect(SCAN_MAX_BYTES).toBe(8 * 1024 * 1024);
+  });
+
+  it('linha acima do teto por linha (padrão 8 MiB, como no tail): pulada sem juntar os pedaços, em qualquer alinhamento', () => {
+    const lines = [R.taskStarted('t1', T0), R.agent(T, 't1', 'a1', 'antes', T0 + 1), `{"enorme":"${'x'.repeat(3000)}"}`, R.agent(T, 't1', 'a2', 'depois', T0 + 2)];
+    writeFileSync(file, text(lines));
+    const size = sizeOf(file);
+    for (let blockBytes = 1; blockBytes <= 4000; blockBytes += 37) {
+      expect(scanBackward(file, { size, blockBytes, maxLineBytes: 1000 })).toEqual({ lines: [lines[0], lines[1], lines[3]], start: 0, end: size, hitBoundary: true });
+    }
+    // No limite, a linha entra.
+    expect(scanBackward(file, { size, blockBytes: 16, maxLineBytes: Buffer.byteLength(lines[2]) }).lines).toEqual(lines);
   });
 
   it('turno aberto a mais de 2 MiB do fim: atravessa os blocos de 1 MiB e devolve desde o task_started', () => {

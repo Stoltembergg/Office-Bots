@@ -24,6 +24,8 @@ export interface CodexSourceOptions {
    * trás até a fronteira de turno (no máximo SCAN_MAX_BYTES).
    */
   tailBytes?: number;
+  /** Teto dessa leitura (testes); padrão SCAN_MAX_BYTES. Sem a fronteira dentro dele, o turno sai do começo, lido depois. */
+  scanMaxBytes?: number;
   /** Desliga o fs.watch (testes). */
   watch?: boolean;
   /** Sondagem das travas (testes); padrão `createLockProber({ platform: process.platform, inDocker: detectDocker(env) })`. */

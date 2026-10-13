@@ -1,12 +1,14 @@
 // Varredura reversa dos rollouts do Codex: do fim para o começo, em blocos, até a fronteira de turno mais recente.
 // Turnos do Codex passam de vários MB: a janela fixa de 1 MB do fim não acha o task_started e mostraria "ocioso" no
-// meio do trabalho. Só leitura posicional (openSync 'r' + readSync), nunca o arquivo inteiro.
+// meio do trabalho. Só leitura posicional (openSync 'r' + readSync), nunca o arquivo inteiro. A leitura é síncrona (no
+// boot e quando aparece uma thread nova), então tem teto: o que fica antes dele é lido depois, em stream.
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
+import { MAX_LINE_BYTES, warnOversizedLine } from '../tail';
 
 /** Bloco da varredura reversa. */
 export const SCAN_BLOCK_BYTES = 1024 * 1024;
 /** Teto da varredura: passou disto do fim sem achar a fronteira, desiste (`hitBoundary: false`). */
-export const SCAN_MAX_BYTES = 64 * 1024 * 1024;
+export const SCAN_MAX_BYTES = 8 * 1024 * 1024;
 
 const NL = 0x0a;
 
@@ -64,15 +66,17 @@ function readAt(fd: number, position: number, length: number): Buffer {
  *
  * Lê só até `size` (o que o arquivo cresceu depois do stat fica para o tail), nunca além do fim real. Com o teto, só
  * entram as linhas que começam nos últimos `maxBytes` antes de `size`. Linhas em branco são puladas e o `\r` final é
- * tirado. Arquivo inexistente → nada lido; outros erros de leitura sobem (como no FileTail).
+ * tirado; uma linha maior que `maxLineBytes` (o mesmo teto do FileTail) é pulada sem juntar os pedaços. Arquivo
+ * inexistente → nada lido; outros erros de leitura sobem (como no FileTail).
  */
 export function scanBackward(
   path: string,
-  opts: { size: number; isBoundary?: (line: string) => boolean; blockBytes?: number; maxBytes?: number },
+  opts: { size: number; isBoundary?: (line: string) => boolean; blockBytes?: number; maxBytes?: number; maxLineBytes?: number },
 ): { lines: string[]; start: number; end: number; hitBoundary: boolean } {
   const isBoundary = opts.isBoundary ?? isTurnBoundary;
   const blockBytes = Math.max(1, Math.floor(opts.blockBytes ?? SCAN_BLOCK_BYTES));
   const maxBytes = Math.max(0, Math.floor(opts.maxBytes ?? SCAN_MAX_BYTES));
+  const maxLineBytes = Math.max(1, Math.floor(opts.maxLineBytes ?? MAX_LINE_BYTES));
   let fd: number;
   try {
     fd = openSync(path, 'r');
@@ -95,13 +99,38 @@ export function scanBackward(
       start = at;
       return isBoundary(line);
     };
+    /** Pedaços (em ordem) de uma linha que começou antes do bloco atual; ela termina num \n já lido. */
+    let carry: Buffer[] = [];
+    let carryBytes = 0;
+    /** A linha em curso passou de maxLineBytes: os pedaços dela não são guardados, e ela é pulada. */
+    let tooLong = false;
+    let skipped = false;
     const result = (hitBoundary: boolean) => {
+      if (skipped) warnOversizedLine(path);
       const e = end < 0 ? floor : end;
       return { lines: reversed.reverse(), start: start < 0 ? e : start, end: e, hitBoundary };
     };
-
-    /** Pedaços (em ordem) de uma linha que começou antes do bloco atual; ela termina num \n já lido. */
-    let carry: Buffer[] = [];
+    /** Começo de uma linha encontrado (`piece` + os pedaços guardados): guarda e confere a fronteira, ou pula. */
+    const finish = (piece: Buffer, at: number): boolean => {
+      const long = tooLong || piece.length + carryBytes > maxLineBytes;
+      const bytes = long ? undefined : carry.length ? Buffer.concat([piece, ...carry]) : piece;
+      carry = [];
+      carryBytes = 0;
+      tooLong = false;
+      if (!bytes) {
+        skipped = true;
+        return false;
+      }
+      return take(bytes, at);
+    };
+    /** Pedaço do começo do bloco, de uma linha que começou antes dele. */
+    const keep = (head: Buffer): void => {
+      carryBytes += head.length;
+      if (tooLong || carryBytes > maxLineBytes) {
+        tooLong = true;
+        carry = [];
+      } else carry = [head, ...carry];
+    };
     let pos = size;
     while (pos > floor) {
       const from = Math.max(floor, pos - blockBytes);
@@ -120,18 +149,15 @@ export function scanBackward(
       while (lineEnd > 0) {
         const nl = block.lastIndexOf(NL, lineEnd - 1);
         if (nl === -1) break;
-        const piece = block.subarray(nl + 1, lineEnd);
-        const bytes = carry.length ? Buffer.concat([piece, ...carry]) : piece;
-        carry = [];
-        if (take(bytes, from + nl + 1)) return result(true);
+        if (finish(block.subarray(nl + 1, lineEnd), from + nl + 1)) return result(true);
         lineEnd = nl;
       }
       const head = block.subarray(0, lineEnd);
       // A linha começa no bloco se ele é o começo do arquivo, ou se é o teto e o byte anterior a ele é um \n.
       if (from === 0 || (from === floor && readAt(fd, from - 1, 1)[0] === NL)) {
-        if (take(carry.length ? Buffer.concat([head, ...carry]) : head, from)) return result(true);
+        if (finish(head, from)) return result(true);
       } else {
-        carry = [head, ...carry]; // no teto, sem \n antes: a linha começou além dele e fica de fora
+        keep(head); // no teto, sem \n antes: a linha começou além dele e fica de fora
       }
       pos = from;
     }

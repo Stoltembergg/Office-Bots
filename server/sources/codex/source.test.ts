@@ -44,6 +44,8 @@ function setup(
     env?: (dirs: string[]) => NodeJS.ProcessEnv;
     permissions?: () => ReadonlyMap<string, PermissionRequestInfo>;
     onTurn?: (account: string, threadId: string, open: boolean) => void;
+    /** Janela da leitura síncrona ao abrir um rollout (padrão: 1 MB e o SCAN_MAX_BYTES). */
+    scan?: { tailBytes: number; maxBytes: number };
   } = {},
 ) {
   const locks = fakeLockProber(opts.locks === 'exists' ? 'exists' : 'win32');
@@ -67,7 +69,19 @@ function setup(
   });
   late.office = office;
   const dirs = homes.map((h) => h.dir);
-  const source = new CodexSource({ accounts, office, dirs, env: opts.env?.(dirs) ?? {}, home: home.home, now, watch: false, lockProber: locks.prober, onTurn: opts.onTurn });
+  const source = new CodexSource({
+    accounts,
+    office,
+    dirs,
+    env: opts.env?.(dirs) ?? {},
+    home: home.home,
+    now,
+    watch: false,
+    lockProber: locks.prober,
+    onTurn: opts.onTurn,
+    tailBytes: opts.scan?.tailBytes,
+    scanMaxBytes: opts.scan?.maxBytes,
+  });
   // Para antes de apagar as pastas (nenhum ciclo agendado roda depois).
   cleanups.unshift(() => source.stop());
   const notices: Notice[] = [];
@@ -506,6 +520,32 @@ describe('fonte do Codex: sondagem da trava, leitura até a fronteira e mtime fo
     // O começo (antes da varredura) chega em segundo plano sem contar nada duas vezes.
     await ctx.source.idle();
     expect(ctx.agent()?.stats.toolCalls).toBe(parent.length);
+  });
+
+  it('turno aberto maior que o teto da leitura síncrona: o começo, lido depois em stream, diz que o turno está aberto', async () => {
+    const turns: boolean[] = [];
+    const ctx = setup({ scan: { tailBytes: 100_000, maxBytes: 300_000 }, onTurn: (_a, _t, open) => turns.push(open) });
+    const start = ctx.now() - 20 * 60_000;
+    // Última linha uns 17 min atrás: a regra do legacy (escreveu há menos de 90 s) não salvaria.
+    const parent = bigTurn(T, 'p1', 1_200_000, start + 2_000);
+    ctx.home.rollout(T, [R.meta(T, { at: start, cwd: '/projetos/loja' }), R.taskStarted('p1', start), R.user(T, 'p1', 'u', 'Refatore o módulo de pedidos', start + 1_000), ...parent]);
+    ctx.home.lock(T, start);
+    ctx.source.boot();
+    await ctx.source.idle();
+    expect(ctx.agent()).toMatchObject({ status: 'working', title: 'Refatore o módulo de pedidos', roomId: '/projetos/loja' });
+    expect(turns.at(-1)).toBe(true);
+    expect(ctx.agent()?.stats.toolCalls).toBe(parent.length);
+  });
+
+  it('turno fechado antes do teto da leitura síncrona: o começo não reabre o turno', async () => {
+    const ctx = setup({ scan: { tailBytes: 100_000, maxBytes: 300_000 } });
+    const start = ctx.now() - 20 * 60_000;
+    const turn = bigTurn(T, 't1', 600_000, start + 2_000);
+    ctx.home.rollout(T, [R.meta(T, { at: start, cwd: '/projetos/loja' }), R.taskStarted('t1', start), R.user(T, 't1', 'u', 'Revise', start + 1_000), ...turn, R.taskComplete('t1', ctx.now() - 60_000)]);
+    ctx.home.lock(T, start);
+    ctx.source.boot();
+    await ctx.source.idle();
+    expect(ctx.agent()).toMatchObject({ status: 'idle' });
   });
 
   it('sessão ociosa com rollout de mais de 1 MB: o boot lê pelo menos 1 MB do fim (os números do último turno vêm na hora)', async () => {
