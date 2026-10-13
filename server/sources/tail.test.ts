@@ -1,4 +1,4 @@
-import { appendFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { log } from '../log';
@@ -31,6 +31,20 @@ describe('FileTail', () => {
     expect(t.read().lines).toEqual([]);
     appendFileSync(file, '2}\n{"c":3}\n');
     expect(t.read().lines).toEqual(['{"b":2}', '{"c":3}']);
+  });
+
+  it('relocate: arquivo movido de pasta continua do mesmo ponto, sem reler', () => {
+    writeFileSync(file, '{"a":1}\n');
+    const t = new FileTail(file);
+    expect(t.read().lines).toEqual(['{"a":1}']);
+    const moved = join(tmp.dir, 'outra', 'a.jsonl');
+    mkdirSync(join(tmp.dir, 'outra'));
+    renameSync(file, moved);
+    expect(t.read()).toMatchObject({ lines: [], missing: true });
+    t.relocate(moved);
+    appendFileSync(moved, '{"b":2}\n');
+    expect(t.read()).toMatchObject({ lines: ['{"b":2}'], reset: false, missing: false });
+    expect(t.path).toBe(moved);
   });
 
   it('não quebra caracteres multibyte divididos entre leituras', () => {

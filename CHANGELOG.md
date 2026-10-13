@@ -53,6 +53,9 @@ do meio (0.**3**.0).
 
 ### Corrigido
 
+- Sessão que troca de worktree (ou de pasta) no meio do caminho continua aparecendo como é: o agente e os
+  subagentes mudam para a sala nova e a atividade segue. Antes, o escritório congelava na sala antiga, sem atividade
+  nem subagentes, até reiniciar o Habblaud.
 - Celular: tocar num campo de texto não dá mais zoom (o Safari do iPhone amplia campos com letra menor que 16 px).
 
 - No timelapse, os avisos do canto ficam acima da barra de reprodução, em vez de cobrir a linha do tempo e os botões.

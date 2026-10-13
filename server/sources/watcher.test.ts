@@ -1,5 +1,5 @@
 // Integração: registro + transcript + subagentes em um config dir temporário.
-import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, Notice } from '../../shared/types';
@@ -742,5 +742,62 @@ describe('ClaudeWatcher — shell lançado no começo de um transcript maior que
       c.watcher.stop();
       c.tmp.cleanup();
     }
+  });
+});
+
+describe('ClaudeWatcher — sessão que troca de worktree', () => {
+  let c: Ctx;
+  beforeEach(() => {
+    c = setup();
+  });
+  afterEach(() => {
+    c.watcher.stop();
+    c.tmp.cleanup();
+  });
+
+  it('segue o transcript movido para o projeto novo, muda de sala e mantém os subagentes', () => {
+    const NEW = '/projetos/loja/.claude/worktrees/t1.2-sync';
+    writeLines(c.transcript('sess-a'), [
+      L.prompt('Arruma o total do carrinho', { at: c.now() - 5000 }),
+      L.assistant([L.tool('r1', 'Read', { file_path: `${CWD}/src/Cart.tsx` })], { at: c.now() - 4000 }),
+    ]);
+    c.openSession(100, 'sess-a');
+    c.watcher.boot();
+    c.office.commit();
+    appendLines(c.transcript('sess-a'), [L.assistant([L.tool('toolu_f', 'Agent', { description: 'Mapear arquivos', subagent_type: 'Explore', prompt: 'x' })])]);
+    const oldSub = c.subFile('sess-a', 'f1', { agentType: 'Explore', description: 'Mapear arquivos', toolUseId: 'toolu_f', spawnDepth: 1, requestShape: 'foreground' }, [
+      L.prompt('Mapeie os arquivos do carrinho', { agentId: 'f1' }),
+      L.assistant([L.tool('g1', 'Grep', { pattern: 'useCart' })], { agentId: 'f1' }),
+    ]);
+    c.poll();
+    const mainId = '.claude:100';
+    expect(c.agent('sess-a:f1')).toMatchObject({ status: 'working', roomId: CWD });
+    const toolCalls = c.agent(mainId)!.stats.toolCalls;
+
+    // O Claude Code entra na worktree: transcript e pasta da sessão vão para o projeto do cwd novo.
+    const oldProject = join(c.dir, 'projects', encodeCwd(CWD));
+    const newProject = join(c.dir, 'projects', encodeCwd(NEW));
+    mkdirSync(newProject, { recursive: true });
+    renameSync(c.transcript('sess-a'), join(newProject, 'sess-a.jsonl'));
+    renameSync(join(oldProject, 'sess-a'), join(newProject, 'sess-a'));
+    c.openSession(100, 'sess-a', { cwd: NEW });
+    c.advance(4_000);
+    c.poll();
+
+    appendLines(join(newProject, 'sess-a.jsonl'), [L.assistant([L.tool('e1', 'Edit', { file_path: `${NEW}/src/Cart.tsx` })])]);
+    appendLines(oldSub.replace(oldProject, newProject), [L.assistant([L.tool('g2', 'Grep', { pattern: 'total' })], { agentId: 'f1' })]);
+    c.advance(1_000);
+    c.poll();
+
+    const main = c.agent(mainId)!;
+    expect(main.roomId).toBe(NEW);
+    expect(main.activity?.text).toBe('Editando Cart.tsx');
+    // Mesmo arquivo, só mudou de pasta: nada é contado de novo.
+    expect(main.stats.toolCalls).toBe(toolCalls + 1);
+    expect(c.agent('sess-a:f1')).toMatchObject({ status: 'working', roomId: NEW });
+    expect(c.agent('sess-a:f1')!.activity?.text).toBe('Buscando “total”');
+    c.advance(1_000);
+    c.poll();
+    expect(c.office.commit().snapshot.rooms.map((r) => r.id)).toEqual([NEW]);
   });
 });

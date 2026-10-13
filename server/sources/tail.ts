@@ -121,10 +121,22 @@ export class FileTail {
   private readonly maxChunk: number;
 
   constructor(
-    readonly path: string,
+    private _path: string,
     opts: { maxChunk?: number } = {},
   ) {
     this.maxChunk = opts.maxChunk ?? 8 * 1024 * 1024;
+  }
+
+  get path(): string {
+    return this._path;
+  }
+
+  /**
+   * O arquivo mudou de pasta (o Claude Code move o transcript quando a sessão entra numa worktree): continua do mesmo
+   * ponto no caminho novo. Se lá estiver outro arquivo (inode diferente), a próxima leitura avisa com `reset`.
+   */
+  relocate(path: string): void {
+    this._path = path;
   }
 
   /**
