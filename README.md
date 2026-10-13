@@ -549,6 +549,26 @@ With the messages plugin installed (`npm run mod:install`, which installs it alo
 goes into the session **as if you had typed it in its terminal**. You can reply when the agent finishes its turn
 and waits for the next request, give a new instruction or correct its course, without hunting for the right window.
 
+- **Slash commands** work too: a message that starts with `/` (`/compact`, `/model opus`) runs the command in the
+  session, as if you had typed it. With the agent busy, the command waits for the turn to end. A command the
+  session does not know comes back as **not delivered**. Those that open a panel in the terminal (`/usage`, `/config`, `/model`
+  with no argument) are not sent: the box says so and keeps the text. The output of text commands shows up in the
+  office terminal. Claude Code only: in Codex, the text goes as a
+  regular message.
+- **Command menu:** type `/` at the start of the box and it lists the commands the session has (Claude Code's own,
+  plugins', yours and MCP servers'), each with its description. Keep typing to filter; the arrows move, `Enter` or
+  `Tab` complete and `Esc` closes. Those tagged "terminal only" open a panel and do not go through the box.
+- **Mention files with `@`:** type `@` and the start of a name and the box lists the files of the agent's project
+  that match (the search is fuzzy and covers the whole path). `Enter` or `Tab` put `@path` in the message; it goes as
+  text (Claude Code does not attach a file mentioned in a message that comes from a plugin) and the agent opens it by
+  the path. The list
+  follows `.gitignore` and never shows environment files, keys or credential folders; only the names leave the
+  computer for the page. In Docker the host helper does the listing: keep `npm run codex:bridge` running.
+- **Attachments:** paste (`Ctrl`/`⌘`+`V`) or drag images and files onto the box. They show up above it, with a
+  thumbnail, and go with the message: up to 5 per message, 15 MB each, and you can send attachments alone, with no
+  text. The files are saved on the computer, in `~/.habblaud/attachments/`, and the message carries the paths for the
+  agent to read. Attachment folders older than a week are deleted when new attachments arrive. In Docker the host
+  helper (`npm run codex:bridge`) does the saving.
 - The box shows the status: **queued** (the session fetches messages every 2 seconds), **delivered** or **not
   delivered**, with the reason. With the agent busy, the message waits and goes in when it finishes its turn, like a
   prompt typed while the agent is working.

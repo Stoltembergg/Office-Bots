@@ -5,7 +5,9 @@
 // Também cuida da reconexão: quando o navegador desiste do stream (EventSource fechado após erro HTTP,
 // ex.: servidor reiniciando atrás de um proxy), tenta de novo com espera crescente.
 import type { AppearanceParts } from '../../../shared/appearance';
-import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, OutboxMessage, PermissionDecision, PermissionRequestInfo, RoomInfo } from '../../../shared/types';
+import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, OutboxMessage, PermissionDecision, PermissionRequestInfo, RoomInfo, SessionCommand } from '../../../shared/types';
+import { DEMO_COMMANDS, DEMO_FILES } from '../../../shared/demo/composer';
+import { rankFiles } from '../../../shared/messages';
 import { DemoSimulator } from '../../../shared/demo/simulator';
 import { tr } from '../../../shared/i18n';
 
@@ -311,9 +313,10 @@ export class OfficeStore {
    * (agente que não recebe mensagens, fila cheia, acesso que não é local...). Sem conexão com o servidor: lança.
    * No ?mock=1 a entrega é fictícia (o simulador põe a atividade no agente).
    */
-  async sendMessage(agentId: string, text: string): Promise<{ message: OutboxMessage } | { error: string }> {
+  async sendMessage(agentId: string, text: string, attachments: readonly string[] = []): Promise<{ message: OutboxMessage } | { error: string }> {
     if (this.mock) return this.mockSend(agentId, text);
-    const res = await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId, text }) });
+    const body0 = JSON.stringify({ agentId, text, ...(attachments.length ? { attachments } : {}) });
+    const res = await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body0 });
     let body: unknown;
     try {
       body = await res.json();
@@ -323,6 +326,51 @@ export class OfficeStore {
     if (res.status === 201 && body && typeof body === 'object') return { message: body as OutboxMessage };
     const error = (body as { error?: unknown } | undefined)?.error;
     return { error: typeof error === 'string' ? error : tr('erro {0}', [res.status]) };
+  }
+
+  /**
+   * Comandos de barra da sessão do agente (GET /api/messages/commands/:id), para o menu da caixa de mensagem. Vazia =
+   * a sessão ainda não mandou a lista (ou o agente não é do Claude Code). No ?mock=1 não há sessão: uma lista
+   * fictícia (shared/demo/composer.ts) para os agentes do Claude Code. Sem conexão: lança.
+   */
+  async sessionCommands(agentId: string): Promise<SessionCommand[]> {
+    if (this.mock) return this.agent(agentId)?.provider === 'codex' ? [] : DEMO_COMMANDS.map((c) => ({ ...c }));
+    const res = await fetch(`/api/messages/commands/${encodeURIComponent(agentId)}`);
+    if (!res.ok) throw new Error(tr('erro {0}', [res.status]));
+    const list = ((await res.json()) as { commands?: unknown }).commands;
+    return Array.isArray(list) ? (list as SessionCommand[]) : [];
+  }
+
+  /**
+   * Manda um anexo da próxima mensagem (POST /api/messages/attachments): `data` é o arquivo em base64. Devolve o id
+   * que a mensagem leva, ou o motivo da recusa. No ?mock=1 nada sai da página. Sem conexão: lança.
+   */
+  async uploadMessageAttachment(name: string, type: string, data: string): Promise<{ id: string } | { error: string }> {
+    if (this.mock) return { id: `mock-anexo-${++this.mockSeq}` };
+    const res = await fetch('/api/messages/attachments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type, data }) });
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      // Resposta sem JSON (ex.: guard): usa a mensagem padrão.
+    }
+    const id = (body as { id?: unknown } | undefined)?.id;
+    if (res.status === 201 && typeof id === 'string') return { id };
+    const error = (body as { error?: unknown } | undefined)?.error;
+    return { error: typeof error === 'string' ? error : tr('erro {0}', [res.status]) };
+  }
+
+  /**
+   * Arquivos do projeto do agente que casam com `query` (GET /api/messages/files/:id), para citar com `@` na caixa de
+   * mensagem. No ?mock=1 não há projeto: a busca é numa lista fictícia (shared/demo/composer.ts). Sem conexão, ou
+   * sem quem liste (503): lança.
+   */
+  async projectFiles(agentId: string, query: string): Promise<string[]> {
+    if (this.mock) return rankFiles(DEMO_FILES, query);
+    const res = await fetch(`/api/messages/files/${encodeURIComponent(agentId)}?q=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error(tr('erro {0}', [res.status]));
+    const list = ((await res.json()) as { files?: unknown }).files;
+    return Array.isArray(list) ? list.filter((f): f is string => typeof f === 'string') : [];
   }
 
   /** Situação de uma mensagem (GET /api/messages/:id). null = o servidor não a conhece (404). Sem conexão: lança. */

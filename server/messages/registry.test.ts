@@ -6,7 +6,10 @@ import type { AgentInfo } from '../../shared/types';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
+import { AttachmentStore, type Attachment } from '../spawn/attachments';
 import {
+  COMMAND_DESCRIPTION_MAX,
+  COMMANDS_MAX,
   ERR_GONE,
   ERR_NOT_CONFIRMED,
   ERR_NOT_FETCHED,
@@ -16,6 +19,7 @@ import {
   KEEP_MS,
   MAX_OPEN,
   MessageRegistry,
+  parseCommands,
   PRESENCE_MS,
   QUEUED_TIMEOUT_MS,
   SENT_TIMEOUT_MS,
@@ -153,6 +157,20 @@ describe('MessageRegistry: mandar', () => {
     expect(r).toEqual({ message: { id: expect.stringMatching(/^m-/), agentId: MAIN, status: 'queued', createdAt: clock.now(), updatedAt: clock.now() } });
     const id = sent(r);
     expect(JSON.stringify(registry.get(id))).not.toContain('segredo');
+  });
+});
+
+describe('MessageRegistry: comandos de barra', () => {
+  it('comando de painel não entra na fila (unavailable, com o motivo); os de texto e os com argumento passam', () => {
+    const { registry } = setup();
+    registry.inbox({ session: SESSION });
+    expect(registry.send({ agentId: MAIN, text: '/usage' })).toEqual({ error: 'unavailable', reason: expect.stringMatching(/\/usage abre um painel/) });
+    expect(registry.send({ agentId: MAIN, text: '/Config' })).toEqual({ error: 'unavailable', reason: expect.stringMatching(/\/config abre um painel/) });
+    expect(registry.send({ agentId: MAIN, text: '/model' })).toEqual({ error: 'unavailable', reason: expect.stringMatching(/\/model sem argumento/) });
+    expect(registry.size).toBe(0);
+    expect('message' in registry.send({ agentId: MAIN, text: '/model opus' })).toBe(true);
+    expect('message' in registry.send({ agentId: MAIN, text: '/compact' })).toBe(true);
+    expect('message' in registry.send({ agentId: MAIN, text: 'como eu abro o /usage?' })).toBe(true);
   });
 });
 
@@ -295,6 +313,169 @@ describe('MessageRegistry: prazos e limpeza', () => {
     registry.tick();
     expect(registry.get(id)).toBeUndefined();
     expect(registry.size).toBe(0);
+  });
+});
+
+describe('MessageRegistry: comandos de barra da sessão', () => {
+  const LIST = [
+    { name: 'compact', description: 'Compacta a conversa', source: 'builtin' },
+    { name: 'revisar', description: 'Revisa o diff', source: 'user' },
+  ];
+
+  it('guarda a lista que a sessão manda e a devolve pelo agente; sem lista, pede (lacksCommands)', () => {
+    const { registry } = setup();
+    const round = { session: SESSION, account: 'acc' };
+    expect(registry.commandsOf(MAIN)).toEqual([]);
+    registry.inbox(round);
+    expect(registry.lacksCommands(round)).toBe(true);
+    registry.inbox({ ...round, commands: LIST });
+    expect(registry.lacksCommands(round)).toBe(false);
+    expect(registry.commandsOf(MAIN)).toEqual(LIST);
+    expect(registry.commandsOf(OTHER)).toEqual([]);
+    // Uma lista nova substitui a anterior (um plugin saiu, um servidor MCP entrou).
+    registry.inbox({ ...round, commands: [LIST[0]] });
+    expect(registry.commandsOf(MAIN)).toEqual([LIST[0]]);
+    // Sessão desconhecida ou corpo sem sessão: nada a pedir.
+    expect(registry.lacksCommands({ session: 'nao-existe' })).toBe(false);
+    expect(registry.lacksCommands({})).toBe(false);
+  });
+
+  it('a lista some com a presença da sessão e não vale para outra conversa do mesmo agente', () => {
+    const { registry, office, clock } = setup();
+    const round = { session: SESSION, account: 'acc' };
+    registry.inbox({ ...round, commands: LIST });
+    // /clear: o agente é o mesmo, a conversa é outra, e a lista é da anterior.
+    office.switchSession(MAIN, 'sess-nova');
+    expect(registry.commandsOf(MAIN)).toEqual([]);
+    expect(registry.lacksCommands({ session: 'sess-nova', account: 'acc' })).toBe(true);
+    registry.inbox({ session: 'sess-nova', account: 'acc', commands: LIST });
+    expect(registry.commandsOf(MAIN)).toEqual(LIST);
+    clock.advance(PRESENCE_MS);
+    registry.tick();
+    expect(registry.commandsOf(MAIN)).toEqual([]);
+  });
+
+  it('parseCommands: tira o que está fora do formato, repetidos e a barra; descrição numa linha, mascarada e cortada', () => {
+    const token = `sk-ant-api03-${'a'.repeat(40)}`;
+    const parsed = parseCommands([
+      { name: '/model', description: 'Troca o modelo\nda sessão', source: 'builtin' },
+      { name: 'model', description: 'repetido', source: 'builtin' },
+      { name: 'plugin:cmd', source: 'esquisita' },
+      { name: 'com espaço', description: 'x', source: 'user' },
+      { name: '', description: 'x', source: 'user' },
+      { name: 'x'.repeat(101), description: 'x', source: 'user' },
+      { name: 'chave', description: `usa ${token}`, source: 'mcp' },
+      { name: 'longo', description: 'd'.repeat(COMMAND_DESCRIPTION_MAX * 2), source: 'user' },
+      'texto',
+      null,
+    ]);
+    expect(parsed.map((c) => c.name)).toEqual(['model', 'plugin:cmd', 'chave', 'longo']);
+    expect(parsed[0]).toEqual({ name: 'model', description: 'Troca o modelo da sessão', source: 'builtin' });
+    expect(parsed[1]).toEqual({ name: 'plugin:cmd', description: '', source: 'builtin' });
+    expect(parsed[2].description).not.toContain(token);
+    expect(parsed[3].description.length).toBeLessThanOrEqual(COMMAND_DESCRIPTION_MAX);
+    expect(parseCommands('nada')).toEqual([]);
+    expect(parseCommands(Array.from({ length: COMMANDS_MAX + 10 }, (_, i) => ({ name: `c${i}` })))).toHaveLength(COMMANDS_MAX);
+  });
+});
+
+describe('MessageRegistry: comando de painel e a origem dele na sessão', () => {
+  it('com a lista da sessão, um comando de plugin com nome de painel passa; o nativo continua barrado', () => {
+    const { registry } = setup();
+    const round = { session: SESSION, account: 'acc' };
+    registry.inbox(round);
+    // Sem a lista: vale o nome.
+    expect(registry.send({ agentId: MAIN, text: '/status' })).toMatchObject({ error: 'unavailable' });
+    registry.inbox({ ...round, commands: [{ name: 'status', description: 'Situação do deploy', source: 'plugin' }, { name: 'usage', description: 'Uso do plano', source: 'builtin' }] });
+    sent(registry.send({ agentId: MAIN, text: '/status' }));
+    expect(registry.send({ agentId: MAIN, text: '/usage' })).toMatchObject({ error: 'unavailable', reason: expect.stringMatching(/painel/) });
+  });
+});
+
+describe('MessageRegistry: anexos', () => {
+  const PNG: Attachment = { name: 'tela.png', type: 'image/png', data: Buffer.from('png') };
+
+  /** Registro com anexos: `write` fica pendente até `settle` ser chamado. */
+  function withAttachments() {
+    const base = setup();
+    const store = new AttachmentStore();
+    const writes: Array<{ id: string; names: string[] }> = [];
+    let settle: (r: string[] | { error: string }) => void = () => {};
+    const registry = new MessageRegistry({
+      office: base.office,
+      now: base.clock.now,
+      attachments: {
+        store,
+        write: (id, files) => {
+          writes.push({ id, names: files.map((f) => f.name) });
+          return new Promise((ok) => (settle = ok));
+        },
+      },
+    });
+    const put = () => (store.put(PNG) as { id: string }).id;
+    return { ...base, registry, store, writes, put, settle: (r: string[] | { error: string }) => settle(r) };
+  }
+  const flush = () => new Promise((ok) => setTimeout(ok, 0));
+
+  it('a mensagem espera a gravação e sai para a sessão com os caminhos no fim do texto', async () => {
+    const t = withAttachments();
+    t.registry.inbox({ session: SESSION });
+    const id = sent(t.registry.send({ agentId: MAIN, text: 'olha esta tela', attachments: [t.put()] }));
+    expect(t.writes).toEqual([{ id, names: ['tela.png'] }]);
+    // Gravando: continua na fila e a sessão ainda não a recebe.
+    expect(t.registry.get(id)).toMatchObject({ status: 'queued' });
+    expect(t.registry.inbox({ session: SESSION })).toEqual([]);
+    t.settle(['/home/u/.habblaud/attachments/20261013-120000-m-abc/tela.png']);
+    await flush();
+    expect(t.registry.inbox({ session: SESSION })).toEqual([{ id, text: 'olha esta tela\n\nAnexo enviado pelo Habblaud:\n- /home/u/.habblaud/attachments/20261013-120000-m-abc/tela.png' }]);
+  });
+
+  it('só anexos, sem texto: vale; sem anexos, o texto vazio continua recusado', async () => {
+    const t = withAttachments();
+    t.registry.inbox({ session: SESSION });
+    const id = sent(t.registry.send({ agentId: MAIN, text: '', attachments: [t.put(), t.put()] }));
+    t.settle(['/a/tela.png', '/a/tela-2.png']);
+    await flush();
+    expect(t.registry.inbox({ session: SESSION })).toEqual([{ id, text: 'Anexos enviados pelo Habblaud:\n- /a/tela.png\n- /a/tela-2.png' }]);
+    expect(() => t.registry.send({ agentId: MAIN, text: '' })).toThrow();
+    expect(() => t.registry.send({ agentId: MAIN, text: 'x', attachments: 'a' })).toThrow();
+    expect(() => t.registry.send({ agentId: MAIN, text: 'x', attachments: ['1', '2', '3', '4', '5', '6'] })).toThrow();
+  });
+
+  it('não deu para gravar: a mensagem falha com o motivo e não sai', async () => {
+    const t = withAttachments();
+    t.registry.inbox({ session: SESSION });
+    const id = sent(t.registry.send({ agentId: MAIN, text: 'oi', attachments: [t.put()] }));
+    t.settle({ error: 'o auxiliar do computador (npm run codex:bridge) não está rodando' });
+    await flush();
+    expect(t.registry.get(id)).toMatchObject({ status: 'failed', error: expect.stringMatching(/gravar os anexos.*codex:bridge/) });
+    expect(t.registry.inbox({ session: SESSION })).toEqual([]);
+  });
+
+  it('anexo desconhecido ou já usado: recusada com o motivo, e a mensagem recusada antes não gasta o anexo', () => {
+    const t = withAttachments();
+    const a = t.put();
+    // Sem o plugin conectado a mensagem é recusada: o anexo continua no depósito para a próxima tentativa.
+    expect(t.registry.send({ agentId: MAIN, text: 'oi', attachments: [a] })).toMatchObject({ error: 'unavailable' });
+    t.registry.inbox({ session: SESSION });
+    sent(t.registry.send({ agentId: MAIN, text: 'oi', attachments: [a] }));
+    expect(t.registry.send({ agentId: MAIN, text: 'de novo', attachments: [a] })).toMatchObject({ error: 'unavailable', reason: expect.stringMatching(/expirou/) });
+    // Registro sem anexos ligados.
+    const plain = setup();
+    plain.registry.inbox({ session: SESSION });
+    expect(plain.registry.send({ agentId: MAIN, text: 'oi', attachments: ['x'] })).toEqual({ error: 'unavailable', reason: 'anexos desligados' });
+  });
+
+  it('o agente sai enquanto os anexos são gravados: a mensagem falha e o texto não volta', async () => {
+    const t = withAttachments();
+    t.registry.inbox({ session: SESSION });
+    const id = sent(t.registry.send({ agentId: MAIN, text: 'oi', attachments: [t.put()] }));
+    t.office.closeMain(MAIN);
+    t.registry.tick();
+    expect(t.registry.get(id)).toMatchObject({ status: 'failed', error: ERR_GONE });
+    t.settle(['/a/tela.png']);
+    await flush();
+    expect(t.registry.get(id)).toMatchObject({ status: 'failed', error: ERR_GONE });
   });
 });
 

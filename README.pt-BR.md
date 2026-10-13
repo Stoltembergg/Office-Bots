@@ -547,6 +547,25 @@ Com o plugin de mensagens instalado (`npm run mod:install`, que o instala junto 
 entra na sessão **como se você tivesse digitado no terminal dela**. Dá para responder quando o agente termina o turno
 e espera o próximo pedido, dar uma instrução nova ou corrigir o rumo, sem procurar a janela certa.
 
+- **Comandos de barra** também valem: uma mensagem que começa com `/` (`/compact`, `/model opus`) roda o comando na
+  sessão, como se você o tivesse digitado. Com o agente ocupado, o comando espera o turno terminar. Um comando que
+  a sessão não conhece volta como **não entregue**. Os que abrem um painel no terminal (`/usage`, `/config`, `/model` sem
+  argumento) não são mandados: a caixa avisa e o texto fica nela. A saída dos comandos de texto aparece no terminal
+  do escritório. Só no Claude Code: no Codex, o texto vai como mensagem comum.
+- **Menu de comandos:** digite `/` no começo da caixa e ela lista os comandos que a sessão tem (os do Claude Code, os
+  de plugins, os seus e os de servidores MCP), com a descrição de cada um. Continue digitando para filtrar; as setas
+  andam, `Enter` ou `Tab` completam e `Esc` fecha. Os marcados com "só no terminal" abrem um painel e não vão pela
+  caixa.
+- **Citar arquivos com `@`:** digite `@` e o começo do nome e a caixa lista os arquivos do projeto do agente que
+  casam (a busca é aproximada e vale para o caminho todo). `Enter` ou `Tab` põem `@caminho` na mensagem; ele vai como
+  texto (o Claude Code não anexa o arquivo citado numa mensagem vinda de um plugin) e o agente o abre pelo caminho. A lista segue
+  o `.gitignore` e nunca mostra arquivos de ambiente, chaves ou pastas de credenciais; só os nomes saem do computador
+  para a página. No Docker, quem lista é o auxiliar do host: deixe o `npm run codex:bridge` rodando.
+- **Anexos:** cole (`Ctrl`/`⌘`+`V`) ou arraste imagens e arquivos para a caixa. Eles aparecem em cima dela, com
+  miniatura, e vão com a mensagem: até 5 por mensagem, 15 MB cada, e dá para mandar só os anexos, sem texto. Os
+  arquivos são gravados no computador, em `~/.habblaud/attachments/`, e a mensagem leva os caminhos para o agente ler.
+  As pastas de anexos com mais de uma semana são apagadas quando chegam anexos novos. No Docker, quem grava é o
+  auxiliar do host (`npm run codex:bridge`).
 - A caixa mostra a situação: **na fila** (a sessão busca as mensagens a cada 2 segundos), **entregue** ou **não
   entregue**, com o motivo. Com o agente ocupado, a mensagem espera e entra quando ele terminar o turno, como um
   prompt digitado com o agente trabalhando.

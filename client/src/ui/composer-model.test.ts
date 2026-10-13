@@ -1,14 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentInfo } from '../../../shared/types';
+import type { AgentInfo, SessionCommand } from '../../../shared/types';
 import {
+  acceptFiles,
+  applyCommand,
+  applyMention,
   canSend,
+  commandOptions,
+  commandQuery,
+  menuAction,
+  MESSAGE_FILE_MAX_BYTES,
+  MESSAGE_FILES_MAX,
+  moveActive,
   CODEX_BRIDGE_HINT,
   CODEX_TIMEOUT_ERROR,
   composerMode,
   composerTip,
   DELIVERED_SHOW_MS,
   enterSends,
+  fileBadge,
+  fileOptions,
   isSettled,
+  mentionQuery,
+  splitPath,
   messageText,
   PLUGIN_HINT,
   pollDelay,
@@ -127,5 +140,145 @@ describe('caixa de mensagem (peças puras)', () => {
     expect(pollDelay(0)).toBeLessThan(1_000);
     expect(pollDelay(20_000)).toBeGreaterThan(pollDelay(0));
     expect(pollDelay(60_000)).toBeGreaterThanOrEqual(pollDelay(20_000));
+  });
+});
+
+describe('menu de comandos de barra', () => {
+  const LIST: SessionCommand[] = [
+    { name: 'compact', description: 'Compacta a conversa', source: 'builtin' },
+    { name: 'config', description: 'Abre as configurações', source: 'builtin' },
+    { name: 'model', description: 'Troca o modelo', source: 'builtin' },
+    { name: 'habblaud:revisão', description: 'Revisa o que mudou', source: 'plugin' },
+    { name: 'recompilar', description: 'Compila tudo de novo', source: 'user' },
+  ];
+  const names = (q: string) => commandOptions(LIST, q).map((c) => c.name);
+  const key = (k: string, over: Partial<KeyboardEvent> = {}) => ({ key: k, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, isComposing: false, ...over });
+
+  it('abre com a barra no começo e o cursor ainda no nome do comando', () => {
+    expect(commandQuery('/', 1)).toBe('');
+    expect(commandQuery('/com', 4)).toBe('com');
+    expect(commandQuery('/compact agora', 4)).toBe('com');
+    expect(commandQuery('/compact agora', 9)).toBeUndefined();
+    expect(commandQuery('/model opus', 11)).toBeUndefined();
+    expect(commandQuery('roda /compact', 13)).toBeUndefined();
+    expect(commandQuery(' /compact', 9)).toBeUndefined();
+    expect(commandQuery('', 0)).toBeUndefined();
+  });
+
+  it('filtra sem diferenciar maiúsculas nem acentos: começo do nome, depois meio do nome, depois a descrição', () => {
+    expect(names('')).toEqual(LIST.map((c) => c.name));
+    expect(names('COM')).toEqual(['compact', 'recompilar']);
+    expect(names('co')).toEqual(['compact', 'config', 'recompilar']);
+    // A parte depois de `:` conta como começo; a descrição vem por último.
+    expect(names('revisao')).toEqual(['habblaud:revisão']);
+    expect(names('mod')).toEqual(['model']);
+    expect(names('troca')).toEqual(['model']);
+    // Duas letras não buscam na descrição ("re" está em "Revisa", mas só o nome conta).
+    expect(names('re')).toEqual(['habblaud:revisão', 'recompilar']);
+    expect(names('rev')).toEqual(['habblaud:revisão']);
+    expect(names('zzz')).toEqual([]);
+  });
+
+  it('marca o comando que sempre abre um painel (o que só abre sem argumento, não)', () => {
+    const by = Object.fromEntries(commandOptions(LIST, '').map((c) => [c.name, c.panel]));
+    expect(by).toMatchObject({ config: true, model: false, compact: false });
+  });
+
+  it('escolher troca o que foi digitado pelo nome, com um espaço, e mantém o que vinha depois', () => {
+    expect(applyCommand('/com', 'compact')).toEqual({ value: '/compact ', caret: 9 });
+    expect(applyCommand('/mo opus', 'model')).toEqual({ value: '/model opus', caret: 7 });
+    expect(applyCommand('/', 'habblaud:revisão')).toEqual({ value: '/habblaud:revisão ', caret: 18 });
+  });
+
+  it('teclas: setas andam, Tab e Enter completam, Esc fecha; com o nome inteiro digitado, Enter manda', () => {
+    const active = commandOptions(LIST, 'com')[0];
+    expect(menuAction(key('ArrowDown'), 'com', active)).toBe('next');
+    expect(menuAction(key('ArrowUp'), 'com', active)).toBe('prev');
+    expect(menuAction(key('Tab'), 'com', active)).toBe('pick');
+    expect(menuAction(key('Tab', { shiftKey: true }), 'com', active)).toBeUndefined();
+    expect(menuAction(key('Enter'), 'com', active)).toBe('pick');
+    expect(menuAction(key('Enter'), 'compact', active)).toBeUndefined();
+    expect(menuAction(key('Enter', { shiftKey: true }), 'com', active)).toBeUndefined();
+    expect(menuAction(key('Enter', { isComposing: true }), 'com', active)).toBeUndefined();
+    expect(menuAction(key('Escape'), 'com', active)).toBe('close');
+    expect(menuAction(key('a'), 'com', active)).toBeUndefined();
+    // Sem nenhum comando na lista, só o Esc tem o que fazer.
+    expect(menuAction(key('Enter'), 'zzz', undefined)).toBeUndefined();
+    expect(menuAction(key('ArrowDown'), 'zzz', undefined)).toBeUndefined();
+  });
+
+  it('o destaque dá a volta nas pontas', () => {
+    expect(moveActive(0, 3, 1)).toBe(1);
+    expect(moveActive(2, 3, 1)).toBe(0);
+    expect(moveActive(0, 3, -1)).toBe(2);
+    expect(moveActive(0, 0, 1)).toBe(0);
+  });
+});
+
+describe('arquivos citados com @', () => {
+  it('abre com o @ no começo ou depois de um espaço, enquanto o cursor está no caminho', () => {
+    expect(mentionQuery('@', 1)).toEqual({ query: '', start: 0 });
+    expect(mentionQuery('@src/ap', 7)).toEqual({ query: 'src/ap', start: 0 });
+    expect(mentionQuery('olha o @comp', 12)).toEqual({ query: 'comp', start: 7 });
+    expect(mentionQuery('linha um\n@read', 14)).toEqual({ query: 'read', start: 9 });
+    // No meio de uma palavra (um e-mail) não é citação; depois do espaço, o cursor já saiu do caminho.
+    expect(mentionQuery('fulano@exemplo.com', 18)).toBeUndefined();
+    expect(mentionQuery('@src/app.ts e', 13)).toBeUndefined();
+    expect(mentionQuery('sem arroba', 10)).toBeUndefined();
+    // O cursor no meio do caminho: vale o que está antes dele.
+    expect(mentionQuery('@src/app.ts', 4)).toEqual({ query: 'src', start: 0 });
+  });
+
+  it('escolher troca o que foi digitado por @caminho, com um espaço (sem repetir o que já havia)', () => {
+    expect(applyMention('olha o @comp', 7, 12, 'src/ui/composer.ts')).toEqual({ value: 'olha o @src/ui/composer.ts ', caret: 27 });
+    expect(applyMention('@rea e depois', 0, 4, 'README.md')).toEqual({ value: '@README.md e depois', caret: 11 });
+    expect(applyMention('veja @', 5, 6, 'docs/meu plano.md')).toEqual({ value: 'veja @"docs/meu plano.md" ', caret: 26 });
+    // Só o que está antes do cursor é trocado: o resto do caminho antigo fica para a pessoa apagar.
+    expect(applyMention('@src/app.ts', 0, 4, 'src/index.ts')).toEqual({ value: '@src/index.ts /app.ts', caret: 14 });
+  });
+
+  it('linhas do menu: o caminho inteiro vai para a caixa; na tela, o nome e a pasta', () => {
+    expect(fileOptions(['README.md', 'src/ui/composer.ts'])).toEqual([
+      { name: 'README.md', description: '', panel: false, file: true },
+      { name: 'src/ui/composer.ts', description: '', panel: false, file: true },
+    ]);
+    expect(splitPath('src/ui/composer.ts')).toEqual({ name: 'composer.ts', dir: 'src/ui' });
+    expect(splitPath('README.md')).toEqual({ name: 'README.md', dir: '' });
+  });
+
+  it('Enter escolhe o arquivo destacado; com o caminho inteiro já digitado, manda', () => {
+    const key = { key: 'Enter', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, isComposing: false };
+    const [active] = fileOptions(['README.md']);
+    expect(menuAction(key, 'read', active)).toBe('pick');
+    expect(menuAction(key, 'README.md', active)).toBeUndefined();
+  });
+});
+
+describe('anexos colados ou arrastados', () => {
+  const f = (name: string, size = 10) => ({ name, size });
+
+  it('com anexo, dá para mandar sem texto; texto longo demais continua não indo', () => {
+    expect(canSend('', 0)).toBe(false);
+    expect(canSend('  \n', 1)).toBe(true);
+    expect(canSend('oi', 2)).toBe(true);
+    expect(canSend('x'.repeat(20_001), 1)).toBe(false);
+  });
+
+  it('entram os que cabem: vazio fica de fora em silêncio; grande demais e além do limite, com o motivo', () => {
+    expect(acceptFiles([f('a.png'), f('vazio.txt', 0)], 0)).toEqual({ accepted: [f('a.png')] });
+    const big = acceptFiles([f('video.mov', MESSAGE_FILE_MAX_BYTES + 1), f('b.png')], 0);
+    expect(big.accepted).toEqual([f('b.png')]);
+    expect(big.problem).toMatch(/video\.mov passa de 15 MB/);
+    const many = acceptFiles(Array.from({ length: 4 }, (_, i) => f(`n${i}.png`)), MESSAGE_FILES_MAX - 2);
+    expect(many.accepted.map((x) => x.name)).toEqual(['n0.png', 'n1.png']);
+    expect(many.problem).toMatch(/No máximo 5 anexos/);
+    expect(acceptFiles([f('x.png')], MESSAGE_FILES_MAX)).toMatchObject({ accepted: [] });
+  });
+
+  it('sem miniatura, o rótulo é a extensão', () => {
+    expect(fileBadge('relatório.pdf')).toBe('PDF');
+    expect(fileBadge('pacote.tar.gzip2')).toBe('GZIP');
+    expect(fileBadge('Makefile')).toBe('ARQ');
+    expect(fileBadge('.gitignore')).toBe('ARQ');
   });
 });

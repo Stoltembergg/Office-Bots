@@ -12,12 +12,19 @@
 // 2. Cada mensagem, na ordem, vai para a sessão por `$.prompt.submit({ text, asUser: true })`: o modelo a lê como
 //    sua, sem o "The habblaud-mensagens plugin sent a message" (o registro da sessão ainda nomeia o plugin). O
 //    texto vai exatamente como chegou. `{drop}` (um hook recusou) ou exceção = falha, com o motivo.
-//    Com a sessão no meio de um turno, o Claude Code guarda o prompt até ela ficar livre e a chamada pode demorar a
-//    voltar: a espera por mensagem é de no máximo 2 s. Passou disso, a mensagem está na fila da sessão e conta
-//    como entregue, e as seguintes da mesma rodada vão em seguida, na ordem, sem esperar. Assim a rodada nunca
+//    Mensagem que começa com `/` é um comando de barra (`/compact`, `/model opus`): o Claude Code recusa esse texto
+//    em `$.prompt.submit`, então ela vai por `$.command.run({ command, args })`, que roda o comando como se você o
+//    tivesse digitado (com a sessão ocupada, quando ela ficar livre). Nome que a sessão não conhece = falha.
+//    Com a sessão no meio de um turno, o Claude Code guarda o prompt (ou o comando) até ela ficar livre e a chamada
+//    pode demorar a voltar: a espera por mensagem é de no máximo 2 s. Passou disso, a mensagem está na fila da sessão
+//    e conta como entregue, e as seguintes da mesma rodada vão em seguida, na ordem, sem esperar. Assim a rodada nunca
 //    passa de uns poucos segundos: a presença (10 s no servidor) e a confirmação (30 s) não vencem por uma
 //    sessão ocupada. O preço: um hook que recuse a mensagem depois desses 2 s não chega ao escritório.
 // 3. Um único POST /api/mod/inbox/ack com {session, results: [{id, ok, error?}]}. Sem mensagens, sem ack.
+// 4. A lista de comandos de barra da sessão (`$.command.list()`: nome, descrição e origem de cada um) vai no corpo da
+//    pergunta do passo 1, em `commands`, para o menu da caixa de mensagem do escritório. Ela é relida a cada minuto
+//    e só é mandada quando mudou ou quando o Habblaud a pede (`needCommands` na resposta: ele ainda não a tem, ou
+//    reiniciou). Se a leitura falhar, a pergunta segue sem a lista.
 //
 // Por que um plugin à parte do mod `habblaud`: aquele só observa (uso do plano, aviso embaixo do prompt,
 // /habblaud) e nunca muda o que a sessão faz. Este age: digita na sessão em seu nome. Separado, dá para ficar sem
@@ -43,6 +50,11 @@ export const OFFLINE_POLL_MS = 30_000
 export const FETCH_TIMEOUT_MS = 2_000
 /** Quanto esperar `$.prompt.submit` voltar antes de dar a mensagem como na fila da sessão. */
 export const SUBMIT_WAIT_MS = 2_000
+/** De quantas em quantas rodadas a lista de comandos de barra é relida (30 rodadas de 2 s = 1 min). */
+export const COMMANDS_EVERY = 30
+/** Quantos comandos vão na lista, e o tamanho da descrição de cada um (o corpo da pergunta tem limite no servidor). */
+export const MAX_COMMANDS = 500
+export const MAX_DESCRIPTION = 200
 /** Tamanho máximo do motivo de uma falha (vem de um hook ou de uma exceção; o texto da mensagem nunca é cortado). */
 export const MAX_REASON = 500
 
@@ -60,7 +72,20 @@ export interface AckResult {
   error?: string
 }
 
-/** Desfecho de um `$.prompt.submit`. */
+/** Um comando de barra como `$.command.run` recebe: o nome sem a barra e o que veio depois dele. */
+export interface SlashCommand {
+  command: string
+  args: string
+}
+
+/** Um comando de barra da sessão, como vai em `commands` no corpo de POST /api/mod/inbox (shared/types.ts, SessionCommand). */
+export interface CommandRow {
+  name: string
+  description: string
+  source: string
+}
+
+/** Desfecho de um `$.prompt.submit` ou de um `$.command.run`. */
 type Submitted = { ok: true } | { ok: false; error: string }
 
 interface ModEnv {
@@ -124,9 +149,34 @@ export function portOf(raw: string | undefined): number {
   return Number.isInteger(n) && n > 0 && n < 65_536 ? n : DEFAULT_PORT
 }
 
-/** Corpo de POST /api/mod/inbox: a conta só quando se sabe qual é. */
-export function inboxBody(session: string, account: string | undefined): string {
-  return JSON.stringify(account ? { session, account } : { session })
+/** Corpo de POST /api/mod/inbox: a conta só quando se sabe qual é; a lista de comandos só quando há o que mandar. */
+export function inboxBody(session: string, account: string | undefined, commands?: readonly CommandRow[]): string {
+  return JSON.stringify({ session, ...(account ? { account } : {}), ...(commands ? { commands } : {}) })
+}
+
+/** O que vai de cada comando de `$.command.list()`: nome, descrição cortada e origem. Item sem nome fica de fora. */
+export function commandRows(list: unknown): CommandRow[] {
+  if (!Array.isArray(list)) return []
+  const out: CommandRow[] = []
+  for (const item of list) {
+    if (out.length >= MAX_COMMANDS) break
+    if (!item || typeof item !== 'object') continue
+    const c = item as Record<string, unknown>
+    if (typeof c.name !== 'string' || !c.name) continue
+    const description = typeof c.description === 'string' ? c.description.slice(0, MAX_DESCRIPTION) : ''
+    out.push({ name: c.name, description, source: typeof c.source === 'string' ? c.source : 'builtin' })
+  }
+  return out
+}
+
+/** A resposta de POST /api/mod/inbox pede a lista de comandos (`needCommands: true`)? Fora do formato = não. */
+export function wantsCommands(text: string): boolean {
+  try {
+    const j: unknown = JSON.parse(text)
+    return !!j && typeof j === 'object' && (j as Record<string, unknown>).needCommands === true
+  } catch {
+    return false
+  }
 }
 
 /** Corpo de POST /api/mod/inbox/ack. */
@@ -159,6 +209,18 @@ export function parseInbox(text: string): InboxMessage[] | undefined {
   return out
 }
 
+/**
+ * Mensagem que é um comando de barra (`/compact`, `/model opus`): a barra é o primeiro caractere e o nome vai até o
+ * primeiro espaço ou quebra de linha; o resto, sem os espaços das pontas, são os argumentos. Só a barra, ou a barra
+ * seguida de espaço, não é comando. O Claude Code recusa em `$.prompt.submit` todo texto que começa com `/`: quem
+ * diz se o nome existe é o `$.command.run`.
+ */
+export function parseCommand(text: string): SlashCommand | undefined {
+  const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text)
+  if (!m) return undefined
+  return { command: m[1] ?? '', args: (m[2] ?? '').trim() }
+}
+
 /** O motivo de uma falha numa linha só, com tamanho limitado: o texto de um `{drop}` ou a mensagem de uma exceção. */
 export function reasonText(raw: unknown, fallback: string): string {
   const msg = typeof raw === 'string' ? raw : raw && typeof (raw as { message?: unknown }).message === 'string' ? (raw as { message: string }).message : ''
@@ -176,6 +238,13 @@ let timer: { cancel: () => void } | undefined
 let timerMs = 0
 /** Uma rodada por vez: um Habblaud lento ou uma sessão ocupada não empilham rodadas. */
 let polling = false
+/** Lista de comandos de barra: a última lida (e ela como texto, para comparar), a última que o Habblaud recebeu,
+ *  quantas rodadas faltam para reler e se ele pediu a lista na última resposta. */
+let commands: CommandRow[] | undefined
+let commandsKey = ''
+let commandsSent = ''
+let roundsToList = 0
+let commandsWanted = false
 
 /** O ambiente da sessão, lido uma vez por carga (cada nome escrito por extenso, como a análise exige). */
 async function readEnv($: EngineInterface): Promise<ModEnv> {
@@ -221,8 +290,40 @@ async function postJson($: EngineInterface, port: number, path: string, body: st
   }
 }
 
-/** Uma mensagem para a sessão, como se você a tivesse digitado. Nunca lança. */
+/**
+ * A lista de comandos de barra a mandar nesta rodada: relida a cada COMMANDS_EVERY rodadas, e devolvida só se mudou
+ * desde a última que o Habblaud recebeu ou se ele a pediu. Nada a mandar (ou a leitura falhou) = undefined. Nunca lança.
+ */
+async function commandsToSend($: EngineInterface): Promise<CommandRow[] | undefined> {
+  try {
+    if (roundsToList <= 0 || !commands) {
+      roundsToList = COMMANDS_EVERY
+      const list = await waitAtMost($, $.command.list(), FETCH_TIMEOUT_MS)
+      if (list) {
+        commands = commandRows(list)
+        commandsKey = JSON.stringify(commands)
+      }
+    } else roundsToList--
+  } catch {
+    // sem a lista, a caixa do escritório fica sem o menu de comandos; as mensagens seguem
+  }
+  return commands && (commandsWanted || commandsKey !== commandsSent) ? commands : undefined
+}
+
+/** Um comando de barra na sessão, como se você o tivesse digitado. Nunca lança. */
+async function runCommand($: EngineInterface, slash: SlashCommand): Promise<Submitted> {
+  try {
+    await $.command.run({ command: slash.command, args: slash.args })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: reasonText(err, 'a sessão não aceitou o comando') }
+  }
+}
+
+/** Uma mensagem para a sessão, como se você a tivesse digitado: um comando de barra ou um prompt. Nunca lança. */
 async function submitOne($: EngineInterface, text: string): Promise<Submitted> {
+  const slash = parseCommand(text)
+  if (slash) return runCommand($, slash)
   try {
     const r = await $.prompt.submit({ text, asUser: true })
     if (typeof r?.drop === 'string') return { ok: false, error: reasonText(r.drop, 'um hook da sessão recusou a mensagem') }
@@ -276,13 +377,17 @@ async function round($: EngineInterface): Promise<void> {
     const surfaces = await $.session.surfaces()
     if (!surfaces.length && !e.desktop) return
     const session = await $.session.id()
-    const res = await postJson($, e.port, '/api/mod/inbox', inboxBody(session, e.accountId))
+    const list = await commandsToSend($)
+    const sentKey = commandsKey
+    const res = await postJson($, e.port, '/api/mod/inbox', inboxBody(session, e.accountId, list))
     const messages = res?.ok ? parseInbox(res.text) : undefined
-    if (!messages) {
+    if (!messages || !res) {
       schedule($, OFFLINE_POLL_MS)
       return
     }
     schedule($, POLL_MS)
+    if (list) commandsSent = sentKey
+    commandsWanted = wantsCommands(res.text)
     if (!messages.length) return
     const results = await deliver($, messages)
     // Falhou a confirmação: o servidor dá as mensagens como falhas em 30 s ("a sessão não confirmou a entrega").

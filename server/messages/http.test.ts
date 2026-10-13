@@ -15,7 +15,8 @@ import { NameStore } from '../model/names';
 import { Office } from '../model/office';
 import { request } from '../test/permission-server';
 import { tempDir } from '../test/fixtures';
-import { createMessageRoutes } from './http';
+import { createMessageRoutes, type ProjectLister } from './http';
+import { AttachmentStore } from '../spawn/attachments';
 import { MessageRegistry, type MessageRegistryOptions } from './registry';
 
 setQuiet(true);
@@ -31,7 +32,7 @@ interface MessageServer {
 }
 
 /** Office + Hub + rotas de verdade numa porta livre do 127.0.0.1, com um agente principal na sessão "sess-1". */
-async function serveMessages(opts: { enabled?: boolean; demo?: boolean; registry?: Partial<MessageRegistryOptions> } = {}): Promise<MessageServer> {
+async function serveMessages(opts: { enabled?: boolean; demo?: boolean; registry?: Partial<MessageRegistryOptions>; listFiles?: ProjectLister; attachments?: AttachmentStore } = {}): Promise<MessageServer> {
   const tmp = tempDir();
   const enabled = opts.enabled ?? true;
   const late: { registry?: MessageRegistry } = {};
@@ -66,7 +67,7 @@ async function serveMessages(opts: { enabled?: boolean; demo?: boolean; registry
     version: 't',
     inDocker: false,
     terminal: true,
-    messages: registry ? createMessageRoutes(registry) : undefined,
+    messages: registry ? createMessageRoutes(registry, opts.listFiles, opts.attachments) : undefined,
   });
   const guard = createRequestGuard({ allowedHosts: new Set(['habblaud.lan']) });
   const server = http.createServer((req, res) => {
@@ -198,7 +199,7 @@ describe('rotas', () => {
     expect((await post(srv, '/api/mod/inbox/ack', { session: SESSION })).status).toBe(400);
 
     // Com o plugin: 5 na fila, a 6ª recebe 429.
-    expect((await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc' })).json).toEqual({ messages: [] });
+    expect((await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc' })).json).toEqual({ messages: [], needCommands: true });
     for (let i = 0; i < 5; i++) expect((await post(srv, '/api/messages', { agentId: MAIN, text: `m${i}` })).status).toBe(201);
     const full = await post(srv, '/api/messages', { agentId: MAIN, text: 'demais' });
     expect(full.status).toBe(429);
@@ -212,10 +213,76 @@ describe('rotas', () => {
     expect((await post(srv, '/api/mod/inbox/ack', { session: 'nao-existe', results: [{ id: 'x', ok: true }] })).json).toEqual({ ok: true });
   });
 
+  it('comandos de barra: a caixa de entrada pede a lista (needCommands), guarda a que o plugin manda e a página a busca', async () => {
+    srv = await serveMessages();
+    const path = `/api/messages/commands/${encodeURIComponent(MAIN)}`;
+    expect((await request(srv.base, path)).json).toEqual({ commands: [] });
+    expect((await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc' })).json).toEqual({ messages: [], needCommands: true });
+    const commands = [
+      { name: 'compact', description: 'Compacta a conversa', source: 'builtin' },
+      { name: 'habblaud', description: 'Resumo do escritório', source: 'plugin', plugin: 'habblaud' },
+    ];
+    expect((await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc', commands })).json).toEqual({ messages: [] });
+    expect((await request(srv.base, path)).json).toEqual({
+      commands: [
+        { name: 'compact', description: 'Compacta a conversa', source: 'builtin' },
+        { name: 'habblaud', description: 'Resumo do escritório', source: 'plugin' },
+      ],
+    });
+    expect((await request(srv.base, '/api/messages/commands/nao-existe')).json).toEqual({ commands: [] });
+    expect((await request(srv.base, path, { method: 'POST', body: {} })).status).toBe(405);
+  });
+
+  it('arquivos do projeto do agente (o @ da caixa): busca na lista da pasta dele; sem agente 404, sem quem liste 503', async () => {
+    const asked: string[] = [];
+    srv = await serveMessages({
+      listFiles: async (root) => {
+        asked.push(root);
+        return { files: ['README.md', 'src/app.ts', 'src/ui/composer.ts', 'docs/compras.md'], truncated: false };
+      },
+    });
+    const path = `/api/messages/files/${encodeURIComponent(MAIN)}`;
+    expect((await request(srv.base, `${path}?q=comp`)).json).toEqual({ files: ['composer.ts', 'compras.md'].map((n) => (n === 'composer.ts' ? 'src/ui/composer.ts' : 'docs/compras.md')).sort((a, b) => a.length - b.length), truncated: false });
+    expect((await request(srv.base, path)).json).toEqual({ files: ['README.md', 'src/app.ts', 'docs/compras.md', 'src/ui/composer.ts'], truncated: false });
+    expect(asked).toEqual(['/p/loja', '/p/loja']);
+    expect((await request(srv.base, '/api/messages/files/nao-existe')).status).toBe(404);
+    expect((await request(srv.base, path, { method: 'POST', body: {} })).status).toBe(405);
+    await srv.close();
+
+    srv = await serveMessages({ listFiles: async () => ({ error: 'o auxiliar do computador (npm run codex:bridge) não está rodando', status: 503 }) });
+    expect(await request(srv.base, path)).toMatchObject({ status: 503, json: { error: expect.stringMatching(/codex:bridge/) } });
+    await srv.close();
+
+    srv = await serveMessages();
+    expect((await request(srv.base, path)).status).toBe(503);
+  });
+
+  it('anexos: a página manda o arquivo (201 com o id) e a mensagem sai para a sessão com o caminho gravado', async () => {
+    const store = new AttachmentStore();
+    srv = await serveMessages({ attachments: store, registry: { attachments: { store, write: async (_id, files) => files.map((f) => `/anexos/${f.name}`) } } });
+    const up = await post(srv, '/api/messages/attachments', { name: 'pasta/tela.png', type: 'image/png', data: Buffer.from('png').toString('base64') });
+    expect(up).toMatchObject({ status: 201, json: { id: expect.any(String), name: 'tela.png', size: 3 } });
+    expect((await post(srv, '/api/messages/attachments', { name: 'vazio.png', data: '' })).status).toBe(400);
+    expect((await request(srv.base, '/api/messages/attachments')).status).toBe(405);
+
+    await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc' });
+    const id = (up.json as { id: string }).id;
+    expect((await post(srv, '/api/messages', { agentId: MAIN, text: 'veja', attachments: [id] })).status).toBe(201);
+    await sleep(20);
+    const inbox = (await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc' })).json as { messages: InboxMessage[] };
+    expect(inbox.messages.map((m) => m.text)).toEqual(['veja\n\nAnexo enviado pelo Habblaud:\n- /anexos/tela.png']);
+    // O mesmo anexo não serve a outra mensagem.
+    expect(await post(srv, '/api/messages', { agentId: MAIN, text: 'de novo', attachments: [id] })).toMatchObject({ status: 409, json: { error: expect.stringMatching(/expirou/) } });
+    await srv.close();
+
+    srv = await serveMessages();
+    expect((await post(srv, '/api/messages/attachments', { name: 'tela.png', data: 'cG5n' })).status).toBe(403);
+  });
+
   it('fluxo: plugin conecta (canMessage) → página manda (201) → plugin busca → confirma → página consulta (delivered) e o feed mostra', async () => {
     srv = await serveMessages();
     expect((await snapshot(srv)).agents.find((a) => a.id === MAIN)?.canMessage).toBeUndefined();
-    expect((await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc' })).json).toEqual({ messages: [] });
+    expect((await post(srv, '/api/mod/inbox', { session: SESSION, account: 'acc' })).json).toEqual({ messages: [], needCommands: true });
     await sleep(30);
     expect((await snapshot(srv)).agents.find((a) => a.id === MAIN)?.canMessage).toBe(true);
 

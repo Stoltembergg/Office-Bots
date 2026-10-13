@@ -217,6 +217,73 @@ describe('filesRound (arquivos das entregas pelo auxiliar)', () => {
     expect(acked).toEqual({ results: [{ id: 'f1', ok: true, data: Buffer.from('png').toString('base64') }, { id: 'f2', ok: false, error: 'arquivo protegido' }] });
   });
 
+  it('pedido de lista (list: true): lista só pasta de projeto conhecida e devolve os caminhos, sem ler arquivo', async () => {
+    let acked: unknown;
+    let reads = 0;
+    const post: Post = async (path, body) => {
+      if (path === '/api/host/files/poll') {
+        return { status: 200, json: { files: [{ id: 'l1', path: '/proj/loja', list: true }, { id: 'l2', path: '/Users/a/Documents', list: true }, { id: 'l3', path: '/proj/sumiu', list: true }] } };
+      }
+      acked = body;
+      return { status: 200, json: { ok: true } };
+    };
+    const r = await filesRound(post, () => {}, () => (reads++, Buffer.from('x')), (p) => ({ path: p, size: 1 }), {
+      knownProject: (root) => root.startsWith('/proj/'),
+      list: (root) => (root === '/proj/loja' ? { files: ['src/a.ts', 'README.md'], truncated: false } : { error: 'pasta do projeto não encontrada' }),
+    });
+    expect(r).toEqual({
+      state: 'ok',
+      results: [
+        { id: 'l1', ok: true },
+        { id: 'l2', ok: false, error: 'fora das pastas de projeto conhecidas' },
+        { id: 'l3', ok: false, error: 'pasta do projeto não encontrada' },
+      ],
+    });
+    expect(acked).toEqual({
+      results: [
+        { id: 'l1', ok: true, files: ['src/a.ts', 'README.md'], truncated: false },
+        { id: 'l2', ok: false, error: 'fora das pastas de projeto conhecidas' },
+        { id: 'l3', ok: false, error: 'pasta do projeto não encontrada' },
+      ],
+    });
+    expect(reads).toBe(0);
+  });
+
+  it('pedido de gravação (write: true): confere os anexos de uma mensagem, grava e devolve os caminhos', async () => {
+    let acked: unknown;
+    const data = Buffer.from('png').toString('base64');
+    const post: Post = async (path, body) => {
+      if (path === '/api/host/files/poll') {
+        return {
+          status: 200,
+          json: {
+            files: [
+              { id: 'w1', path: '', write: true, files: [{ name: '../../tela.png', type: 'image/png', data }] },
+              { id: 'w2', path: '', write: true, files: [{ name: 'x.png', type: 'image/png', data: '%%%' }] },
+              { id: 'w3', path: '', write: true, files: [] },
+            ],
+          },
+        };
+      }
+      acked = body;
+      return { status: 200, json: { ok: true } };
+    };
+    const written: Array<{ id: string; names: string[] }> = [];
+    const r = await filesRound(post, () => {}, undefined, undefined, {
+      write: (id, files) => (written.push({ id, names: files.map((f) => f.name) }), files.map((f) => `/anexos/${f.name}`)),
+    });
+    // O nome chega limpo (sem pastas) a quem grava.
+    expect(written).toEqual([{ id: 'w1', names: ['tela.png'] }]);
+    expect(acked).toEqual({
+      results: [
+        { id: 'w1', ok: true, paths: ['/anexos/tela.png'] },
+        { id: 'w2', ok: false, error: 'anexo ilegível' },
+        { id: 'w3', ok: false, error: 'anexos inválidos' },
+      ],
+    });
+    expect(r.state).toBe('ok');
+  });
+
   it('fora das pastas que pode ler (inside): recusa sem ler; com espera, pede a rodada com ?wait=1', async () => {
     const paths: string[] = [];
     let reads = 0;
