@@ -18,6 +18,7 @@ import { tr } from '../../shared/i18n';
 import type { SpawnService } from '../spawn/spawn';
 import { ATTACHMENT_BODY_MAX, parseAttachment, type AttachmentStore } from '../spawn/attachments';
 import type { SpawnFolder } from '../spawn/folders';
+import type { HostQueue } from '../runtime/host-queue';
 import { AUDIO_BODY_MAX, type DictationService } from '../dictation/dictation';
 import type { DeliveryIndex } from '../deliveries/deliveries';
 import type { FileFetcher } from '../deliveries/fetcher';
@@ -65,6 +66,11 @@ export interface ApiDeps {
   codexLive?: CodexLive;
   /** Novo agente pelo escritório (/api/spawn e, para o auxiliar do host, /api/host/spawn/*; server/spawn/spawn.ts). */
   spawn?: SpawnService;
+  /**
+   * Fila de ações do Codex para o auxiliar do host (Docker: assumir, encerrar, novo agente, mensagem hospedada;
+   * POST /api/host/runtime/poll|ack, server/runtime/host-queue.ts). Sem ela a rota responde 404.
+   */
+  hostRuntime?: HostQueue;
   /** Pastas sugeridas no "Novo agente" (GET /api/spawn/folders; spawn/folders.ts): projetos recentes. */
   spawnFolders?: () => Promise<SpawnFolder[]>;
   /** Anexos do "Novo agente" (POST /api/spawn/attachments; spawn/attachments.ts). */
@@ -611,6 +617,25 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
             sendJson(res, 200, { ok: true });
           })
           .catch((err) => fail(res, err));
+      }
+      return true;
+    }
+    if (path === '/api/host/runtime/poll' || path === '/api/host/runtime/ack') {
+      // Docker: o auxiliar do host busca as ações do Codex e confirma com os threads que hospeda. Mesma trava do
+      // spawn do host (Host local; pela porta remota nem chega aqui, isLocalOnlyPath). Sem a fila, a rota não existe.
+      const queue = deps.hostRuntime;
+      if (!queue) sendJson(res, 404, { error: tr('rota desconhecida') });
+      else if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else if (!(trusted(req, 'spawn') || trusted(req, 'messages')) || (!deps.inDocker && !isLoopbackAddress(req.socket.remoteAddress))) {
+        sendJson(res, 403, { error: denied(req, tr('só o auxiliar do próprio computador')) });
+      } else {
+        readJson(req).then((body) => {
+          if (path === '/api/host/runtime/poll') sendJson(res, 200, { actions: queue.poll() });
+          else {
+            queue.ack(body);
+            res.writeHead(204, { 'Cache-Control': 'no-store' }).end();
+          }
+        }, (err) => fail(res, err));
       }
       return true;
     }
