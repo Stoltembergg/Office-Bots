@@ -501,6 +501,9 @@ liste latérale ou la touche `T` ouvrent la même fenêtre, avec des onglets pou
   désactive les modes souris/clavier que Claude avait activés).
 - **Fermer** met fin à la session, qu'elle soit ici ou dans un autre terminal (la conversation reste enregistrée).
 - **Nouvelle session** (dans le panneau de la salle) ouvre un nouveau Claude Code dans le dossier du projet.
+- **Ouvrir un projet** (en haut de la liste latérale) parcourt les dossiers de l'ordinateur (dossier personnel, disques
+  et les projets du bureau en raccourcis) et ouvre un nouveau Claude Code dans le dossier choisi, même pour un projet qui
+  n'est pas encore dans le bureau.
 
 Prendre le contrôle et fermer demandent un second clic ; fermer la fenêtre ne met pas fin à la session. La fenêtre (et
 le panneau de l'agent) peut être déplacée par sa barre et redimensionnée par le coin ; un double clic sur la barre la

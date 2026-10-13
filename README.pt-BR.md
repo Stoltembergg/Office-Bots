@@ -476,6 +476,9 @@ abrem a mesma janela, com abas para os outros agentes do mesmo projeto.
   terminal de onde a sessão saiu volta ao normal (o Habblaud desliga os modos de mouse/teclado que o Claude ligou).
 - **Encerrar** fecha a sessão, esteja ela aqui ou noutro terminal (a conversa fica salva).
 - **Nova sessão** (na gaveta da sala) abre um Claude Code novo na pasta do projeto.
+- **Abrir projeto** (no topo da lista lateral) navega pelas pastas do computador (pasta pessoal, discos e os projetos
+  do escritório como atalhos) e abre um Claude Code novo na pasta escolhida, mesmo num projeto que ainda não está no
+  escritório.
 
 Assumir e encerrar pedem um segundo clique; fechar a janela não encerra a sessão. A janela (e a gaveta do
 agente) pode ser arrastada pela barra e redimensionada pelo canto; duplo clique na barra devolve ao lugar.

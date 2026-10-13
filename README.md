@@ -478,6 +478,9 @@ open the same window, with tabs for the other agents in the same project.
   terminal the session came from goes back to normal (Habblaud turns off the mouse/keyboard modes that Claude turned on).
 - **End** closes the session, whether it's here or in another terminal (the conversation is saved).
 - **New session** (in the room's drawer) opens a new Claude Code in the project folder.
+- **Open project** (at the top of the side list) browses the computer's folders (home folder, drives and the office's
+  projects as shortcuts) and opens a new Claude Code in the chosen folder, even for a project that isn't in the office
+  yet.
 
 Taking over and ending ask for a second click; closing the window doesn't end the session. The window (and the agent's
 drawer) can be dragged by its bar and resized from the corner; double-clicking the bar puts it back in place.

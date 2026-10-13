@@ -2583,4 +2583,19 @@ export const ES: Readonly<Record<string, string>> = {
   "Acesso pelo celular": "Acceso desde el celular",
   "Sair deste aparelho": "Cerrar sesión en este dispositivo",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Cierra el inicio de sesión aquí (una copia de la cookie también deja de valer). Para volver, entra con tu usuario y contraseña.",
+
+  // client/src/ui/projectpicker.ts, server/pty/dirs.ts (Abrir projeto)
+  "↑ Pasta de cima": "↑ Carpeta superior",
+  "Pastas": "Carpetas",
+  "Abrir Claude Code aqui": "Abrir Claude Code aquí",
+  "Abrir projeto": "Abrir proyecto",
+  "Escolha a pasta do projeto: o Claude Code abre nela, num terminal interativo.": "Elige la carpeta del proyecto: Claude Code se abre en ella, en una terminal interactiva.",
+  "O Habblaud não respondeu.": "Habblaud no respondió.",
+  "Nenhuma subpasta.": "Ninguna subcarpeta.",
+  "Pasta grande: mostrando só as primeiras {0} subpastas.": "Carpeta grande: mostrando solo las primeras {0} subcarpetas.",
+  "Pasta pessoal": "Carpeta personal",
+  "Escolher uma pasta do computador e abrir o Claude Code nela": "Elegir una carpeta de la computadora y abrir Claude Code en ella",
+  "informe um caminho absoluto": "indica una ruta absoluta",
+  "não é uma pasta: {0}": "no es una carpeta: {0}",
+  "não consegui abrir a pasta: {0}": "no pude abrir la carpeta: {0}",
 };

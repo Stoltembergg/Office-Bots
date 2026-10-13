@@ -500,6 +500,9 @@ abren la misma ventana, con pestañas para los demás agentes del mismo proyecto
   modos de mouse/teclado que Claude había activado).
 - **Cerrar** termina la sesión, esté aquí o en otra terminal (la conversación queda guardada).
 - **Nueva sesión** (en el panel de la sala) abre un Claude Code nuevo en la carpeta del proyecto.
+- **Abrir proyecto** (arriba de la lista lateral) recorre las carpetas de la computadora (carpeta personal, discos y los
+  proyectos de la oficina como atajos) y abre un Claude Code nuevo en la carpeta elegida, incluso en un proyecto que aún
+  no está en la oficina.
 
 Tomar el control y cerrar piden un segundo clic; cerrar la ventana no termina la sesión. La ventana (y el panel del
 agente) se puede arrastrar por la barra y redimensionar por la esquina; doble clic en la barra la devuelve a su lugar.
