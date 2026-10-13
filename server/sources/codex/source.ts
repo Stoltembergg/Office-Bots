@@ -57,7 +57,7 @@ import type { AgentSource } from '../source';
 import { FileTail } from '../tail';
 import type { TerminalParser } from '../terminal';
 import { detectCodexAccounts } from './accounts';
-import { readRolloutHead, RolloutIndex } from './files';
+import { readRolloutHead, RolloutIndex, samePath } from './files';
 import { ThreadNameIndex } from './history';
 import type { CodexLive } from './live';
 import { createLockProber, type LockProber } from './locks';
@@ -160,6 +160,7 @@ export class CodexSource implements AgentSource, CodexLive {
       accs: () => this.accs,
       schedule: () => this.schedule(),
       pump: (t, boot) => this.pump(t, boot),
+      load: (t, path) => this.load(t, path),
       turnTo: (t, open) => this.turnTo(t, open),
       reconcile: (t, now, via) => this.reconcile(t, now, via),
       decide: (t, status, at, waitingFor, live) => this.decide(t, status, at, waitingFor, live),
@@ -491,20 +492,19 @@ export class CodexSource implements AgentSource, CodexLive {
 
   /** Acha o rollout (sem pressa: no máximo a cada 3 s por thread) e lê o que for novo. */
   private pump(t: ThreadTracker, boot: boolean): void {
-    if (!t.tail) {
-      const now = this.now();
-      if (now < t.nextResolveAt) return;
+    const now = this.now();
+    if (now >= t.nextResolveAt) {
       t.nextResolveAt = now + (boot ? 0 : 3_000);
       const path = t.acc.index.find(t.threadId);
-      if (!path) {
-        if (t.acc.index.isCompressedOnly(t.threadId)) {
-          log.warnOnce('codex-zst', 'Codex: há conversas compactadas (.jsonl.zst) que o Habblaud ainda não lê; elas ficam sem detalhes.');
-        }
+      if (path && !samePath(path, t.tail?.path)) {
+        this.load(t, path);
         return;
       }
-      this.load(t, path);
-      return;
+      if (!path && !t.tail && t.acc.index.isCompressedOnly(t.threadId)) {
+        log.warnOnce('codex-zst', 'Codex: há conversas compactadas (.jsonl.zst) que o Habblaud ainda não lê; elas ficam sem detalhes.');
+      }
     }
+    if (!t.tail) return;
     for (let i = 0; i < 4; i++) {
       let r;
       try {
@@ -545,6 +545,7 @@ export class CodexSource implements AgentSource, CodexLive {
    * ela se completar. O começo anterior à varredura vai em segundo plano (números, título e linha do tempo longa).
    */
   private load(t: ThreadTracker, path: string): void {
+    this.watchers.unwatch(t);
     const head = readRolloutHead(path);
     if (head.meta) this.setMeta(t, head.meta);
     const tail = new FileTail(path);

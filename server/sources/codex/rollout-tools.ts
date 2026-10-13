@@ -1,6 +1,7 @@
 // Descrição das ferramentas do Codex: o que o personagem está fazendo em cada chamada (comando, patch, MCP, busca na web,
 // plano, multiagente...), pelo nome que ela tem no rollout, no hook ou no app. O texto livre do modelo passa pela
 // máscara (rollout-mask.ts) antes de qualquer corte.
+import { fileURLToPath } from 'node:url';
 import { describePrompt, describeTool, truncate, type ActivityDescription } from '../../../shared/activity';
 import type { TaskItem, TaskStatus } from '../../../shared/types';
 import { unwrapCommand } from './command';
@@ -79,20 +80,26 @@ export function fileChanges(raw: unknown): FileChangeEntry[] {
 }
 
 /**
- * Caminho de um `file://` (cwd e caminhos do Codex vêm como URL). No Windows a URL é `file:///C:/x/y` e o caminho é
- * `C:/x/y` (sem a barra antes da letra do drive), em qualquer plataforma: o Docker também lê rollouts do Windows.
+ * Caminho de um `file://` (cwd e caminhos do Codex vêm como URL). Drive (`file:///C:/x/y` → `C:\x\y`) ou host UNC
+ * viram caminho Windows em qualquer plataforma: o Docker também lê rollouts gravados no Windows.
  */
 export function pathFromUri(v: unknown): string | undefined {
   const s = str(v);
   if (!s) return undefined;
   if (!s.startsWith('file://')) return s;
-  let path: string;
   try {
-    path = decodeURIComponent(new URL(s).pathname);
+    const url = new URL(s);
+    const path = decodeURIComponent(url.pathname);
+    // localhost o parser do file:// já esvazia; host que sobra é UNC. Letra de drive também é Windows.
+    const windows = (url.hostname !== '' && url.hostname !== 'localhost') || /^\/[A-Za-z]:/.test(path);
+    return fileURLToPath(url, { windows });
   } catch {
-    path = s.slice('file://'.length);
+    try {
+      return decodeURIComponent(new URL(s).pathname);
+    } catch {
+      return s.slice('file://'.length);
+    }
   }
-  return /^\/[A-Za-z]:(?:[/\\]|$)/.test(path) ? path.slice(1) : path;
 }
 
 /** Argumentos de uma chamada de função: string JSON (o normal) ou objeto. */

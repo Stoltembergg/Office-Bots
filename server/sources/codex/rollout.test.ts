@@ -580,8 +580,8 @@ describe('segredos mascarados antes do corte do detalhe de erro (P15)', () => {
 
 describe('pathFromUri', () => {
   it('Windows sem barra antes da letra do drive; POSIX e caminho comum como estão', () => {
-    expect(pathFromUri('file:///C:/x/y')).toBe('C:/x/y');
-    expect(pathFromUri('file:///d:/Projetos/a%20b/c.png')).toBe('d:/Projetos/a b/c.png');
+    expect(pathFromUri('file:///C:/x/y')).toBe('C:\\x\\y');
+    expect(pathFromUri('file:///d:/Projetos/a%20b/c.png')).toBe('d:\\Projetos\\a b\\c.png');
     expect(pathFromUri('file:///projetos/loja/a.png')).toBe('/projetos/loja/a.png');
     expect(pathFromUri('C:\\x\\y.png')).toBe('C:\\x\\y.png');
     expect(pathFromUri('/x/y')).toBe('/x/y');
@@ -590,7 +590,7 @@ describe('pathFromUri', () => {
 
   it('ImageView com caminho do Windows vira leitura com o caminho certo', () => {
     const { results } = feed([itemLine(T, 't', { type: 'ImageView', id: 'img1', path: 'file:///C:/proj/tela.png' }, Date.parse('2026-10-09T12:00:00Z'))]);
-    expect(acts(results)[0]).toMatchObject({ id: 'acc:t#img1', kind: 'read', text: 'Olhando tela.png', detail: 'C:/proj/tela.png', tool: 'Read' });
+    expect(acts(results)[0]).toMatchObject({ id: 'acc:t#img1', kind: 'read', text: 'Olhando tela.png', detail: 'C:\\proj\\tela.png', tool: 'Read' });
   });
 });
 
@@ -1064,5 +1064,36 @@ describe('texto livre entregue às descrições compartilhadas chega mascarado (
       expect(s).not.toContain(GHP_LEAK);
     }
     expect(shown.join('\n')).toContain(token === 'ghp' ? 'gh*_***' : 'eyJ***');
+  });
+});
+
+describe('pathFromUri', () => {
+  it('caminho POSIX, com percent-encoding', () => {
+    expect(pathFromUri('file:///repo/a.png')).toBe('/repo/a.png');
+    expect(pathFromUri('file:///home/user/my%20file.png')).toBe('/home/user/my file.png');
+    expect(pathFromUri('file:///tmp/caf%C3%A9.png')).toBe('/tmp/café.png');
+  });
+
+  it('drive do Windows (a letra da URI decide, não o sistema), com percent-encoding', () => {
+    expect(pathFromUri('file:///C:/repo/a.png')).toBe('C:\\repo\\a.png');
+    expect(pathFromUri('file:///C:/repo/my%20file.png')).toBe('C:\\repo\\my file.png');
+  });
+
+  it('UNC preserva o servidor, com percent-encoding', () => {
+    expect(pathFromUri('file://servidor/share/a.png')).toBe('\\\\servidor\\share\\a.png');
+    expect(pathFromUri('file://servidor/share/my%20file.png')).toBe('\\\\servidor\\share\\my file.png');
+  });
+
+  it('o que não é file:// e URI inválida continuam como antes', () => {
+    expect(pathFromUri('/repo/a.png')).toBe('/repo/a.png');
+    expect(pathFromUri('C:\\repo\\a.png')).toBe('C:\\repo\\a.png');
+    expect(pathFromUri('FILE:///C:/repo/a.png')).toBe('FILE:///C:/repo/a.png');
+    expect(pathFromUri(undefined)).toBeUndefined();
+    expect(pathFromUri('')).toBeUndefined();
+    expect(pathFromUri('   ')).toBeUndefined();
+    // % inválido: o decode falha e sobra o resto depois de "file://". %2F o decode aceita e vira barra.
+    expect(pathFromUri('file:///tmp/%ZZ')).toBe('/tmp/%ZZ');
+    expect(pathFromUri('file://%')).toBe('%');
+    expect(pathFromUri('file:///home/user/a%2Fb.png')).toBe('/home/user/a/b.png');
   });
 });

@@ -2,6 +2,7 @@
 // linha lida e o começo de um rollout grande, lido em stream depois, em segundo plano.
 import { createReadStream } from 'node:fs';
 import type { Activity } from '../../../shared/types';
+import { LineBuffer, warnOversizedLine } from '../tail';
 import { isTurnBoundary, lineTimestamp } from './reader';
 import { createCodexState, parseRolloutLine, type CodexState } from './rollout';
 
@@ -48,18 +49,19 @@ export async function scanPrefix(path: string, end: number, idPrefix: string, ke
     }
     if (byId.size > keep * 2) for (const id of [...byId.keys()].slice(0, byId.size - keep)) byId.delete(id);
   };
-  let partial: Buffer | null = null;
+  const pending = new LineBuffer();
+  let discarded = 0;
   const stream = createReadStream(path, { start: 0, end: end - 1, highWaterMark: 1024 * 1024 });
   for await (const chunk of stream as AsyncIterable<Buffer>) {
-    const data: Buffer = partial ? Buffer.concat([partial, chunk]) : chunk;
-    let start = 0;
-    for (let i = data.indexOf(0x0a, start); i !== -1; i = data.indexOf(0x0a, start)) {
-      const line = data.toString('utf8', start, i);
-      start = i + 1;
+    const fed = pending.push(chunk);
+    discarded += fed.discarded;
+    for (const buf of fed.lines) {
+      const line = buf.toString('utf8');
       if (line) take(line);
     }
-    partial = start < data.length ? Buffer.from(data.subarray(start)) : null;
   }
-  if (partial?.length) take(partial.toString('utf8'));
+  const rest = pending.flush();
+  if (rest?.length) take(rest.toString('utf8'));
+  if (discarded) warnOversizedLine(path);
   return { state, activities: [...byId.values()].slice(-keep) };
 }

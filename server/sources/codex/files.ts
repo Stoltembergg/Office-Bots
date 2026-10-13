@@ -2,7 +2,7 @@
 // archived_sessions/) e os locks dos threads carregados (thread-writer-locks/<thread>.lock). Só leitura: nada é
 // criado e os locks são só SONDADOS (locks.ts: nunca adquiridos; segurar a trava quebraria o Codex).
 // auth.json, config.toml, history.jsonl, shell_snapshots/, logs e os SQLite nunca são abertos.
-import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readdirSync, readSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { LockProber, LockState } from './locks';
 import { lineTimestamp, scanBackward } from './reader';
@@ -88,6 +88,17 @@ interface Found {
   mtimeMs: number;
 }
 
+/** O mesmo arquivo, mesmo que um caminho passe por symlink (o índice guarda o da pasta; o hook manda o realpath). */
+export function samePath(a: string, b: string | undefined): boolean {
+  if (b === undefined) return false;
+  if (a === b) return true;
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return false;
+  }
+}
+
 /** Trecho do fim lido atrás da última linha com `timestamp`. */
 const LAST_LINE_MAX_BYTES = 64 * 1024;
 
@@ -115,8 +126,8 @@ export function compareRollouts(a: Found, b: Found): number {
 /**
  * Onde está o rollout de cada thread (pelo id no nome do arquivo), com cache. Um thread retomado continua no arquivo
  * antigo (a pasta é a da criação), então a procura varre as pastas por data; um thread revertido tem mais de um
- * arquivo e vale o de última linha mais recente (compareRollouts; o mtime só desempata). Sem achar: as pastas dos dias
- * mais recentes são revistas a cada 2 s e a varredura completa, no máximo a cada 30 s.
+ * arquivo e vale o de última linha mais recente (compareRollouts; o mtime, relido a cada comparação, só desempata). As
+ * pastas dos dias mais recentes são revistas a cada 2 s e a varredura completa, no máximo a cada 30 s.
  */
 export class RolloutIndex {
   private paths = new Map<string, Found>();
@@ -134,13 +145,11 @@ export class RolloutIndex {
   find(threadId: string): string | undefined {
     const id = threadId.toLowerCase();
     const hit = this.paths.get(id);
-    if (hit && existsSync(hit.path)) return hit.path;
-    if (hit) this.paths.delete(id);
+    if (hit && !existsSync(hit.path)) this.paths.delete(id);
     const now = this.now();
     if (now - this.lastRecentScan >= 2_000) {
       this.lastRecentScan = now;
       this.scan(rolloutDirs(this.home).slice(0, 2));
-      if (this.paths.has(id)) return this.paths.get(id)!.path;
     }
     if (now - this.lastFullScan >= 30_000) this.scanAll();
     return this.paths.get(id)?.path;
@@ -192,7 +201,18 @@ export class RolloutIndex {
   /** Guarda o rollout do thread, a não ser que o já guardado (outro arquivo, que ainda existe) seja o atual. */
   private consider(threadId: string, found: Found): void {
     const prev = this.paths.get(threadId);
-    if (prev && prev.path !== found.path && existsSync(prev.path) && compareRollouts(found, prev) < 0) return;
+    if (prev && prev.path !== found.path) {
+      // O mtime guardado pode ser velho: o rollout guardado continuou crescendo desde a varredura em que entrou.
+      try {
+        const kept: Found = { path: prev.path, mtimeMs: statSync(prev.path).mtimeMs };
+        if (compareRollouts(found, kept) < 0) {
+          this.paths.set(threadId, kept);
+          return;
+        }
+      } catch {
+        // o guardado sumiu: fica o novo
+      }
+    }
     this.paths.set(threadId, found);
   }
 

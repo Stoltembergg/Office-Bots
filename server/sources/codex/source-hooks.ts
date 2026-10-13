@@ -6,7 +6,7 @@ import { basename, resolve, sep } from 'node:path';
 import { codexApprovalReason } from '../../../shared/activity';
 import type { Activity, AgentStatus } from '../../../shared/types';
 import { networkTarget } from '../../permissions/codex';
-import { parseRolloutName } from './files';
+import { parseRolloutName, samePath } from './files';
 import { codexAgentPath, describeCodexTool, isThreadId } from './rollout';
 import { newTracker, type CodexAccount, type CodexSourceOptions, type ThreadTracker } from './source-types';
 
@@ -41,6 +41,7 @@ export interface HookHost {
   accs(): CodexAccount[];
   schedule(): void;
   pump(t: ThreadTracker, boot: boolean): void;
+  load(t: ThreadTracker, path: string): void;
   turnTo(t: ThreadTracker, open: boolean): void;
   reconcile(t: ThreadTracker, now: number, via?: 'lock' | 'recent' | 'hook'): void;
   decide(t: ThreadTracker, status: AgentStatus, at: number, waitingFor: string | undefined, live: boolean): void;
@@ -152,13 +153,15 @@ export class CodexHooks {
   hintTranscript(acc: CodexAccount, threadId: string, path: string | undefined): void {
     if (!path) return;
     const t = this.src.threads.get(`${acc.id}:${threadId}`);
-    if (t?.tail) return;
     try {
       const real = realpathSync(path);
       const root = realpathSync(acc.dir);
       if (!real.startsWith(root + sep) || parseRolloutName(basename(real))?.threadId !== threadId) return;
+      if (samePath(real, t?.tail?.path)) return;
       acc.index.hint(threadId, real);
-      if (t) t.nextResolveAt = 0;
+      // Thread revertido: o hook já aponta o rollout novo; o aberto é o abandonado.
+      if (t?.tail) this.src.load(t, real);
+      else if (t) t.nextResolveAt = 0;
     } catch {
       // não existe aqui (Docker) ou ainda não foi criado
     }
