@@ -17,11 +17,6 @@ mudou.
 
 ### Adicionado
 
-- **Temas do escritório** em Configurações › Aparência: decoração em pixel art (árvores com presentes, guirlandas e
-  neve nas janelas no Natal; abóboras, fantasmas, teias e morcegos no Halloween), luzes, tapetes e acessórios nos
-  personagens. **Automático**, o padrão, segue o calendário: Halloween de 1º a 31 de outubro e Natal de 1º de
-  novembro a 26 de dezembro (no resto do ano, o visual de sempre). **Nenhum** deixa o visual de sempre o ano todo, e
-  **Natal** e **Halloween** fixam um tema. A escolha fica salva no navegador.
 - **Aprovar o Codex do terminal pelo escritório, ao mesmo tempo que o terminal.** O `codex` no terminal, que roda as
   sessões no daemon do app-server, mostra o pedido de aprovação no cartão **Pede permissão** e no terminal juntos, sem
   prazo: vale o que você responder primeiro, e o cartão fecha sozinho quando a resposta é no terminal. Os botões são
@@ -105,6 +100,27 @@ mudou.
 - Um token cortado ao meio podia escapar da máscara de segredos nos textos que o Claude Code e o Codex mostram
   (prompts, comandos, buscas, perguntas, plano, tarefas, títulos, detalhes de erro, pedidos de subagente, mensagens,
   respostas, links do GitHub e o cartão de permissão do Codex): a máscara agora vem antes de qualquer corte.
+
+## [0.10.0] - 2026-10-13
+
+Para atualizar: `git pull` e `npm run docker:up`. A interface segue o idioma do navegador (ou Configurações › Idioma).
+Os textos que o servidor monta continuam em português; para outro idioma, defina `HABBLAUD_LANG` (`en`, `es` ou `fr`)
+no `.env` antes do `docker:up`. Em outubro, o tema automático já deixa o escritório no clima de Halloween; para o
+visual de sempre, escolha **Nenhum** em Configurações › Aparência.
+
+### Adicionado
+
+- **Temas do escritório** em Configurações › Aparência: decoração em pixel art (árvores com presentes, guirlandas e
+  neve nas janelas no Natal; abóboras, fantasmas, teias e morcegos no Halloween), luzes, tapetes e acessórios nos
+  personagens. **Automático**, o padrão, segue o calendário: Halloween de 1º a 31 de outubro e Natal de 1º de
+  novembro a 26 de dezembro (no resto do ano, o visual de sempre). **Nenhum** deixa o visual de sempre o ano todo, e
+  **Natal** e **Halloween** fixam um tema. A escolha fica salva no navegador.
+- **Interface em inglês, espanhol e francês.** Os textos passam por `tr()` (`shared/i18n.ts`), com o português como
+  língua de origem: um texto sem tradução continua em PT. A interface segue o navegador e pode ser fixada em
+  **Configurações › Idioma**. Os textos montados pelo servidor (atividades, avisos, terminal, logs e scripts de
+  instalação) seguem `HABBLAUD_LANG` (`pt-BR`, `en`, `es` ou `fr`) e, sem ele, o idioma do sistema, menos o inglês
+  (muita máquina e todo container vêm em inglês por padrão): para o servidor em inglês, `HABBLAUD_LANG=en`.
+  `npm run i18n:check` lista os textos ainda sem tradução. O francês veio da comunidade (#67).
 
 ## [0.9.0] - 2026-10-13
 

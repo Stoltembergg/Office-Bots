@@ -18,6 +18,7 @@ import { type CodexHookAuth, verifyHookCall } from '../codex/http';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { log } from '../log';
 import { InvalidRequest, parseDecision, WAIT_MAX_MS, type PermissionRegistry } from './registry';
+import { tr } from '../../shared/i18n';
 
 const ITEM = /^\/api\/permissions\/([^/]+)(?:\/(wait|decision))?$/;
 /** Sem a guarda do processo: só o loopback (nenhuma chave, nenhuma prova vale). */
@@ -27,14 +28,14 @@ const CODEX_IDS_MAX = 1_024;
 
 function methodNotAllowed(res: ServerResponse, allow: string): void {
   res.setHeader('Allow', allow);
-  sendJson(res, 405, { error: 'método não permitido' });
+  sendJson(res, 405, { error: tr('método não permitido') });
 }
 
 function fail(res: ServerResponse, err: unknown): void {
   if (res.headersSent) return void res.destroy();
   if (err instanceof HttpError) sendJson(res, err.status, { error: err.message });
   else if (err instanceof InvalidRequest) sendJson(res, 400, { error: err.message });
-  else sendJson(res, 500, { error: 'erro interno' });
+  else sendJson(res, 500, { error: tr('erro interno') });
 }
 
 /** Tempo de espera pedido em `?timeout=` (segundos), limitado a WAIT_MAX_MS. */
@@ -78,7 +79,7 @@ export function createPermissionRoutes(
     const w = registry.wait(id, waitMs(new URL(req.url ?? '/', 'http://localhost')));
     if (!w) {
       codexIds.delete(id);
-      return sendJson(res, 404, { error: 'pedido desconhecido' });
+      return sendJson(res, 404, { error: tr('pedido desconhecido') });
     }
     req.socket.setTimeout(0);
     // Conexão fechada antes da resposta (o hook morreu ou desistiu): larga a espera.
@@ -104,22 +105,22 @@ export function createPermissionRoutes(
       case 'ok':
         return sendJson(res, 200, { ok: true });
       case 'not-found':
-        return sendJson(res, 404, { error: 'pedido desconhecido: já foi respondido, expirou ou foi respondido no terminal' });
+        return sendJson(res, 404, { error: tr('pedido desconhecido: já foi respondido, expirou ou foi respondido no terminal') });
       case 'conflict':
-        return sendJson(res, 409, { error: 'este pedido já foi respondido' });
+        return sendJson(res, 409, { error: tr('este pedido já foi respondido') });
       case 'invalid':
-        return sendJson(res, 400, { error: 'sugestão de regra desconhecida (ou "nesta sessão") para este pedido' });
+        return sendJson(res, 400, { error: tr('sugestão de regra desconhecida (ou "nesta sessão") para este pedido') });
       case 'invalid-answer':
-        return sendJson(res, 400, { error: 'resposta que não serve para este pedido: pergunta se responde com "answer" (cada pergunta uma vez, com as opções dela); os outros pedidos, com "allow" ou "deny"' });
+        return sendJson(res, 400, { error: tr('resposta que não serve para este pedido: pergunta se responde com "answer" (cada pergunta uma vez, com as opções dela); os outros pedidos, com "allow" ou "deny"') });
       case 'unsupported':
-        return sendJson(res, 400, { error: 'o Codex não aceita esta resposta pelo Habblaud (interromper, "sempre permitir" ou uma decisão que o pedido não oferece): aprove, recuse ou responda no terminal' });
+        return sendJson(res, 400, { error: tr('o Codex não aceita esta resposta pelo Habblaud (interromper, "sempre permitir" ou uma decisão que o pedido não oferece): aprove, recuse ou responda no terminal') });
       case 'unavailable':
-        return sendJson(res, 503, { error: 'o canal com o Codex não está disponível agora: responda no terminal' });
+        return sendJson(res, 503, { error: tr('o canal com o Codex não está disponível agora: responda no terminal') });
       default: {
         // Um DecideResult novo sem tratamento aqui: o tsc acusa (never), e a página nunca fica sem resposta.
         const unknown: never = r;
-        log.warnOnce(`permissions-decide-result:${String(unknown)}`, `Pedidos de permissão: resultado de decisão sem tratamento na rota (${String(unknown)}).`);
-        return sendJson(res, 500, { error: 'erro interno' });
+        log.warnOnce(`permissions-decide-result:${String(unknown)}`, tr('Pedidos de permissão: resultado de decisão sem tratamento na rota ({0}).', [String(unknown)]));
+        return sendJson(res, 500, { error: tr('erro interno') });
       }
     }
   };
@@ -132,12 +133,12 @@ export function createPermissionRoutes(
       return;
     }
     const m = ITEM.exec(path);
-    if (!m) return sendJson(res, 404, { error: 'rota desconhecida' });
+    if (!m) return sendJson(res, 404, { error: tr('rota desconhecida') });
     let id: string;
     try {
       id = decodeURIComponent(m[1]);
     } catch {
-      return sendJson(res, 400, { error: 'id inválido' });
+      return sendJson(res, 400, { error: tr('id inválido') });
     }
     if (m[2] === 'wait') {
       if (method !== 'GET') return methodNotAllowed(res, 'GET');
@@ -151,6 +152,6 @@ export function createPermissionRoutes(
     if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed(res, 'GET');
     const detail = registry.detail(id);
     if (detail) sendJson(res, 200, detail);
-    else sendJson(res, 404, { error: 'pedido desconhecido' });
+    else sendJson(res, 404, { error: tr('pedido desconhecido') });
   };
 }

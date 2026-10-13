@@ -8,6 +8,7 @@
 // Término: <task-notification> (queue-operation 'enqueue', mensagem user ou anexo) casando task-id
 // ou tool-use-id; TaskStop/KillShell/KillBash com o id; fim de turno/interrupção (só os em primeiro
 // plano); /clear ou sessão encerrada (rastreador descartado); idade.
+import { tr } from '../../shared/i18n';
 import type { ShellJob } from '../../shared/types';
 import type { ShellOutcome } from '../../shared/activity';
 import type { Office, ShellDoneInput } from '../model/office';
@@ -373,7 +374,7 @@ export function reportShellDone(office: ShellOffice, main: string, fin: ShellFin
   if (job.kind !== 'shell' || !job.background) return;
   const owner = ownerGone(office, main, job.owner) ? main : job.owner;
   const exit = fin.summary ? /exit code (-?\d+)/i.exec(fin.summary)?.[1] : undefined;
-  const detail = [exit !== undefined ? `Código de saída ${exit}` : undefined, job.command].filter(Boolean).join(' — ') || fin.summary;
+  const detail = [exit !== undefined ? tr('Código de saída {0}', [exit]) : undefined, job.command].filter(Boolean).join(' — ') || fin.summary;
   const input: ShellDoneInput = { id: job.taskId ?? job.toolUseId, label: job.label, startedAt: job.startedAt };
   if (job.command) input.command = job.command;
   office.shellDone(owner, input, fin.outcome, fin.at, detail ? { live, summary: detail } : { live });

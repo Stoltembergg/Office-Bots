@@ -2,6 +2,7 @@
 // responder a pergunta, devolver ao terminal) e somem quando a espera acaba sozinha.
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../hash';
+import { setLocale, tr } from '../i18n';
 import { DEMO_CODEX_PERMISSION_MS, demoCodexPermission, demoPermission } from './permission';
 import { DemoSimulator } from './simulator';
 
@@ -161,6 +162,29 @@ describe('pedidos do Codex (demo)', () => {
       edição: ['aprovar uma edição'],
       rede: ['aprovar uma permissão'],
     });
+  });
+
+  it('forcePermission no Codex com a página noutro idioma: o pedido de rede continua sendo uma permissão', () => {
+    setLocale('en');
+    try {
+      const reasons = new Map<string, Set<string>>();
+      for (let seed = 1; seed <= 40; seed++) {
+        const sim = new DemoSimulator({ seed, idPrefix: 'demo:' }, start);
+        const id = sim.forcePermission(start, 'permission', 'codex')!;
+        const a = sim.snapshot(start).agents.find((x) => x.id === id)!;
+        const p = a.permission!;
+        const kind = p.tool === 'apply_patch' ? 'edição' : p.text.startsWith('Network access') ? 'rede' : 'comando';
+        if (!reasons.has(kind)) reasons.set(kind, new Set());
+        reasons.get(kind)!.add(a.waitingFor!);
+      }
+      expect(Object.fromEntries([...reasons].map(([k, v]) => [k, [...v]]))).toEqual({
+        comando: ['approve a command'],
+        edição: [tr('aprovar uma edição')],
+        rede: ['approve a permission'],
+      });
+    } finally {
+      setLocale('pt-BR');
+    }
   });
 
   it('forcePermission no Codex: espera "aprovar um comando"; recusa só com motivo; sem sempre permitir nem interromper', () => {

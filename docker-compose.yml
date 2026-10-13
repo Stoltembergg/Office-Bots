@@ -37,6 +37,7 @@ services:
       HABBLAUD_MENSAGENS: ${HABBLAUD_MENSAGENS:-}
       # 0 desliga a verificação de versão nova (consulta às releases no GitHub a cada 6 h).
       HABBLAUD_UPDATE_CHECK: ${HABBLAUD_UPDATE_CHECK:-}
+      HABBLAUD_LANG: ${HABBLAUD_LANG:-}
       # 0 desliga as sessões do Codex no escritório. Vale também só no .env: o docker:up lê o mesmo valor (o do
       # ambiente vence, como aqui) e aí não monta nada do Codex.
       HABBLAUD_CODEX: ${HABBLAUD_CODEX:-}

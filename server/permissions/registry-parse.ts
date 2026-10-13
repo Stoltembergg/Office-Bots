@@ -5,7 +5,9 @@
 // estado nem importa do registry.ts, que reexporta o que os outros módulos já importavam dele.
 import { codexApprovalReason, maskSecrets, truncate } from '../../shared/activity';
 import { ANSWER_OTHER_MAX, ASK_TOOL } from '../../shared/answers';
+import { tr } from '../../shared/i18n';
 import type { AgentInfo, CodexDecision, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../shared/types';
+import { networkTitlePrefix } from './codex';
 
 /** Tempo que o hook espera por padrão (ele manda o próprio em `timeout_ms`). */
 export const DEFAULT_TIMEOUT_MS = 300_000;
@@ -145,8 +147,8 @@ export function applyPermission(a: AgentInfo, p: PermissionRequestInfo | undefin
   }
   // Codex: o pedido (hook ou canal paralelo) é sempre uma aprovação e vale por cima da espera que a fonte tenha posto
   // (a pergunta do request_user_input nunca passa por cima de uma aprovação pendente). Claude Code: vale o da fonte.
-  if (p.provider === 'codex') a.waitingFor = codexApprovalReason(p.tool, p.title.startsWith('Rede('));
-  else a.waitingFor ??= isQuestion(p) ? 'responder uma pergunta' : 'aprovar uma permissão';
+  if (p.provider === 'codex') a.waitingFor = codexApprovalReason(p.tool, p.title.startsWith(networkTitlePrefix()));
+  else a.waitingFor ??= isQuestion(p) ? tr('responder uma pergunta') : tr('aprovar uma permissão');
   return a;
 }
 
@@ -171,7 +173,7 @@ export function parseHookInput(raw: unknown): {
   const r = rec(raw);
   const sessionId = shortStr(r?.session_id, 200);
   const tool = shortStr(r?.tool_name, 200);
-  if (!r || !sessionId || !tool) throw new InvalidRequest('esperado o JSON do hook PermissionRequest (session_id e tool_name)');
+  if (!r || !sessionId || !tool) throw new InvalidRequest(tr('esperado o JSON do hook PermissionRequest (session_id e tool_name)'));
   const t = typeof r.timeout_ms === 'number' && Number.isFinite(r.timeout_ms) ? r.timeout_ms : DEFAULT_TIMEOUT_MS;
   const codex = r.provider === 'codex';
   return {

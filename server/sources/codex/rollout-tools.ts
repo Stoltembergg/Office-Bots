@@ -3,6 +3,7 @@
 // máscara (rollout-mask.ts) antes de qualquer corte.
 import { fileURLToPath } from 'node:url';
 import { describePrompt, describeTool, truncate, type ActivityDescription } from '../../../shared/activity';
+import { tr } from '../../../shared/i18n';
 import type { TaskItem, TaskStatus } from '../../../shared/types';
 import { unwrapCommand } from './command';
 import { ACTIVITY_TEXT_MAX, maskedCut, maskedInput, maskedQuestions, maskedText, plainText } from './rollout-mask';
@@ -151,7 +152,7 @@ export function deliveredMessage(line: Rec): { id?: string; text: string } | und
 export function describeCodexPrompt(text: string): ActivityDescription {
   // O detalhe sai do describePrompt, que corta antes de mascarar: ele recebe o texto já mascarado.
   const masked = maskedCut(text);
-  return { ...describePrompt(masked), text: truncate(`Recebeu “${truncate(masked, 34)}”`, 46) };
+  return { ...describePrompt(masked), text: truncate(tr('Recebeu “{0}”', [truncate(masked, 34)]), 46) };
 }
 
 const PLAN_STATUS = new Set<string>(['pending', 'in_progress', 'completed']);
@@ -288,11 +289,11 @@ function webRunDesc(input: Rec): { desc: ActivityDescription; tool: string } {
  */
 function messageLabel(target: unknown, self: string | undefined): string {
   const t = typeof target === 'string' ? target.trim() : '';
-  if (t === '/root') return 'Mensagem para o agente principal';
-  if (t && !t.startsWith('/')) return 'Mensagem para um subagente';
-  if (self && (t ? t.startsWith(`${self}/`) : self === '/root')) return 'Mensagem para um subagente';
-  if (self && t && t === self.slice(0, self.lastIndexOf('/'))) return 'Mensagem para o agente pai';
-  return 'Mensagem entre agentes';
+  if (t === '/root') return tr('Mensagem para o agente principal');
+  if (t && !t.startsWith('/')) return tr('Mensagem para um subagente');
+  if (self && (t ? t.startsWith(`${self}/`) : self === '/root')) return tr('Mensagem para um subagente');
+  if (self && t && t === self.slice(0, self.lastIndexOf('/'))) return tr('Mensagem para o agente pai');
+  return tr('Mensagem entre agentes');
 }
 
 /**
@@ -314,7 +315,7 @@ export function describeCodexTool(rawName: string, input: Rec, namespace?: strin
       return { desc: describeTool('Bash', { command: maskedCut(command), description: maskedText(input.description) }), tool: 'Bash' };
     }
     case 'write_stdin':
-      return { desc: { kind: 'run', icon: '⌨️', text: 'Interagindo com um comando' }, tool: name };
+      return { desc: { kind: 'run', icon: '⌨️', text: tr('Interagindo com um comando') }, tool: name };
     case 'apply_patch': {
       const patch = typeof input.command === 'string' ? input.command : typeof input.input === 'string' ? input.input : typeof input.patch === 'string' ? input.patch : '';
       const files = patchFiles(patch);
@@ -327,9 +328,9 @@ export function describeCodexTool(rawName: string, input: Rec, namespace?: strin
     }
     case 'exec':
       // Code mode do app: o argumento é JavaScript; o comando legível só aparece no CommandExecution ao concluir.
-      return { desc: { kind: 'run', icon: '⚙️', text: 'Executando código' }, tool: name };
+      return { desc: { kind: 'run', icon: '⚙️', text: tr('Executando código') }, tool: name };
     case 'update_plan':
-      return { desc: { kind: 'plan', icon: '🗒️', text: 'Atualizando o plano' }, tool: name };
+      return { desc: { kind: 'plan', icon: '🗒️', text: tr('Atualizando o plano') }, tool: name };
     case 'view_image': {
       const path = str(input.path);
       return { desc: describeTool('Read', { file_path: path ?? 'imagem.png' }), tool: 'Read' };
@@ -348,16 +349,16 @@ export function describeCodexTool(rawName: string, input: Rec, namespace?: strin
     }
     case 'wait':
     case 'wait_agent':
-      return { desc: { kind: 'delegate', icon: '⏳', text: 'Esperando os subagentes' }, tool: name };
+      return { desc: { kind: 'delegate', icon: '⏳', text: tr('Esperando os subagentes') }, tool: name };
     case 'send_message':
       return { desc: { kind: 'communicate', icon: '💬', text: messageLabel(input.target, from.agentPath) }, tool: name };
     case 'send_input':
     case 'followup_task':
-      return { desc: { kind: 'communicate', icon: '💬', text: 'Mensagem para um subagente' }, tool: name };
+      return { desc: { kind: 'communicate', icon: '💬', text: tr('Mensagem para um subagente') }, tool: name };
     case 'close_agent':
-      return { desc: { kind: 'delegate', icon: '👥', text: 'Encerrando um subagente' }, tool: name };
+      return { desc: { kind: 'delegate', icon: '👥', text: tr('Encerrando um subagente') }, tool: name };
     case 'request_permissions':
-      return { desc: { kind: 'wait', icon: '🔐', text: 'Pedindo permissões' }, tool: name };
+      return { desc: { kind: 'wait', icon: '🔐', text: tr('Pedindo permissões') }, tool: name };
     case 'request_user_input':
       // Pergunta síncrona: o turno para até você responder (kind 'ask': o escritório não sobrepõe o "Precisa de você").
       return { desc: { ...describeTool('AskUserQuestion', { questions: maskedQuestions(input.questions) }), text: 'Esperando você responder' }, tool: name };

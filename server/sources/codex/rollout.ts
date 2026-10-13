@@ -18,6 +18,7 @@
 // a tarefa que chega por agent_message é o título do filho) e extensões (web.search, clock.sleep, image_gen, web::run).
 // Tipos de linha desconhecidos são ignorados; uma linha inválida nunca derruba a leitura.
 import { describeTool, SPECIAL, type ActivityDescription } from '../../../shared/activity';
+import { tr } from '../../../shared/i18n';
 import type { Activity } from '../../../shared/types';
 import { detectGitHubResult, githubCallOf } from '../github';
 import type { ParsedActivity } from '../transcript';
@@ -307,7 +308,7 @@ class RolloutLineParser {
   }
 
   private prompt(raw: string, images: number, key?: string): void {
-    const text = promptText(raw) || (images ? '[imagem]' : '');
+    const text = promptText(raw) || (images ? tr('[imagem]') : '');
     if (!text) return;
     if (this.s.title === undefined) {
       this.s.title = titleText(text);
@@ -496,7 +497,7 @@ class RolloutLineParser {
       return;
     }
     const failed = c.status === 'failed' || (c.exitCode !== undefined && c.exitCode !== 0);
-    if (failed) this.push(SPECIAL.error('Bash', firstLine(c.output) ?? (c.exitCode !== undefined ? `Código de saída ${c.exitCode}` : undefined)), { key: `${key}:e`, tool: 'Bash' });
+    if (failed) this.push(SPECIAL.error('Bash', firstLine(c.output) ?? (c.exitCode !== undefined ? tr('Código de saída {0}', [c.exitCode]) : undefined)), { key: `${key}:e`, tool: 'Bash' });
     // GitHub: a mesma detecção do Claude Code, com o comando, a saída e o código de saída.
     const gh = command ? githubCallOf('Bash', { command }) : undefined;
     if (gh && c.status !== 'declined') {

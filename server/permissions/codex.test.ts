@@ -3,6 +3,7 @@
 // permitir" = unsupported), sem a busca da resposta no transcript, waitingFor "aprovar um comando", e os títulos pelos
 // nomes do Codex (Bash, acesso à rede, apply_patch, request_permissions, mcp__…, write_stdin). Dados sintéticos.
 import { describe, expect, it } from 'vitest';
+import { setLocale } from '../../shared/i18n';
 import { setQuiet } from '../log';
 import { NameStore } from '../model/names';
 import { Office } from '../model/office';
@@ -93,6 +94,17 @@ describe('PermissionRegistry: pedidos do Codex', () => {
       const { office, registry } = setup();
       registered(registry.register(codexInput(over)));
       expect(snapAgent(office, MAIN)).toMatchObject({ status: 'waiting', waitingFor: reason });
+    }
+  });
+
+  it('com o servidor noutro idioma, o pedido de rede continua sendo uma permissão (o título vem traduzido)', () => {
+    setLocale('en');
+    try {
+      const { office, registry } = setup();
+      registered(registry.register(codexInput({ tool_name: 'Bash', tool_input: { command: 'curl https://api.exemplo.dev', description: 'network-access api.exemplo.dev:443' } })));
+      expect(snapAgent(office, MAIN)).toMatchObject({ status: 'waiting', waitingFor: 'approve a permission' });
+    } finally {
+      setLocale('pt-BR');
     }
   });
 

@@ -1,6 +1,6 @@
 {
   "name": "habblaud",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "description": "Escritório virtual animado que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.",
   "license": "MIT",
@@ -24,6 +24,7 @@
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p server/tsconfig.json",
     "test": "vitest run",
+    "i18n:check": "tsx scripts/i18n-check.ts",
     "docker:up": "tsx scripts/docker-up.ts",
     "docker:down": "tsx scripts/docker-up.ts --down",
     "docker:logs": "docker compose logs -f habblaud",

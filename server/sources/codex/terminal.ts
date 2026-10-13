@@ -28,6 +28,7 @@ import {
   type HistoryMode,
   type RolloutMeta,
 } from './rollout';
+import { tr } from '../../../shared/i18n';
 
 type Rec = Record<string, unknown>;
 type ToolEntry = Extract<TerminalEntry, { kind: 'tool' }>;
@@ -227,7 +228,7 @@ class CodexTerminalParser implements TerminalParser {
         return this.responseItem(p, at, key);
       }
       case 'compacted':
-        if (this.mode === 'legacy') this.sys(key, at, 'Conversa compactada');
+        if (this.mode === 'legacy') this.sys(key, at, tr('Conversa compactada'));
         return;
       default:
         return;
@@ -238,7 +239,7 @@ class CodexTerminalParser implements TerminalParser {
 
   private user(id: string, at: number, raw: string, images = 0): void {
     const clean = promptText(raw);
-    const pics = images ? Array.from({ length: Math.min(images, 10) }, () => '[imagem]').join(' ') : '';
+    const pics = images ? Array.from({ length: Math.min(images, 10) }, () => tr('[imagem]')).join(' ') : '';
     const text = marked(prepare([clean, pics].filter(Boolean).join('\n'), TEXT_MAX));
     if (text) this.emit({ kind: 'user', id: `${id}:u`, at, text });
   }
@@ -273,7 +274,7 @@ class CodexTerminalParser implements TerminalParser {
 
   private result(toolId: string, at: number, raw: string, error: boolean): void {
     const p = prepare(raw, RESULT_MAX, RESULT_MAX_LINES);
-    const e: ResultEntry = { kind: 'result', id: `${toolId}:r`, at, toolUseId: toolId, text: p.text || '(sem saída)' };
+    const e: ResultEntry = { kind: 'result', id: `${toolId}:r`, at, toolUseId: toolId, text: p.text || tr('(sem saída)') };
     if (error) e.error = true;
     if (p.truncated) e.truncated = true;
     this.emit(e);
@@ -294,13 +295,13 @@ class CodexTerminalParser implements TerminalParser {
         this.turnOpen = false;
         const ms = num(p.duration_ms);
         const err = rec(p.error);
-        if (err) this.sys(`${str(p.turn_id) ?? key}:err`, at, `Erro: ${oneLine(str(err.message) ?? 'desconhecido', 160)}`, { level: 'error' });
-        if (ms !== undefined && ms >= 0) this.sys(`${str(p.turn_id) ?? key}:done`, at, `Turno concluído em ${formatDuration(ms)}`);
+        if (err) this.sys(`${str(p.turn_id) ?? key}:err`, at, tr('Erro: {0}', [oneLine(str(err.message) ?? tr('desconhecido'), 160)]), { level: 'error' });
+        if (ms !== undefined && ms >= 0) this.sys(`${str(p.turn_id) ?? key}:done`, at, tr('Turno concluído em {0}', [formatDuration(ms)]));
         return;
       }
       case 'turn_aborted':
         this.turnOpen = false;
-        if (p.reason === 'interrupted' || p.reason === undefined) this.sys(`${str(p.turn_id) ?? key}:int`, at, 'Interrompido pelo usuário', { level: 'warn' });
+        if (p.reason === 'interrupted' || p.reason === undefined) this.sys(`${str(p.turn_id) ?? key}:int`, at, tr('Interrompido pelo usuário'), { level: 'warn' });
         return;
       // ---- legacy
       case 'user_message':
@@ -319,7 +320,7 @@ class CodexTerminalParser implements TerminalParser {
         return this.command(str(p.call_id) ?? key, at, p.command, str(p.aggregated_output) ?? str(p.formatted_output) ?? str(p.stdout) ?? '', num(p.exit_code), str(p.status));
       case 'context_compacted':
         if (this.mode === 'paginated') return;
-        return this.sys(key, at, 'Conversa compactada');
+        return this.sys(key, at, tr('Conversa compactada'));
       default:
         return;
     }
@@ -365,7 +366,7 @@ class CodexTerminalParser implements TerminalParser {
       case 'ImageView':
         return this.tool(id, at, 'view_image', toolView('Read', { file_path: pathFromUri(item.path) ?? '' }, this.cwd));
       case 'ContextCompaction':
-        return this.sys(id, at, 'Conversa compactada');
+        return this.sys(id, at, tr('Conversa compactada'));
       case 'CollabAgentToolCall': {
         const tool = str(item.tool) ?? 'spawn_agent';
         // Prompt cifrado (0.160.1): o título leva o aviso, sem os parênteses dobrados do toolView; o texto cifrado nunca aparece.
@@ -384,9 +385,9 @@ class CodexTerminalParser implements TerminalParser {
     // no rollout.ts: não é um comando do agente nem um erro; fica de fora.
     if (this.turnOpen === false && exitCode === -1) return;
     this.tool(id, at, 'Bash', bashView(cmd, this.cwd));
-    if (status === 'declined') return this.result(id, at, 'Recusado pelo usuário', true);
+    if (status === 'declined') return this.result(id, at, tr('Recusado pelo usuário'), true);
     const failed = status === 'failed' || (exitCode !== undefined && exitCode !== 0);
-    const text = failed && exitCode !== undefined && exitCode !== 0 ? `Código de saída ${exitCode}\n${output}` : output;
+    const text = failed && exitCode !== undefined && exitCode !== 0 ? tr('Código de saída {0}\n{1}', [exitCode, output]) : output;
     this.result(id, at, text, failed);
   }
 
@@ -398,7 +399,7 @@ class CodexTerminalParser implements TerminalParser {
   /** "Edit(a.ts)", "Edit(a.ts, b.ts)" ou "Edit(a.ts e mais 2)": a mesma regra no apply_patch e no FileChange (gêmeos pelo id). */
   private filesTitle(tool: string, paths: string[]): string {
     const names = paths.map((p) => this.rel(p));
-    const arg = names.length > 2 ? `${names[0]} e mais ${names.length - 1}` : names.join(', ');
+    const arg = names.length > 2 ? tr('{0} e mais {1}', [names[0], names.length - 1]) : names.join(', ');
     return arg ? `${tool}(${arg})` : tool;
   }
 
@@ -408,7 +409,7 @@ class CodexTerminalParser implements TerminalParser {
     const diff = changes
       .slice(0, 12)
       .map((c) => {
-        const head = `*** ${c.kind === 'add' ? 'Novo' : c.kind === 'delete' ? 'Apagado' : 'Alterado'}: ${this.rel(c.path)}${c.movePath ? ` → ${this.rel(c.movePath)}` : ''}`;
+        const head = `*** ${c.kind === 'add' ? tr('Novo') : c.kind === 'delete' ? tr('Apagado') : tr('Alterado')}: ${this.rel(c.path)}${c.movePath ? ` → ${this.rel(c.movePath)}` : ''}`;
         const body = c.kind === 'update' ? c.text : c.text.replace(/\n$/, '').split('\n').map((l) => `${c.kind === 'add' ? '+' : '-'} ${l}`).join('\n');
         return `${head}\n${body}`;
       })
@@ -416,8 +417,8 @@ class CodexTerminalParser implements TerminalParser {
     const input = diff.trim() ? marked(prepare(diff, INPUT_MAX, Infinity, false)) : '';
     const title = this.filesTitle(tool, changes.map((c) => c.movePath ?? c.path));
     this.tool(id, at, tool, input ? { title, input, inputKind: 'diff' } : { title });
-    if (status === 'declined') this.result(id, at, 'Recusado pelo usuário', true);
-    else if (status === 'failed') this.result(id, at, 'A mudança não foi aplicada', true);
+    if (status === 'declined') this.result(id, at, tr('Recusado pelo usuário'), true);
+    else if (status === 'failed') this.result(id, at, tr('A mudança não foi aplicada'), true);
   }
 
   // ---------------------------------------------------------------- response_item (chamadas e saídas)

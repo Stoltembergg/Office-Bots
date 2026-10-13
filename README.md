@@ -367,6 +367,15 @@ as atividades e as animações dos agentes. O ciclo dia/noite continua sendo uma
   </tr>
 </table>
 
+### Idiomas
+
+A interface está em **português, inglês, espanhol e francês**. Ela segue o idioma do navegador; em
+**Configurações › Idioma** dá para fixar um (a escolha fica salva neste navegador). Os textos que o servidor monta
+(atividades, avisos, terminal, logs e os scripts de instalação) seguem `HABBLAUD_LANG` e, sem ele, o idioma do
+sistema, menos o inglês: muita máquina e todo container vêm em inglês por padrão, mesmo para quem usa outra língua.
+Para o servidor em inglês, defina `HABBLAUD_LANG=en` (no Docker, no `.env`). Um texto sem tradução aparece em
+português.
+
 ### Dia, noite e sons
 
 O escritório acompanha a **hora local**: de madrugada e à noite o gramado e a rua ficam azulados e escuros, os postes,
@@ -713,10 +722,11 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH (no Windows, `codex.exe`) | O binário do Codex que entrega as mensagens (`codex queue`), no modo Node ou no `npm run codex:bridge`, e que o canal paralelo usa para se juntar ao daemon. |
 | `HABBLAUD_CODEX_APPSERVER` | ligado (só no modo Node, com o terminal) | `0` desliga o canal paralelo: aprovar pelo escritório os pedidos do `codex` no terminal ligado ao daemon (veja [Codex](#codex)). |
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
+| `HABBLAUD_LANG` | idioma do sistema (menos inglês), senão `pt-BR` | Idioma dos textos montados pelo servidor (atividades, avisos, logs): `pt-BR`, `en`, `es` ou `fr`. A interface segue o navegador ou a escolha em Configurações › Idioma. Ver [Idiomas](#idiomas). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
-`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` e
+`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK` e `HABBLAUD_LANG` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` e
 `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 

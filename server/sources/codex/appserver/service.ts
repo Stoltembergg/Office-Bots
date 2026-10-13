@@ -24,6 +24,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { join } from 'node:path';
+import { tr } from '../../../../shared/i18n';
 import type { CodexDecision } from '../../../../shared/types';
 import { errMsg, log } from '../../../log';
 import type { ParallelRequestInput, ParallelSink, PermissionRegistry } from '../../../permissions/registry';
@@ -248,7 +249,7 @@ export class CodexAppServerService implements ParallelSink {
         } else if (!st.checking && now >= st.retryAt) this.check(st, bin);
       }
     } catch (err) {
-      log.warnOnce(`codex-appserver-tick:${errMsg(err)}`, `Codex: falha no relógio do canal paralelo (${errMsg(err)}).`);
+      log.warnOnce(`codex-appserver-tick:${errMsg(err)}`, tr('Codex: falha no relógio do canal paralelo ({0}).', [errMsg(err)]));
     }
   }
 

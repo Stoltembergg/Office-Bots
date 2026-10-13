@@ -21,6 +21,7 @@ import { encodeCwd } from '../watcher';
 import { compareRollouts, parseRolloutName, readRolloutHead as readHeadSync, rolloutDirs } from './files';
 import { createCodexState, isThreadId, metaFromLine, parseRolloutLine, type CodexState, type RolloutMeta } from './rollout';
 import { createCodexTerminalParser } from './terminal';
+import { tr } from '../../../shared/i18n';
 
 /** Começo lido de cada rollout (o session_meta costuma caber; senão lê mais, até META_MAX). */
 const HEAD_BYTES = 64 * 1024;
@@ -133,14 +134,14 @@ export class CodexHistory implements HistoryProvider {
    * resolvidos) dentro da pasta da conta. Um rollout só compactado (.jsonl.zst) ainda não dá para ler: 404.
    */
   resolve(account: string, sessionId: string): HistoryResolveResult {
-    if (!isThreadId(sessionId)) return { status: 400, error: 'id de sessão inválido' };
+    if (!isThreadId(sessionId)) return { status: 400, error: tr('id de sessão inválido') };
     const acc = this.opts.accounts().find((a) => a.id === account);
-    if (!acc) return { status: 404, error: 'conta desconhecida' };
+    if (!acc) return { status: 404, error: tr('conta desconhecida') };
     let root: string;
     try {
       root = realpathSync(acc.dir);
     } catch {
-      return { status: 404, error: 'sessão não encontrada' };
+      return { status: 404, error: tr('sessão não encontrada') };
     }
     const id = sessionId.toLowerCase();
     let best: { path: string; mtimeMs: number } | undefined;
@@ -179,7 +180,7 @@ export class CodexHistory implements HistoryProvider {
       const meta = readHeadSync(best.path).meta;
       return { path: best.path, createParser: () => createCodexTerminalParser({ meta }) };
     }
-    return { status: 404, error: compressed ? 'sessão compactada pelo Codex (.zst): ainda não dá para ler' : 'sessão não encontrada' };
+    return { status: 404, error: compressed ? tr('sessão compactada pelo Codex (.zst): ainda não dá para ler') : tr('sessão não encontrada') };
   }
 
   /** Conversas principais da conta com atividade na janela (uma por thread: a de atividade mais recente). */
@@ -268,7 +269,7 @@ export class CodexHistory implements HistoryProvider {
       if (head && f) f.head = head;
       return head;
     } catch (err) {
-      log.warnOnce(`codex-history:${errMsg(err)}`, `Histórico do Codex: rollout ilegível (${errMsg(err)}).`);
+      log.warnOnce(`codex-history:${errMsg(err)}`, tr('Histórico do Codex: rollout ilegível ({0}).', [errMsg(err)]));
       return undefined;
     }
   }
@@ -280,7 +281,7 @@ export class CodexHistory implements HistoryProvider {
     try {
       value = await readRolloutRest(c.path, c.size, head, f?.summary?.value);
     } catch (err) {
-      log.warnOnce(`codex-history:${errMsg(err)}`, `Histórico do Codex: rollout ilegível (${errMsg(err)}).`);
+      log.warnOnce(`codex-history:${errMsg(err)}`, tr('Histórico do Codex: rollout ilegível ({0}).', [errMsg(err)]));
       // A reserva vale só agora: no cache, um erro passageiro tiraria a conversa da lista até o arquivo crescer.
       return head.meta ? { meta: head.meta } : {};
     }
@@ -305,7 +306,7 @@ export class CodexHistory implements HistoryProvider {
     try {
       names = await readThreadNames(path, size);
     } catch (err) {
-      log.warnOnce(`codex-index:${errMsg(err)}`, `Histórico do Codex: session_index.jsonl ilegível (${errMsg(err)}).`);
+      log.warnOnce(`codex-index:${errMsg(err)}`, tr('Histórico do Codex: session_index.jsonl ilegível ({0}).', [errMsg(err)]));
     }
     this.indexes.set(home, { size, names });
     return names;
@@ -473,7 +474,7 @@ export class ThreadNameIndex {
       this.cache.set(home, { size, names });
       return names;
     } catch (err) {
-      log.warnOnce(`codex-index-live:${errMsg(err)}`, `Codex: session_index.jsonl ilegível (${errMsg(err)}); o título fica na primeira instrução.`);
+      log.warnOnce(`codex-index-live:${errMsg(err)}`, tr('Codex: session_index.jsonl ilegível ({0}); o título fica na primeira instrução.', [errMsg(err)]));
       return NO_NAMES;
     }
   }

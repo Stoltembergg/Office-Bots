@@ -11,6 +11,7 @@ import { groupRooms, subLevels, type AgentNode, type RoomGroup } from './model';
 import { officeIsEmpty } from './overlays';
 import { createAgentRow, updateAgentRow } from './rows';
 import { createAccountChip, createProgress, updateAccountChip, updateProgress } from './widgets';
+import { tr } from '../../../shared/i18n';
 
 interface RoomRefs {
   head: HTMLButtonElement;
@@ -62,7 +63,7 @@ export class Sidebar implements UiComponent {
     this.input = h('input', {
       class: 'ui-search__input',
       type: 'search',
-      attrs: { placeholder: 'Buscar agente, projeto ou conta', 'aria-label': 'Buscar agente, projeto ou conta', autocomplete: 'off', spellcheck: 'false' },
+      attrs: { placeholder: tr('Buscar agente, projeto ou conta'), 'aria-label': tr('Buscar agente, projeto ou conta'), autocomplete: 'off', spellcheck: 'false' },
     });
     this.input.addEventListener('input', () => {
       this.query = this.input.value;
@@ -82,9 +83,9 @@ export class Sidebar implements UiComponent {
     });
     const searchIcon = h('span', { class: 'ui-search__icon', attrs: { 'aria-hidden': 'true' } });
     searchIcon.innerHTML = ICONS.search;
-    const search = h('label', { class: 'ui-search' }, searchIcon, this.input, h('kbd', { class: 'ui-kbd', text: '/', title: 'Atalho: /' }));
+    const search = h('label', { class: 'ui-search' }, searchIcon, this.input, h('kbd', { class: 'ui-kbd', text: '/', title: tr('Atalho: /') }));
 
-    this.filters = h('div', { class: 'ui-acc-filters', role: 'group', attrs: { 'aria-label': 'Filtrar por conta' } });
+    this.filters = h('div', { class: 'ui-acc-filters', role: 'group', attrs: { 'aria-label': tr('Filtrar por conta') } });
     this.filterList = new KeyedList<AccountInfo, HTMLButtonElement>(this.filters, {
       animate: false,
       key: (a) => a.id,
@@ -99,13 +100,13 @@ export class Sidebar implements UiComponent {
         updateAccountChip(b.firstElementChild as HTMLElement, a);
         setText(b.lastElementChild!, a.name);
         setAttr(b, 'aria-pressed', String(!hidden));
-        setTitle(b, hidden ? `Mostrar a ${a.name} na lista, no feed e nos avisos` : `Ocultar a ${a.name} na lista, no feed e nos avisos (o escritório continua mostrando todos)`);
+        setTitle(b, hidden ? tr('Mostrar a {0} na lista, no feed e nos avisos', [a.name]) : tr('Ocultar a {0} na lista, no feed e nos avisos (o escritório continua mostrando todos)', [a.name]));
         b.classList.toggle('is-off', hidden);
       },
     });
 
     this.scroller = h('div', { class: 'ui-side__scroll' });
-    const list = h('div', { class: 'ui-rooms', role: 'list', attrs: { 'aria-label': 'Salas' } });
+    const list = h('div', { class: 'ui-rooms', role: 'list', attrs: { 'aria-label': tr('Salas') } });
     this.scroller.append(list);
     this.rooms = new KeyedList<RoomGroup>(list, {
       key: (g) => g.room.id,
@@ -117,7 +118,7 @@ export class Sidebar implements UiComponent {
     this.clearBtn = h('button', {
       class: 'ui-link-btn',
       type: 'button',
-      text: 'Limpar filtros',
+      text: tr('Limpar filtros'),
       on: {
         click: () => {
           this.input.value = '';
@@ -129,11 +130,11 @@ export class Sidebar implements UiComponent {
     this.empty = h('div', { class: 'ui-side__empty', hidden: true }, this.emptyText, this.clearBtn);
     this.scroller.append(this.empty);
 
-    const close = iconButton(ICONS.close, 'Fechar painel lateral', () => ctx.togglePanel('sidebar', false), 'ui-side__close');
+    const close = iconButton(ICONS.close, tr('Fechar painel lateral'), () => ctx.togglePanel('sidebar', false), 'ui-side__close');
     this.el = h(
       'aside',
-      { class: 'ui-panel ui-sidebar', attrs: { 'aria-label': 'Salas e agentes', id: 'ui-sidebar' } },
-      h('div', { class: 'ui-side__head' }, h('div', { class: 'ui-side__title' }, h('h2', { text: 'Escritório' }), close), search, this.filters),
+      { class: 'ui-panel ui-sidebar', attrs: { 'aria-label': tr('Salas e agentes'), id: 'ui-sidebar' } },
+      h('div', { class: 'ui-side__head' }, h('div', { class: 'ui-side__title' }, h('h2', { text: tr('Escritório') }), close), search, this.filters),
       this.scroller,
     );
   }
@@ -165,9 +166,9 @@ export class Sidebar implements UiComponent {
         this.emptyText,
         filtering && total > 0
           ? this.query.trim()
-            ? `Nenhum agente encontrado para “${this.query.trim()}”.`
-            : 'Nenhum agente nas contas selecionadas.'
-          : 'Nenhuma sessão aberta no momento.',
+            ? tr('Nenhum agente encontrado para “{0}”.', [this.query.trim()])
+            : tr('Nenhum agente nas contas selecionadas.')
+          : tr('Nenhuma sessão aberta no momento.'),
       );
       setHidden(this.clearBtn, !(filtering && total > 0));
     }
@@ -201,7 +202,7 @@ export class Sidebar implements UiComponent {
     const count = h('span', { class: 'ui-room__count' });
     const accsEl = h('span', { class: 'ui-room__accs' });
     const path = h('span', { class: 'ui-room__path' });
-    const tasksBar = createProgress('Progresso das tarefas da sala');
+    const tasksBar = createProgress(tr('Progresso das tarefas da sala'));
     const tasksText = h('span', { class: 'ui-room__tasks-text' });
     const tasks = h('span', { class: 'ui-room__tasks' }, tasksBar, tasksText);
     const swatch = h('span', { class: 'ui-room__swatch', attrs: { 'aria-hidden': 'true' } });
@@ -250,10 +251,10 @@ export class Sidebar implements UiComponent {
     setText(r.name, g.room.name);
     const present = g.agents.filter((a) => a.status !== 'offline').length;
     setText(r.count, String(present));
-    setTitle(r.count, plural(present, 'agente', 'agentes'));
+    setTitle(r.count, plural(present, tr('agente'), tr('agentes')));
     setText(r.path, shortPath(g.room.path));
-    setTitle(r.head, `${g.room.path}\nClique para ver a sala`);
-    setAttr(r.head, 'aria-label', `Sala ${g.room.name}, ${plural(present, 'agente', 'agentes')}`);
+    setTitle(r.head, tr('{0}\nClique para ver a sala', [g.room.path]));
+    setAttr(r.head, 'aria-label', tr('Sala {0}, {1}', [g.room.name, plural(present, tr('agente'), tr('agentes'))]));
     r.accs.sync(g.accounts.map((id) => this.ctx.account(id) ?? id));
     const selected = sel?.type === 'room' && sel.id === g.room.id;
     r.head.classList.toggle('is-selected', selected);
@@ -264,7 +265,7 @@ export class Sidebar implements UiComponent {
     setHidden(r.tasks, t.total === 0);
     if (t.total > 0) {
       updateProgress(r.tasksBar, t.completed, t.total, t.inProgress);
-      setText(r.tasksText, `${t.completed}/${t.total} tarefas`);
+      setText(r.tasksText, tr('{0}/{1} tarefas', [t.completed, t.total]));
     }
     // Ordem escolhida pelo usuário (arrastando as linhas), guardada no navegador.
     const ordered = orderAgents(g.room.id, g.nodes, (n) => n.agent.sessionId);
@@ -402,15 +403,15 @@ export class Sidebar implements UiComponent {
       const live = router.interactive(a.id);
       r.term.classList.toggle('is-on', open);
       r.term.classList.toggle('is-live', live);
-      const what = live ? 'interativo' : 'ao vivo';
-      setTitle(r.term, open ? 'Fechar o terminal' : `Abrir o terminal de ${a.name} (${what})`);
-      setAttr(r.term, 'aria-label', open ? `Fechar o terminal de ${a.name}` : `Abrir o terminal de ${a.name}`);
+      const what = live ? tr('interativo') : tr('ao vivo');
+      setTitle(r.term, open ? tr('Fechar o terminal') : tr('Abrir o terminal de {0} ({1})', [a.name, what]));
+      setAttr(r.term, 'aria-label', open ? tr('Fechar o terminal de {0}', [a.name]) : tr('Abrir o terminal de {0}', [a.name]));
     }
     const has = n.subTotal > 0;
     setHidden(r.subsWrap, !has);
     if (has) {
       const shown = n.subs.length;
-      setText(r.subsCaption, shown === n.subTotal ? plural(n.subTotal, 'subagente', 'subagentes') : `${shown} de ${plural(n.subTotal, 'subagente', 'subagentes')}`);
+      setText(r.subsCaption, shown === n.subTotal ? plural(n.subTotal, tr('subagente'), tr('subagentes')) : `${shown} de ${plural(n.subTotal, tr('subagente'), tr('subagentes'))}`);
     }
     r.levels = subLevels(n.subs);
     r.subs.sync(n.subs);
