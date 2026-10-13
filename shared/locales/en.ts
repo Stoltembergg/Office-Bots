@@ -2162,6 +2162,7 @@ export const EN: Readonly<Record<string, string>> = {
   "versão {0}{1}": "version {0}{1}",
   " (esta pasta: {0}; npm run mod:install ou npm run docker:up atualiza)": " (this folder: {0}; npm run mod:install or npm run docker:up updates it)",
   "carrega {0} de {1}": "loads {0} from {1}",
+  "erro: {0}": "error: {0}",
   "esta pasta": "this folder",
   "! nome antigo ainda registrado: {0}; npm run mod:install troca pelo habblaud": "! old name still registered: {0}; npm run mod:install replaces it with habblaud",
   "! tap de statusline antigo ainda instalado junto com o mod: npm run mod:install tira (ou npm run usage:uninstall)": "! old statusline tap still installed alongside the mod: npm run mod:install removes it (or npm run usage:uninstall)",
