@@ -87,3 +87,22 @@ describe('histórico do Codex', () => {
     expect((await history.list())[0].lastAt).toBe(now - 100);
   });
 });
+
+describe('histórico do Codex: escopo por pasta', () => {
+  it('o filtro vale antes do limite e thread sem cwd fica de fora', async () => {
+    const home = codexHome();
+    cleanups.push(home.cleanup);
+    const now = Date.now();
+    home.rollout(A, [R.meta(A, { at: now - 1_000, cwd: '/p/empresa-b' }), R.user(A, 't', 'u', 'fora', now - 900)]);
+    home.rollout(B, [R.meta(B, { at: now - 2_000 }), R.user(B, 't', 'u', 'sem cwd', now - 1_900)]);
+    home.rollout(OLD, [R.meta(OLD, { at: now - 60_000, cwd: '/p/empresa-a' }), R.user(OLD, 't', 'u', 'dentro', now - 50_000)], { mtime: now - 60_000 });
+    const history = new CodexHistory({
+      accounts: () => [{ id: '.codex', dir: home.dir }],
+      openAgentOf: () => undefined,
+      now: () => now,
+      limit: 1,
+      inScope: (p) => p.startsWith('/p/empresa-a'),
+    });
+    expect((await history.list()).map((s) => s.sessionId)).toEqual([OLD]);
+  });
+});

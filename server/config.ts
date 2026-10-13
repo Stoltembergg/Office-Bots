@@ -1,11 +1,13 @@
 // Configuração do servidor a partir das variáveis de ambiente (documentadas em server/README.md).
 import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { discoverClaudeDirs } from './accounts/detect';
+import { discoverClaudeDirs, expandHome, splitList } from './accounts/detect';
 import { parseAllowedHosts } from './http/guard';
+import { normalizeCwd } from './model/rooms';
 import { parseRemoteConfig, type RemoteConfig } from './http/remote';
 import { parseGithubRepo } from './updates/checker';
 import { tr } from '../shared/i18n';
@@ -31,6 +33,12 @@ export interface ServerConfig {
   usageDir: string;
   /** Nomes extras aceitos no cabeçalho Host/Origin (HABBLAUD_ALLOWED_HOSTS); localhost e IPs sempre valem. */
   allowedHosts: Set<string>;
+  /**
+   * Só mostra sessões cujo cwd esteja numa destas pastas (HABBLAUD_PROJECT_ROOTS, separadas por vírgula, `~` vale).
+   * Vazio = todas. No Docker são caminhos do host: o docker-up já os repassa expandidos. Com escopo, dataDir fica em
+   * <dataDir>/escopos/<hash> (ver scopedDataDir).
+   */
+  projectRoots: string[];
   /**
    * Terminal (GET /api/agents/:id/terminal) ligado: só com bind local, isto é, com o Habblaud acessível apenas
    * pelo próprio computador (ver terminalOffReason). É a trava de tudo o que mostra ou age sobre as sessões.
@@ -149,6 +157,16 @@ export function messagesOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
   return terminal ? tr('mesma trava do terminal: {0}', [terminal]) : undefined;
 }
 
+/**
+ * Com escopo por pasta, os dados gravados (nomes, timelapse, Meu dia) ficam em <dataDir>/escopos/<hash das pastas>:
+ * o que outro escopo gravou no mesmo lugar não aparece. A ordem das pastas não importa.
+ */
+function scopedDataDir(base: string, roots: readonly string[]): string {
+  if (!roots.length) return base;
+  const key = JSON.stringify([...new Set(roots.map((r) => normalizeCwd(r)))].sort());
+  return join(base, 'escopos', createHash('sha256').update(key).digest('hex').slice(0, 12));
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): ServerConfig {
   const home = env.HOME || homedir();
   const inDocker = detectDocker(env);
@@ -156,6 +174,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   const rootDir = findRoot(dirname(fileURLToPath(import.meta.url)));
   const host = env.HABBLAUD_HOST?.trim() || '127.0.0.1';
   const pkg = readPackage(rootDir);
+  const projectRoots = splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home));
   const remote = parseRemoteConfig(env, inDocker);
   return {
     port: Number.isFinite(port) && port > 0 && port < 65536 ? port : 4747,
@@ -165,9 +184,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     inDocker,
     home,
     claudeDirs: discoverClaudeDirs(env, home),
-    dataDir: resolve(env.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))),
+    dataDir: scopedDataDir(resolve(env.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))), projectRoots),
     usageDir: resolve(env.HABBLAUD_USAGE_DIR?.trim() || join(home, '.habblaud', 'usage')),
     allowedHosts: parseAllowedHosts(env.HABBLAUD_ALLOWED_HOSTS),
+    projectRoots,
     terminal: terminalOffReason(env, host, inDocker) === undefined,
     messages: messagesOffReason(env, host, inDocker) === undefined,
     timeline: !env.HABBLAUD_TIMELINE?.trim() || isTruthy(env.HABBLAUD_TIMELINE),

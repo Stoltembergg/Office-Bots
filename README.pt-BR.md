@@ -591,11 +591,16 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
   resposta no cartão **Pede permissão** por até **25 segundos** (`npm run codex:install -- --espera <s>`, de 5 a 120):
   **Aprovar** ou **Recusar** (com o motivo). Diferente do Claude Code, o Codex só mostra a aprovação no terminal
   **depois** que o escritório responde ou o prazo acaba — nesse meio-tempo o terminal mostra "Aguardando resposta no
-  Habblaud…". Não há "sempre permitir" nem "interromper", e o Codex não deixa responder as perguntas dele por fora.
-- **Mandar mensagens:** a caixa **Mandar mensagem** funciona para o Codex também, pelo `codex queue`: a mensagem entra
-  na fila da sessão e o Codex a pega quando termina o que está fazendo (até uns 10 segundos depois). No modo Node o
-  próprio Habblaud roda o comando; **no Docker**, deixe `npm run codex:bridge` rodando no Mac (o container não
-  enxerga o seu Codex).
+  Habblaud…". As aprovações dos hooks não têm "sempre permitir" nem "interromper".
+- **Assumir daqui, Encerrar e Novo agente** também valem para o Codex. As sessões que o Habblaud abre ou assume rodam
+  em **always-approve** (`approvalPolicy: "never"`, `sandbox: "danger-full-access"`), no `codex app-server`.
+  Assumir encerra o TUI local conferido e retoma a mesma conversa; encerrar mantém a conversa salva.
+  Como as do Claude Code, precisam de `HABBLAUD_PTY=1` (no `.env`) e de acesso local, porque rodam processos no computador. **No Docker**, deixe `npm run codex:bridge` rodando no Mac: o auxiliar do host executa essas ações lá.
+- **Responder às perguntas:** as perguntas das sessões do Codex abertas ou assumidas pelo Habblaud são respondidas
+  no escritório. Sem página aberta ou sem resposta dentro do prazo, a pergunta é cancelada.
+- **Mandar mensagens:** a caixa **Mandar mensagem** usa o app-server nas sessões hospedadas pelo Habblaud, inclusive
+  durante um turno em andamento. Sessões do TUI só observadas continuam pelo `codex queue`, que entrega quando o
+  trabalho atual acaba (até uns 10 segundos depois). No modo Node o Habblaud roda o Codex; no Docker, o auxiliar entrega.
 - **Uso de 5 horas e semanal:** vem dos próprios arquivos do Codex e só se renova enquanto alguma sessão roda; o cartão
   mostra a idade dos números e "sem cota" quando o workspace ficou sem créditos.
 - **Quando a sessão entra:** com a primeira mensagem (é quando o Codex grava a pasta do projeto); uma CLI aberta e
@@ -728,12 +733,13 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH (no Windows, `codex.exe`) | O binário do Codex que entrega as mensagens (`codex queue`), no modo Node ou no `npm run codex:bridge`. |
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `HABBLAUD_LANG` | idioma do sistema (menos inglês), senão `pt-BR` | Idioma dos textos montados pelo servidor (atividades, avisos, logs): `pt-BR`, `en`, `es` ou `fr`. A interface segue o navegador ou a escolha em Configurações › Idioma. Ver [Idiomas](#idiomas). |
+| `HABBLAUD_PROJECT_ROOTS` | todas as pastas | Só mostra as sessões abertas nessas pastas (ou dentro delas), separadas por vírgula; `~` vale. Ex.: `~/Claude/empresa-a`. O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. A comparação é pelo caminho como a ferramenta o grava (com `..` resolvido, sem seguir links, diferenciando maiúsculas), e qualquer campo `cwd` da conversa conta: um argumento de ferramenta com esse nome apontando para outra pasta também tira a sessão. As contas (nome e pasta de configuração) continuam aparecendo. |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY` e os
-`HABBLAUD_REMOTE_*` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` e
-`HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
+`HABBLAUD_REMOTE_*` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR`,
+`HABBLAUD_PROJECT_ROOTS` e `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
 ## Como funciona

@@ -85,6 +85,21 @@ describe('SpawnService', () => {
     expect(s.get('id3')).toMatchObject({ status: 'failed', error: 'o auxiliar do computador não buscou o pedido' });
   });
 
+  it('escopo por pasta: pasta de fora é recusada antes de abrir (e no Docker, antes de ir para a fila)', async () => {
+    const opened: string[] = [];
+    const opener: Opener = async (url) => (opened.push(url), { ok: true });
+    const inScope = (p: string) => p === '/empresa' || p.startsWith('/empresa/');
+    const s = new SpawnService({ opener, folderProblem: () => undefined, inScope });
+    expect(s.submit({ folder: '/outra', prompt: 'oi' })).toMatchObject({ error: 'invalid' });
+    expect(s.submit({ folder: '/empresa/app', prompt: 'oi' })).toHaveProperty('spawn');
+    await new Promise((ok) => setTimeout(ok, 0));
+    expect(opened).toHaveLength(1);
+    const host = new SpawnService({ inScope });
+    host.poll();
+    expect(host.submit({ folder: '/outra', prompt: 'oi' })).toMatchObject({ error: 'invalid' });
+    expect(host.poll()).toEqual([]);
+  });
+
   it('no máximo 5 abrindo ao mesmo tempo', () => {
     const s = new SpawnService({ opener: () => new Promise(() => {}), folderProblem: () => undefined });
     for (let i = 0; i < 5; i++) expect(s.submit({ folder: '/p', prompt: '' })).toHaveProperty('spawn');

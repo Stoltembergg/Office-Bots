@@ -13,8 +13,9 @@
 //
 // O Codex usa as mesmas rotas (hook PermissionRequest de mod/habblaud-codex/hook.mjs, com `provider: "codex"` e a
 // conta no corpo). Diferenças: o agente casa pelo thread (agent_id ?? session_id) entre os agentes do Codex; sem
-// sugestões nem perguntas; recusar só com motivo (sem interromper); sem a busca da resposta no transcript (no Codex o
-// terminal só pede a aprovação depois que o hook termina, então ela nunca é respondida lá enquanto ele espera).
+// sugestões; perguntas chegam pelo app-server; recusar só com motivo (sem interromper); sem a busca da resposta no
+// transcript (no Codex o terminal só pede a aprovação depois que o hook termina, então ela nunca é respondida lá
+// enquanto ele espera).
 import { randomBytes } from 'node:crypto';
 import { describeTool, maskSecrets, truncate } from '../../shared/activity';
 import { ANSWER_OTHER_MAX, answerSummary, ASK_TOOL, checkAnswers } from '../../shared/answers';
@@ -64,6 +65,9 @@ export interface OfficeLike {
   addActivity(id: string, activity: Activity, current: boolean, opts?: { feed?: boolean }): void;
   /** Aviso "pede permissão" ou "tem uma pergunta" (mesmo dedupe do aviso "precisa de você" do status). */
   noticePermission(id: string, what: string, kind?: 'permission' | 'question'): void;
+  /** Escopo por pasta (Office.scoped/inScope); ausentes = sem escopo. */
+  readonly scoped?: boolean;
+  inScope?(cwd: string): boolean;
 }
 
 export interface RegistryOptions {
@@ -166,9 +170,9 @@ function isIndex(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0;
 }
 
-/** Pedido que se responde com `answer` (as perguntas do AskUserQuestion; o Codex não as manda pelo hook). */
-function isQuestion(info: { tool: string; provider?: string }): boolean {
-  return info.tool === ASK_TOOL && info.provider !== 'codex';
+/** Pedido que se responde com `answer`: as perguntas do AskUserQuestion (do Claude e, pelo app-server, do Codex). */
+function isQuestion(info: { tool: string }): boolean {
+  return info.tool === ASK_TOOL;
 }
 
 /** O Codex não aceita interromper nem "sempre permitir" (o hook dele só aprova ou recusa com motivo). */
@@ -394,12 +398,16 @@ export class PermissionRegistry {
   register(raw: unknown): RegisterResult {
     const req = parseHookInput(raw);
     const codex = req.provider === 'codex';
-    const desc = codex ? codexToolView(req.tool, req.input, req.cwd) : describeTool(req.tool, req.input);
-    const questions = 'questions' in desc ? desc.questions : undefined;
     const ask = isQuestion(req);
+    const desc = codex && !ask ? codexToolView(req.tool, req.input, req.cwd) : describeTool(req.tool, req.input);
+    const questions = 'questions' in desc ? desc.questions : undefined;
     // Pergunta: todas precisam aparecer no escritório (o hook só responde se cada uma tiver resposta).
     if (ask && (!questions?.length || questions.length !== askCount(req.input.questions))) return { skip: 'unsupported-tool' };
     if (this.opts.viewers() <= 0) return { skip: 'no-viewers' };
+    // Escopo por pasta: um pedido de outra pasta não entra, nem pela sessão de um principal de dentro.
+    // Sem cwd não há como saber a pasta: com escopo, fica de fora (os hooks sempre mandam o cwd).
+    const inScope = this.opts.office.scoped ? this.opts.office.inScope : undefined;
+    if (inScope && !(req.cwd && inScope(req.cwd))) return { skip: 'unknown-session' };
     const target = codex
       ? this.resolveCodexAgent(req.sessionId, req.agentId, req.agentType, this.opts.codexAccount?.(req.account, req.codexHome) ?? req.account)
       : this.resolveAgent(req.sessionId, req.agentId, req.agentType);
