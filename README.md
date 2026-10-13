@@ -5,7 +5,7 @@
 <h1 align="center">Habblaud</h1>
 
 <p align="center">
-  <b>The virtual office for your Claude Code (and Codex) agents.</b><br />
+  <b>The virtual office for your Claude Code (and Codex and OpenCode) agents.</b><br />
   Each project becomes a room, and each agent becomes a pixel-art character that shows, in real time, what it's doing.
 </p>
 
@@ -226,6 +226,16 @@ npm run codex:status       # confere
 Then **open Codex and approve the Habblaud hooks in `/hooks`**: Codex only runs a new hook after you
 approve it (Habblaud never writes that approval). With Habblaud in Docker, to send messages to Codex sessions,
 also keep `npm run codex:bridge` running on the Mac (see [Codex](#codex)).
+
+### 5. OpenCode in the office (optional)
+
+If you also use **OpenCode**, its sessions show up in the same office: each project is a room and each session is a
+character on the **OpenCode** account. Habblaud finds OpenCode's database (`~/.local/share/opencode/opencode.db`) and reads
+it **read-only**, without installing anything. This needs **Node 22.13 or newer** (that's when `node:sqlite` works
+without an extra flag): on Node 22.12 the reading stays off, Habblaud says so with one line in the log and everything
+else works as usual. **In Docker this reading doesn't exist:** the container can't see OpenCode's database (`docker:up`
+deliberately mounts no SQLite file). To see OpenCode, run Habblaud without Docker (Node mode). See
+[OpenCode](#opencode).
 
 ### Open on your phone (optional)
 
@@ -607,6 +617,21 @@ Codex account chip is hollow and carries the **CODEX** tag.
   little while to leave after you close the terminal.
 - ChatGPT cloud conversations (with no file on the computer) don't show up. `HABBLAUD_CODEX=0` turns Codex off.
 
+### OpenCode
+
+OpenCode sessions show up like Claude Code's and Codex's: character, project room (the session's folder), activity,
+tasks and subagents. The account chip is fixed and is called "OpenCode". This part is implemented
+and covered by automated tests, and was checked on OpenCode 1.18.35, on Linux, with a temporary, isolated home folder.
+
+- Habblaud reads OpenCode's database every second, read-only, without installing anything. A session shows up while
+  it was touched in the last 30 minutes and isn't archived; a child session (`parent_id`) becomes a subagent of the
+  main one. Working or idle comes from the assistant's last reply, and the activity comes from the last tool used
+  (bash, read, edit, write, grep, glob, webfetch, task). It needs Node 22.13 or newer; without the database, or on
+  Node 22.12, the reading simply doesn't turn on. The database isn't mounted in Docker (`docker:up` mounts no SQLite
+  file), so this reading only works with Habblaud in Node mode.
+- `HABBLAUD_OPENCODE=0` turns OpenCode off in the office; `HABBLAUD_OPENCODE_DIR` points to OpenCode's data folder.
+- OpenCode has no usage (quota), and the terminal and the session history don't cover OpenCode yet.
+
 ### GitHub in the office
 
 What the agents do on GitHub livens up the project's room, with no token and no internet access: Habblaud reads the
@@ -728,6 +753,8 @@ Everything works without configuring anything. If you need to adjust something, 
 | `HABBLAUD_CODEX` | on | `0` turns off Codex in the office. |
 | `HABBLAUD_CODEX_DIRS` | automatic detection | Codex folders, comma-separated (instead of `~/.codex*` and `CODEX_HOME`). |
 | `HABBLAUD_CODEX_BIN` | `codex` from PATH (on Windows, `codex.exe`) | The Codex binary that delivers the messages (`codex queue`), in Node mode or in `npm run codex:bridge`. |
+| `HABBLAUD_OPENCODE` | on | `0` turns OpenCode off in the office (the database reading). |
+| `HABBLAUD_OPENCODE_DIR` | `$XDG_DATA_HOME/opencode` or `~/.local/share/opencode` | OpenCode's data folder (where `opencode.db` lives). |
 | `HABBLAUD_UPDATE_CHECK` | on | `0` turns off the new-version check (a request to the repository's releases on GitHub every 6 h). |
 | `HABBLAUD_LANG` | system language (except English), otherwise `pt-BR` | Language of the texts the server builds (activities, notices, logs): `pt-BR`, `en`, `es` or `fr`. The interface follows the browser or the choice in Settings › Language. See [Languages](#languages). |
 | `HABBLAUD_ACCOUNTS` | — | JSON to customize name, letter or color, matched by the account folder name. E.g. `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
@@ -905,6 +932,11 @@ metadata (letter, email, organization) is read on the host by `docker:up` and pa
   other apps stay where they are) and writes `~/.habblaud/codex-hook.json`; approving the hooks is always up to you, in
   `/hooks`. The hooks only talk to `127.0.0.1`. Messages to Codex carry the same warning as those to Claude Code: any
   program on this machine that talks to Habblaud can leave a message in a session's queue.
+- **OpenCode:** OpenCode only keeps its sessions in a SQLite database, so this is the only case where Habblaud opens a
+  SQLite, always read-only and only the `project`, `session`, `message`, `part` and `todo` tables. From the content
+  columns it asks only for the role, the times, the part type, the tool name and its short title: the message text, the
+  tools' input and output and the reasoning never reach Habblaud. It never opens `auth.json`, the configuration
+  (`opencode.jsonc`), the logs or the rest of the database (`account`, `event`).
 - **What shows up on screen:** activity summaries (tool, file, command or query), session titles,
   tasks and stats (and, in the terminal, the conversation). Don't expose the port on networks you don't
   trust.

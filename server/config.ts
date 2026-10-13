@@ -56,6 +56,10 @@ export interface ServerConfig {
   remote?: RemoteConfig;
   /** Por que o acesso remoto ficou desligado quando as variáveis estão incompletas. */
   remoteWarning?: string;
+  /** Observa as sessões do OpenCode (sources/opencode/); HABBLAUD_OPENCODE=0 desliga. */
+  opencode: boolean;
+  /** Pasta de dados do OpenCode (onde fica o opencode.db): HABBLAUD_OPENCODE_DIR, $XDG_DATA_HOME/opencode ou ~/.local/share/opencode. */
+  opencodeDir: string;
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -149,6 +153,15 @@ export function messagesOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
   return terminal ? tr('mesma trava do terminal: {0}', [terminal]) : undefined;
 }
 
+/** Pasta de dados do OpenCode: HABBLAUD_OPENCODE_DIR, senão $XDG_DATA_HOME/opencode, senão ~/.local/share/opencode. */
+export function opencodeDataDir(env: NodeJS.ProcessEnv, home: string): string {
+  const own = env.HABBLAUD_OPENCODE_DIR?.trim();
+  if (own) return resolve(own);
+  const xdg = env.XDG_DATA_HOME?.trim();
+  if (xdg) return resolve(xdg, 'opencode');
+  return join(home, '.local', 'share', 'opencode');
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): ServerConfig {
   const home = env.HOME || homedir();
   const inDocker = detectDocker(env);
@@ -178,5 +191,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
     remote: remote.config,
     remoteWarning: remote.warning,
+    opencode: !env.HABBLAUD_OPENCODE?.trim() || isTruthy(env.HABBLAUD_OPENCODE),
+    opencodeDir: opencodeDataDir(env, home),
   };
 }
