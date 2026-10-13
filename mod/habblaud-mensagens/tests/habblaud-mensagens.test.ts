@@ -4,7 +4,7 @@
 // servidor) e o prompt.submit de baixo (a sessão: aceita, um hook recusa, a chamada lança ou fica presa).
 import type { HttpResponse, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
-import { accountIdOf, ackBody, configDirOf, inboxBody, MAX_REASON, normalizePath, parseInbox, portOf, reasonText, type InboxMessage } from '../hooks/register'
+import { accountIdOf, ackBody, configDirOf, inboxBody, MAX_REASON, normalizePath, parseInbox, portOf, portsOf, reasonText, type InboxMessage } from '../hooks/register'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
 const PORT = '4850'
@@ -20,8 +20,8 @@ type Fate = 'ok' | 'drop' | 'throw' | 'hang'
 interface World {
   env?: Record<string, string>
   surfaces?: ReadonlyArray<'terminal' | 'desktop'>
-  /** Padrão: nenhuma mensagem. */
-  inbox?: () => Answer
+  /** Padrão: nenhuma mensagem. Recebe o endereço da pergunta (uma instância por porta). */
+  inbox?: (url: string) => Answer
   /** Padrão: o ack responde 200. */
   ack?: () => 'ok' | 'offline' | 'hang'
   /** Padrão: 'ok'. */
@@ -65,7 +65,7 @@ function world(on: On, w: World = {}) {
       }
       return { value: response(200, '{"ok":true}') }
     }
-    const a = w.inbox ? w.inbox() : []
+    const a = w.inbox ? w.inbox(e.url) : []
     if (a === 'offline') return { deny: 'connect ECONNREFUSED 127.0.0.1:4850' }
     if (a === 'hang') {
       await clock.sleep(60_000)
@@ -104,6 +104,30 @@ describe('rodadas', () => {
     expect(w.inboxes().length).toBe(3)
     expect(w.acks()).toEqual([])
     expect(w.submits).toEqual([])
+  })
+
+  test('uma instância por pasta (HABBLAUD_PORTS): pergunta a todas e confirma só na que mandou a mensagem', async ($, on) => {
+    const other = 'http://127.0.0.1:4851/api/mod/inbox'
+    let sentOnce = false
+    const w = world(on, {
+      env: { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude-conta2', HABBLAUD_PORT: PORT, HABBLAUD_PORTS: '4851' },
+      inbox: (url) => (url === other && !sentOnce ? ((sentOnce = true), [{ id: 'm1', text: 'oi' }]) : []),
+    })
+    await $.session.start(START)
+    await w.clock.advance(2_000)
+    expect(w.sent.map((s) => s.url)).toEqual([INBOX_URL, other, `${other}/ack`])
+    expect(w.texts()).toEqual(['oi'])
+  })
+
+  test('várias portas: uma travada não atrasa a pergunta às outras', async ($, on) => {
+    const other = 'http://127.0.0.1:4851/api/mod/inbox'
+    const w = world(on, {
+      env: { HOME: '/home/fulano', CLAUDE_CONFIG_DIR: '~/.claude-conta2', HABBLAUD_PORT: PORT, HABBLAUD_PORTS: '4851' },
+      inbox: (url) => (url === INBOX_URL ? 'hang' : []),
+    })
+    await $.session.start(START)
+    await w.clock.advance(2_000)
+    expect(w.sent.map((s) => s.url)).toEqual([INBOX_URL, other])
   })
 
   test('entrega na ordem, como se você tivesse digitado (texto intacto), e confirma tudo num POST só', async ($, on) => {
@@ -308,5 +332,11 @@ describe('funções puras', () => {
     expect(portOf('0')).toBe(4747)
     expect(portOf('abc')).toBe(4747)
     expect(portOf(undefined)).toBe(4747)
+  })
+
+  test('uma instância por pasta: HABBLAUD_PORTS soma portas à de HABBLAUD_PORT, sem repetir nem aceitar lixo', () => {
+    expect(portsOf(undefined, undefined)).toEqual([4747])
+    expect(portsOf('4747', ' 4801, 4802 ,4747,x,0,')).toEqual([4747, 4801, 4802])
+    expect(portsOf('4801', '4801')).toEqual([4801])
   })
 })

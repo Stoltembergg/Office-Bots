@@ -15,7 +15,7 @@ services:
   habblaud:
     build: .
     image: habblaud:local
-    container_name: habblaud
+    container_name: ${HABBLAUD_CONTAINER:-habblaud}
     restart: unless-stopped
     # Os transcripts são sensíveis: por padrão a porta é publicada SÓ na interface local do host
     # (HABBLAUD_BIND=0.0.0.0 no .env libera a rede local; veja o README).

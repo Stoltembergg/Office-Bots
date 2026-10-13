@@ -232,6 +232,33 @@ Ensuite, **ouvrez Codex et validez les hooks de Habblaud dans `/hooks`** : Codex
 votre validation (Habblaud n'enregistre jamais cette validation à votre place). Avec Habblaud dans Docker, pour envoyer
 des messages aux sessions Codex, laissez aussi tourner `npm run codex:bridge` sur le Mac (voir [Codex](#codex)).
 
+### Un bureau par dossier (facultatif)
+
+Pour séparer, par exemple, une entreprise d'une autre, lancez une instance de Habblaud par dossier. Chacune n'affiche
+que les sessions ouvertes dans son dossier et a sa propre adresse, son port, ses noms et sa chronologie :
+
+```bash
+HABBLAUD_INSTANCE=entreprise-a HABBLAUD_PORT=4801 HABBLAUD_PROJECT_ROOTS=~/Claude/entreprise-a npm run docker:up
+HABBLAUD_INSTANCE=entreprise-b HABBLAUD_PORT=4802 HABBLAUD_PROJECT_ROOTS=~/Claude/entreprise-b npm run docker:up
+# s'ouvre sur http://entreprise-a.localhost:4801 et http://entreprise-b.localhost:4802
+HABBLAUD_INSTANCE=entreprise-a npm run docker:down    # arrête seulement celle d'entreprise-a
+```
+
+Les noms `*.localhost` fonctionnent sans toucher au DNS ni à `/etc/hosts`. `docker:up` note chaque instance dans
+`~/.habblaud/instances.json` : le hook de permission de Claude Code et les hooks de Codex envoient chaque demande à
+l'instance du dossier de la session. Les messages depuis le bureau doivent connaître les ports : ajoutez
+`"HABBLAUD_PORTS": "4801,4802"` à l'`env` du `settings.json` de chaque compte. Avec Codex dans Docker, lancez un
+`npm run codex:bridge -- --port <port>` par instance. L'accès depuis le téléphone reste à l'instance sans
+`HABBLAUD_INSTANCE` (son port est unique sur l'hôte). Sans `HABBLAUD_INSTANCE`, tout fonctionne comme avant.
+
+Chaque instance a besoin de `HABBLAUD_PROJECT_ROOTS` et d'un port à elle (`docker:up` refuse sinon). Si l'instance
+habituelle (sans `HABBLAUD_INSTANCE`) tourne aussi, donnez-lui les dossiers restants : sans filtre, elle affiche aussi
+les sessions des autres dossiers, mais leurs demandes de permission ne vont qu'à l'instance du dossier. Une instance
+arrêtée fait essayer au hook le port habituel avant de laisser la demande dans le terminal.
+`~/.habblaud/instances.json` décide où vont les demandes : qui peut le modifier peut déjà ouvrir Habblaud sur cette
+machine (voir [Sécurité](#confidentialité-et-sécurité)). Le routage par dossier utilise des chemins avec `/` (macOS et
+Linux) ; sous Windows, les demandes vont au port habituel.
+
 ### Ouvrir sur le téléphone (facultatif)
 
 Par défaut, Habblaud n'accepte que les connexions venant de l'ordinateur lui-même. Pour l'ouvrir sur le téléphone (sur
@@ -767,12 +794,14 @@ Tout fonctionne sans rien configurer. Si vous avez besoin d'ajuster quelque chos
 | `HABBLAUD_CODEX_BIN` | `codex` du PATH (sous Windows, `codex.exe`) | Le binaire de Codex qui remet les messages (`codex queue`), en mode Node ou dans `npm run codex:bridge`. |
 | `HABBLAUD_UPDATE_CHECK` | activé | `0` désactive la vérification de nouvelle version (une requête aux releases du dépôt sur GitHub toutes les 6 h). |
 | `HABBLAUD_LANG` | langue du système (sauf l'anglais), sinon `pt-BR` | Langue des textes générés par le serveur (activités, alertes, journaux) : `pt-BR`, `en`, `es` ou `fr`. L'interface suit le navigateur ou le choix fait dans Réglages › Langue. Voir [Langues](#langues). |
+| `HABBLAUD_PROJECT_ROOTS` | tous les dossiers | N'affiche que les sessions ouvertes dans ces dossiers (ou à l'intérieur), séparés par des virgules ; `~` fonctionne. Ex. : `~/Claude/entreprise-a`. L'historique du terminal, les permissions et les terminaux ouverts suivent le même filtre, et une session qui se met à travailler dans un autre dossier quitte le bureau. Les noms, le timelapse et Ma journée sont rangés dans un dossier propre à chaque périmètre. La comparaison se fait sur le chemin tel que l'outil l'enregistre (avec `..` résolu, sans suivre les liens, sensible à la casse), et tout champ `cwd` de la conversation compte : un argument d'outil portant ce nom et pointant vers un autre dossier fait aussi sortir la session. Les comptes (nom et dossier de configuration) restent affichés. |
+| `HABBLAUD_INSTANCE` | — | Uniquement `docker:up`/`docker:down` : nom d'une instance supplémentaire (minuscules, chiffres et trait d'union), avec son propre conteneur, volume et adresse `<nom>.localhost`. Voir [Un bureau par dossier](#un-bureau-par-dossier-facultatif). |
 | `HABBLAUD_ACCOUNTS` | — | JSON pour personnaliser le nom, la lettre ou la couleur, associé par le nom du dossier du compte. Ex. : `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **Dans Docker**, sont prises en compte `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY` et les
-`HABBLAUD_REMOTE_*` (dans le `.env` ou dans l'environnement) ainsi que `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` et
-`HABBLAUD_ACCOUNTS` (lues par `docker:up` sur l'hôte) ; les autres sont fixées à l'intérieur du conteneur. Options : `npm run docker:up -- --no-build` (démarre sans reconstruire),
+`HABBLAUD_REMOTE_*` (dans le `.env` ou dans l'environnement) ainsi que `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR`,
+`HABBLAUD_PROJECT_ROOTS`, `HABBLAUD_INSTANCE` et `HABBLAUD_ACCOUNTS` (lues par `docker:up` sur l'hôte) ; les autres sont fixées à l'intérieur du conteneur. Options : `npm run docker:up -- --no-build` (démarre sans reconstruire),
 `npm run docker:down` (arrête) et `npm run docker:logs` (suit les journaux).
 
 ## Comment ça marche

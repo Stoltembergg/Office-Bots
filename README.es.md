@@ -229,6 +229,33 @@ Después, **abre Codex y aprueba los hooks de Habblaud en `/hooks`**: Codex solo
 lo apruebas (Habblaud nunca guarda esa aprobación). Con Habblaud en Docker, para enviar mensajes a las sesiones de
 Codex deja también `npm run codex:bridge` en ejecución en el Mac (consulta [Codex](#codex)).
 
+### Una oficina por carpeta (opcional)
+
+Para separar, por ejemplo, una empresa de otra, levanta una instancia de Habblaud por carpeta. Cada una muestra solo
+las sesiones abiertas dentro de su carpeta y tiene dirección, puerto, nombres y línea de tiempo propios:
+
+```bash
+HABBLAUD_INSTANCE=empresa-a HABBLAUD_PORT=4801 HABBLAUD_PROJECT_ROOTS=~/Claude/empresa-a npm run docker:up
+HABBLAUD_INSTANCE=empresa-b HABBLAUD_PORT=4802 HABBLAUD_PROJECT_ROOTS=~/Claude/empresa-b npm run docker:up
+# abre en http://empresa-a.localhost:4801 y http://empresa-b.localhost:4802
+HABBLAUD_INSTANCE=empresa-a npm run docker:down    # detiene solo la de empresa-a
+```
+
+Los nombres `*.localhost` funcionan sin tocar el DNS ni el `/etc/hosts`. `docker:up` anota cada instancia en
+`~/.habblaud/instances.json`: el hook de permisos de Claude Code y los hooks de Codex mandan cada pedido a la instancia
+de la carpeta de la sesión. Los mensajes desde la oficina necesitan saber los puertos: agrega
+`"HABBLAUD_PORTS": "4801,4802"` al `env` del `settings.json` de cada cuenta. Con Codex en Docker, ejecuta un
+`npm run codex:bridge -- --port <puerto>` por instancia. El acceso desde el celular queda con la instancia sin
+`HABBLAUD_INSTANCE` (su puerto es uno solo en el host). Sin `HABBLAUD_INSTANCE`, todo sigue como antes.
+
+Cada instancia necesita `HABBLAUD_PROJECT_ROOTS` y un puerto propio (`docker:up` rechaza lo contrario). Si la
+instancia de siempre (sin `HABBLAUD_INSTANCE`) también está activa, dale las carpetas que sobran: sin filtro también
+muestra las sesiones de las otras carpetas, pero sus pedidos de permiso van solo a la instancia de la carpeta. Una
+instancia caída hace que el hook pruebe el puerto de siempre antes de dejar el pedido en la terminal.
+`~/.habblaud/instances.json` decide adónde van los pedidos: quien puede cambiarlo ya puede abrir Habblaud en esta
+máquina (consulta [Seguridad](#privacidad-y-seguridad)). El ruteo por carpeta usa rutas con `/` (macOS y Linux); en
+Windows los pedidos van al puerto de siempre.
+
 ### Abrir en el celular (opcional)
 
 Por defecto, Habblaud solo acepta conexiones de la propia computadora. Para abrirlo en el celular (en la misma red
@@ -764,12 +791,14 @@ Todo funciona sin configurar nada. Si necesitas ajustar algo, usa variables de e
 | `HABBLAUD_CODEX_BIN` | `codex` del PATH (en Windows, `codex.exe`) | El binario de Codex que entrega los mensajes (`codex queue`), en modo Node o en `npm run codex:bridge`. |
 | `HABBLAUD_UPDATE_CHECK` | activada | `0` desactiva la comprobación de versión nueva (una consulta a las releases del repositorio en GitHub cada 6 h). |
 | `HABBLAUD_LANG` | idioma del sistema (salvo inglés); si no, `pt-BR` | Idioma de los textos que arma el servidor (actividades, avisos, logs): `pt-BR`, `en`, `es` o `fr`. La interfaz sigue al navegador o la elección en Configuración › Idioma. Consulta [Idiomas](#idiomas). |
+| `HABBLAUD_PROJECT_ROOTS` | todas las carpetas | Solo muestra las sesiones abiertas en estas carpetas (o dentro de ellas), separadas por coma; `~` vale. P. ej.: `~/Claude/empresa-a`. El historial del terminal, los permisos y los terminales abiertos siguen el mismo filtro, y una sesión que pasa a trabajar en otra carpeta sale de la oficina. Nombres, timelapse y Mi día quedan en una carpeta propia de cada alcance. La comparación es por la ruta tal como la herramienta la guarda (con `..` resuelto, sin seguir enlaces, distinguiendo mayúsculas), y cualquier campo `cwd` de la conversación cuenta: un argumento de herramienta con ese nombre que apunte a otra carpeta también saca la sesión. Las cuentas (nombre y carpeta de configuración) siguen apareciendo. |
+| `HABBLAUD_INSTANCE` | — | Solo `docker:up`/`docker:down`: nombre de una instancia extra (minúsculas, dígitos y guion), con contenedor, volumen y dirección `<nombre>.localhost` propios. Consulta [Una oficina por carpeta](#una-oficina-por-carpeta-opcional). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar el nombre, la letra o el color, emparejado por el nombre de la carpeta de la cuenta. P. ej.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **En Docker**, valen `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY` y las
-`HABBLAUD_REMOTE_*` (en el `.env` o en el entorno) y `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` y
-`HABBLAUD_ACCOUNTS` (leídas por `docker:up` en el host); las demás quedan fijas dentro del contenedor. Opciones: `npm run docker:up -- --no-build` (inicia sin reconstruir),
+`HABBLAUD_REMOTE_*` (en el `.env` o en el entorno) y `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR`,
+`HABBLAUD_PROJECT_ROOTS`, `HABBLAUD_INSTANCE` y `HABBLAUD_ACCOUNTS` (leídas por `docker:up` en el host); las demás quedan fijas dentro del contenedor. Opciones: `npm run docker:up -- --no-build` (inicia sin reconstruir),
 `npm run docker:down` (detiene) y `npm run docker:logs` (sigue los logs).
 
 ## Cómo funciona

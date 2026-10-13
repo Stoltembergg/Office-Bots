@@ -17,12 +17,13 @@ const MAIN = 'acc:1';
 const SESSION = 'sess-1';
 const SUB = `${SESSION}:a1b2c3`;
 
-function setup(opts: { viewers?: number; transcript?: string; orphanMs?: number; answerLater?: boolean } = {}) {
+function setup(opts: { viewers?: number; transcript?: string; orphanMs?: number; answerLater?: boolean; projectRoots?: string[] } = {}) {
   let now = 1_000_000;
   const clock = { now: () => now, advance: (ms: number) => (now += ms) };
   let permissions: PermissionRegistry | undefined;
   const office = new Office({
     names: new NameStore(null),
+    projectRoots: opts.projectRoots,
     version: 't',
     startedAt: 0,
     accounts: () => [],
@@ -92,6 +93,15 @@ describe('PermissionRegistry: registro', () => {
     const five = Array.from({ length: 5 }, (_, i) => ({ question: `Pergunta ${i}?`, options: [{ label: 'Sim' }, { label: 'Não' }] }));
     expect(registry.register(askInput({ tool_input: { questions: five } }))).toEqual({ skip: 'unsupported-tool' });
     expect(registry.size).toBe(0);
+  });
+
+  it('escopo por pasta: pedido com cwd de fora não entra, nem pela sessão de um principal de dentro', () => {
+    const { registry } = setup({ projectRoots: ['/p/loja'] });
+    expect(registry.register(hookInput({ cwd: '/p/outra', agent_id: 'sub-x', agent_type: 'Explore', tool_input: { command: 'cat SEGREDO_B' } }))).toEqual({ skip: 'unknown-session' });
+    expect(registry.size).toBe(0);
+    expect(registry.register(hookInput({ cwd: '/p/loja/app' }))).toMatchObject({ id: expect.any(String) });
+    // Sem cwd não há como saber a pasta: fica de fora.
+    expect(registry.register(hookInput({ cwd: undefined, agent_id: 'sub-y', agent_type: 'Explore' }))).toEqual({ skip: 'unknown-session' });
   });
 
   it('corpo inválido lança (vira 400 na rota)', () => {

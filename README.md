@@ -227,6 +227,33 @@ Then **open Codex and approve the Habblaud hooks in `/hooks`**: Codex only runs 
 approve it (Habblaud never writes that approval). With Habblaud in Docker, to send messages to Codex sessions,
 also keep `npm run codex:bridge` running on the Mac (see [Codex](#codex)).
 
+### One office per folder (optional)
+
+To keep, say, one company apart from another, run one Habblaud instance per folder. Each one only shows the sessions
+open inside its folder and has its own address, port, names and timeline:
+
+```bash
+HABBLAUD_INSTANCE=company-a HABBLAUD_PORT=4801 HABBLAUD_PROJECT_ROOTS=~/Claude/company-a npm run docker:up
+HABBLAUD_INSTANCE=company-b HABBLAUD_PORT=4802 HABBLAUD_PROJECT_ROOTS=~/Claude/company-b npm run docker:up
+# opens at http://company-a.localhost:4801 and http://company-b.localhost:4802
+HABBLAUD_INSTANCE=company-a npm run docker:down    # stops only company-a's
+```
+
+`*.localhost` names work without touching DNS or `/etc/hosts`. `docker:up` records each instance in
+`~/.habblaud/instances.json`: the Claude Code permission hook and the Codex hooks send each request to the instance
+of the session's folder. Messages from the office need to know the ports: add `"HABBLAUD_PORTS": "4801,4802"` to the
+`env` of each account's `settings.json`. With Codex in Docker, run one `npm run codex:bridge -- --port <port>` per
+instance. Phone access stays with the instance without `HABBLAUD_INSTANCE` (its port is a single one on the host).
+Without `HABBLAUD_INSTANCE`, everything works as before.
+
+Each instance needs `HABBLAUD_PROJECT_ROOTS` and a port of its own (`docker:up` refuses otherwise). If the usual
+instance (without `HABBLAUD_INSTANCE`) is also up, give it the remaining folders: without a filter it also shows the
+other folders' sessions, but their permission requests only go to the folder's instance. An instance that is down
+makes the hook try the usual port before leaving the request in the terminal. `~/.habblaud/instances.json` decides
+where requests go: whoever can change it can already open Habblaud on this machine (see
+[Security](#privacy-and-security)). Folder routing uses paths with `/` (macOS and Linux); on Windows requests go to the
+usual port.
+
 ### Open on your phone (optional)
 
 By default Habblaud only accepts connections from the computer it runs on. To open it on your phone (on the same Wi-Fi), with Docker:
@@ -730,12 +757,14 @@ Everything works without configuring anything. If you need to adjust something, 
 | `HABBLAUD_CODEX_BIN` | `codex` from PATH (on Windows, `codex.exe`) | The Codex binary that delivers the messages (`codex queue`), in Node mode or in `npm run codex:bridge`. |
 | `HABBLAUD_UPDATE_CHECK` | on | `0` turns off the new-version check (a request to the repository's releases on GitHub every 6 h). |
 | `HABBLAUD_LANG` | system language (except English), otherwise `pt-BR` | Language of the texts the server builds (activities, notices, logs): `pt-BR`, `en`, `es` or `fr`. The interface follows the browser or the choice in Settings › Language. See [Languages](#languages). |
+| `HABBLAUD_PROJECT_ROOTS` | all folders | Only shows the sessions open in these folders (or inside them), comma-separated; `~` works. E.g. `~/Claude/company-a`. The terminal history, permissions and open terminals follow the same filter, and a session that starts working in another folder leaves the office. Names, timelapse and My day are kept in a folder of their own for each scope. Paths are compared as the tool records them (with `..` resolved, without following links, case-sensitive), and any `cwd` field in the conversation counts: a tool argument with that name pointing to another folder also takes the session out. Accounts (name and config folder) still show. |
+| `HABBLAUD_INSTANCE` | — | `docker:up`/`docker:down` only: name of an extra instance (lowercase, digits and hyphen), with its own container, volume and `<name>.localhost` address. See [One office per folder](#one-office-per-folder-optional). |
 | `HABBLAUD_ACCOUNTS` | — | JSON to customize name, letter or color, matched by the account folder name. E.g. `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **In Docker**, `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY` and the
-`HABBLAUD_REMOTE_*` apply (in `.env` or in the environment), as do `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` and
-`HABBLAUD_ACCOUNTS` (read by `docker:up` on the host); the rest are fixed inside the container. Options: `npm run docker:up -- --no-build` (starts without rebuilding),
+`HABBLAUD_REMOTE_*` apply (in `.env` or in the environment), as do `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR`,
+`HABBLAUD_PROJECT_ROOTS`, `HABBLAUD_INSTANCE` and `HABBLAUD_ACCOUNTS` (read by `docker:up` on the host); the rest are fixed inside the container. Options: `npm run docker:up -- --no-build` (starts without rebuilding),
 `npm run docker:down` (stops) and `npm run docker:logs` (follows the logs).
 
 ## How it works

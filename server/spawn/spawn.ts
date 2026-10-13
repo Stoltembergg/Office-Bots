@@ -177,6 +177,8 @@ export interface SpawnServiceOptions {
   cli?: CliRunner;
   /** Confere a pasta antes de abrir no modo direto (padrão: statSync). */
   folderProblem?: (folder: string) => string | undefined;
+  /** Escopo por pasta (HABBLAUD_PROJECT_ROOTS): pasta de fora é recusada. Ausente = qualquer pasta. */
+  inScope?: (folder: string) => boolean;
   /** Anexos enviados antes do pedido (POST /api/spawn/attachments); ausente = pedidos sem anexos. */
   attachments?: AttachmentStore;
   /** Modo direto: grava os anexos e devolve os caminhos (padrão: ~/.habblaud/attachments/). */
@@ -209,6 +211,7 @@ export class SpawnService {
     this.prune();
     const req = parseSpawn(raw);
     if ('error' in req) return { error: 'invalid', reason: req.error };
+    if (this.opts.inScope && !this.opts.inScope(req.folder)) return { error: 'invalid', reason: tr('pasta fora das pastas deste escritório') };
     if (!this.available()) {
       return { error: 'unavailable', reason: tr('o auxiliar do computador não está rodando: deixe npm run codex:bridge no ar (o Habblaud está no Docker)') };
     }

@@ -28,7 +28,7 @@
 // HABBLAUD_HOOK_DEBUG=1 escreve o que acontece no stderr.
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 4747;
@@ -64,6 +64,42 @@ const validPort = (p) => Number.isInteger(p) && p > 0 && p < 65_536;
 function expandHome(p, home) {
   const abs = resolve(p.trim().replace(/^~(?=[\\/]|$)/, home).replace(/\$\{HOME\}|\$HOME\b/g, home));
   return abs.length > 1 ? abs.replace(/[\\/]+$/, '') : abs;
+}
+
+/**
+ * Uma instância do Habblaud por pasta (`HABBLAUD_INSTANCE=<nome> npm run docker:up` grava ~/.habblaud/instances.json:
+ * {instances: [{name, port, roots}]}): a porta da instância cuja pasta contém o cwd da sessão, a mais específica
+ * primeiro. Fora de todas, ou arquivo ausente ou estranho, vale `fallback`.
+ */
+export function portForCwd(cwd, instances, fallback) {
+  if (typeof cwd !== 'string' || !cwd.startsWith('/')) return fallback;
+  // `..` e `.` contam pelo destino (posix.normalize), como no servidor (inRoots).
+  const norm = (p) => posix.normalize(p).replace(/(.)\/+$/, '$1');
+  const c = norm(cwd);
+  const list = instances && typeof instances === 'object' && Array.isArray(instances.instances) ? instances.instances : [];
+  let port = fallback;
+  let best = -1;
+  for (const inst of list) {
+    if (!inst || !Number.isInteger(inst.port) || inst.port <= 0 || inst.port >= 65_536 || !Array.isArray(inst.roots)) continue;
+    for (const root of inst.roots) {
+      if (typeof root !== 'string' || !root.startsWith('/')) continue;
+      const r = norm(root);
+      if ((c === r || c.startsWith(r === '/' ? r : `${r}/`)) && r.length > best) {
+        best = r.length;
+        port = inst.port;
+      }
+    }
+  }
+  return port;
+}
+
+/** ~/.habblaud/instances.json, ou undefined. */
+export function readInstances(home) {
+  try {
+    return JSON.parse(readFileSync(join(home, '.habblaud', 'instances.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -215,8 +251,16 @@ export async function run(env = process.env, stdinText) {
     const cfg = readConfig(env);
     const codexHome = codexHomeOf(env, input);
     const account = accountOf(codexHome);
-    const base = `http://127.0.0.1:${cfg.port}`;
-    const sent = await call(base, 'POST', '/api/codex/events', eventBody(input, account, codexHome), event === 'SessionEnd' ? SESSION_END_TIMEOUT_MS : EVENT_TIMEOUT_MS);
+    const port = portForCwd(input.cwd, readInstances(env.HOME || homedir()), cfg.port);
+    let base = `http://127.0.0.1:${port}`;
+    const body = eventBody(input, account, codexHome);
+    const timeout = event === 'SessionEnd' ? SESSION_END_TIMEOUT_MS : EVENT_TIMEOUT_MS;
+    let sent = await call(base, 'POST', '/api/codex/events', body, timeout);
+    // A instância da pasta não respondeu (registro velho de um container parado): vale a porta de sempre.
+    if (!sent && port !== cfg.port) {
+      base = `http://127.0.0.1:${cfg.port}`;
+      sent = await call(base, 'POST', '/api/codex/events', body, timeout);
+    }
     debug(`${event}: ${sent ? `${sent.status} ${JSON.stringify(sent.json ?? null)}` : 'Habblaud fora do ar'}`);
     if (event !== 'PermissionRequest' || typeof input.tool_name !== 'string' || !input.tool_name) return undefined;
     // Sem resposta nem ao evento: o Habblaud está fora do ar (ou travado); a aprovação segue no terminal.
@@ -224,7 +268,14 @@ export async function run(env = process.env, stdinText) {
 
     // A espera conta desde o início do hook (o Codex só mostra a aprovação no terminal quando ele termina).
     const deadline = startedAt + cfg.waitMs;
-    const reg = await call(base, 'POST', '/api/permissions', permissionBody(input, account, codexHome, Math.max(0, deadline - Date.now())), REGISTER_TIMEOUT_MS);
+    const register = () => call(base, 'POST', '/api/permissions', permissionBody(input, account, codexHome, Math.max(0, deadline - Date.now())), REGISTER_TIMEOUT_MS);
+    let reg = await register();
+    // A instância da pasta aceitou o evento mas não respondeu ao pedido: vale a porta de sempre.
+    const fallback = `http://127.0.0.1:${cfg.port}`;
+    if (!reg && base !== fallback) {
+      base = fallback;
+      reg = await register();
+    }
     if (!reg || reg.status !== 201 || typeof reg.json?.id !== 'string') {
       debug(`sem desvio (${reg ? `${reg.status} ${JSON.stringify(reg.json ?? null)}` : 'Habblaud fora do ar'})`);
       return undefined;

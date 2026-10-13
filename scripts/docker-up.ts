@@ -35,7 +35,7 @@ import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
-import { codexDirsRefused, detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
+import { codexDirsRefused, detectAccounts, discoverClaudeDirs, expandHome, splitList, type DetectedAccount } from '../server/accounts/detect';
 import { detectCodexAccounts, discoverCodexDirs } from '../server/sources/codex/accounts';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
@@ -46,7 +46,6 @@ import { ensureServerCert, remoteTargets, remoteTlsBase, tlsPaths } from '../ser
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOME = process.env.HOME || homedir();
 const STATE_DIR = join(HOME, '.habblaud');
-const OVERRIDE_FILE = join(ROOT, 'docker-compose.override.yml');
 /** O .env desta pasta, que o Compose lê sozinho. */
 const ENV_FILE = join(ROOT, '.env');
 /** Uso capturado no host pelo mod do Habblaud ou pelo tap de statusline (scripts/statusline-tap.mjs). */
@@ -71,7 +70,6 @@ const DEFAULT_PORT = 4747;
 const HEALTH_TIMEOUT_MS = 120_000;
 /** Imagem e volume de dados como o Compose os nomeia (`name: habblaud` no docker-compose.yml). */
 const IMAGE = 'habblaud:local';
-const DATA_VOLUME = 'habblaud_habblaud-data';
 /** O mesmo no CodeTown (até a 0.3.2), só para a migração: container_name fixo, rede padrão, volume e imagem. */
 const LEGACY_DOCKER = {
   container: LEGACY_NAME,
@@ -80,7 +78,7 @@ const LEGACY_DOCKER = {
   image: `${LEGACY_NAME}:local`,
 } as const;
 
-const USAGE = tr('Uso: npm run docker:up [-- opções]\n\nOpções:\n  --no-build   sobe sem reconstruir a imagem\n  --down       derruba o container (o mesmo que npm run docker:down)\n  -h, --help   mostra esta ajuda\n\nVariáveis: HABBLAUD_PORT (porta no host, padrão {0}), HABBLAUD_CLAUDE_DIRS\n(config dirs separados por vírgula, se as contas não estiverem em ~/.claude*), HABBLAUD_CODEX_DIRS\n(pastas do Codex, se não estiverem em ~/.codex* nem em CODEX_HOME) e HABBLAUD_CODEX=0 (sem o Codex).', [DEFAULT_PORT]);
+const USAGE = tr('Uso: npm run docker:up [-- opções]\n\nOpções:\n  --no-build   sobe sem reconstruir a imagem\n  --down       derruba o container (o mesmo que npm run docker:down)\n  -h, --help   mostra esta ajuda\n\nVariáveis: HABBLAUD_PORT (porta no host, padrão {0}), HABBLAUD_CLAUDE_DIRS\n(config dirs separados por vírgula, se as contas não estiverem em ~/.claude*), HABBLAUD_CODEX_DIRS\n(pastas do Codex, se não estiverem em ~/.codex* nem em CODEX_HOME), HABBLAUD_CODEX=0 (sem o Codex) e\nHABBLAUD_PROJECT_ROOTS (só as sessões abertas nessas pastas, separadas por vírgula; ~ vale).\n\nUma instância por pasta (ex.: uma por empresa), lado a lado:\n  HABBLAUD_INSTANCE=empresa-a HABBLAUD_PORT=4801 HABBLAUD_PROJECT_ROOTS=~/Claude/empresa-a npm run docker:up\nabre em http://empresa-a.localhost:4801, com container, volume e override próprios; HABBLAUD_INSTANCE=empresa-a\nnpm run docker:down a derruba. Os hooks mandam cada sessão para a instância da pasta dela (~/.habblaud/instances.json).', [DEFAULT_PORT]);
 
 // ---------------------------------------------------------------------------------------------
 // Saída no terminal
@@ -133,6 +131,114 @@ export function hostPort(env: NodeJS.ProcessEnv): number {
   if (!Number.isInteger(port) || port <= 0 || port >= 65536) fail(tr('HABBLAUD_PORT inválida: "{0}" (use um número de 1 a 65535).', [raw]));
   return port;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Uma instância por pasta (HABBLAUD_INSTANCE)
+// ---------------------------------------------------------------------------------------------
+
+export interface InstanceNames {
+  /** Ausente = a instância de sempre (o projeto habblaud do Compose). */
+  instance?: string;
+  project: string;
+  container: string;
+  /** Nome do override na pasta do projeto. */
+  overrideFile: string;
+  /** Volume de dados (nomes dos personagens, linha do tempo, estatísticas): o Compose prefixa com o projeto. */
+  dataVolume: string;
+}
+
+/** O nome vira nome de container, de arquivo e o domínio <nome>.localhost: só minúsculas, dígitos e hífen. */
+const INSTANCE_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+
+export function instanceNames(env: NodeJS.ProcessEnv): InstanceNames {
+  const instance = env.HABBLAUD_INSTANCE?.trim();
+  if (!instance) return { project: SERVICE, container: SERVICE, overrideFile: 'docker-compose.override.yml', dataVolume: `${SERVICE}_habblaud-data` };
+  if (!INSTANCE_RE.test(instance)) fail(tr('HABBLAUD_INSTANCE inválida: "{0}" (use minúsculas, dígitos e hífen, até 40 caracteres; ex.: empresa-a).', [instance]));
+  const project = `${SERVICE}-${instance}`;
+  return { instance, project, container: project, overrideFile: `docker-compose.${instance}.override.yml`, dataVolume: `${project}_habblaud-data` };
+}
+
+/**
+ * Argumentos do `docker compose`. A instância de sempre usa o projeto do docker-compose.yml e o override que o
+ * Compose acha sozinho; as outras dizem o projeto e os dois arquivos (o override de sempre fica de fora).
+ */
+export function composeArgs(names: InstanceNames, args: string[], withOverride = true): string[] {
+  if (!names.instance) return args;
+  return ['-p', names.project, '-f', 'docker-compose.yml', ...(withOverride ? ['-f', names.overrideFile] : []), ...args];
+}
+
+export interface InstanceEntry {
+  name: string;
+  /** Ausente = tirar do registro (docker:down). */
+  port?: number;
+  roots?: string[];
+}
+
+/** O registro (~/.habblaud/instances.json, lido pelos hooks) com `entry` no lugar da de mesmo nome. */
+export function instancesWith(current: unknown, entry: InstanceEntry): { instances: InstanceEntry[] } {
+  const list = isRecord(current) && Array.isArray(current.instances) ? (current.instances as unknown[]) : [];
+  const others = list.filter((i): i is InstanceEntry => isRecord(i) && typeof i.name === 'string' && i.name !== entry.name);
+  return { instances: entry.port === undefined ? others : [...others, entry] };
+}
+
+/**
+ * O que impede esta subida, ou undefined. `registry`: ~/.habblaud/instances.json; `portAnswers`: já há um Habblaud
+ * respondendo na porta. Uma instância extra precisa de pastas (sem elas os hooks nunca a escolhem) e de uma porta só
+ * dela: a de outra instância, ou ocupada por outro Habblaud, levaria os pedidos para o escritório errado.
+ */
+export function instanceProblem(names: InstanceNames, port: number, roots: string[], registry: unknown, portAnswers: boolean): string | undefined {
+  if (names.instance && !roots.length) {
+    return tr('HABBLAUD_INSTANCE={0} precisa de HABBLAUD_PROJECT_ROOTS (as pastas desta instância): sem elas os hooks não sabem quais sessões são dela.', [names.instance]);
+  }
+  const entries = instancesWith(registry, { name: '' }).instances;
+  const other = entries.find((i) => i.port === port && i.name !== names.instance);
+  if (other) return tr('a porta {0} já é da instância {1}. Use outra: HABBLAUD_PORT=<porta livre>.', [port, other.name]);
+  const mine = entries.find((i) => i.name === names.instance);
+  if (names.instance && portAnswers && mine?.port !== port) {
+    return tr('já há um Habblaud respondendo na porta {0} (a instância de sempre ou outra). Use outra: HABBLAUD_PORT=<porta livre>.', [port]);
+  }
+  return undefined;
+}
+
+const INSTANCES_FILE = join(STATE_DIR, 'instances.json');
+
+/** O registro como está no disco; ausente = vazio; ilegível = undefined (não se grava por cima). */
+function readRegistry(): { ok: true; value: unknown } | { ok: false } {
+  let raw: string;
+  try {
+    raw = readFileSync(INSTANCES_FILE, 'utf8');
+  } catch {
+    return { ok: true, value: undefined };
+  }
+  try {
+    return { ok: true, value: JSON.parse(raw) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+/** Grava a entrada desta instância no registro dos hooks; falha só avisa (sem ele, vale a porta padrão). */
+function registerInstance(entry: InstanceEntry): void {
+  try {
+    const current = readRegistry();
+    // Ilegível: reescrever apagaria as outras instâncias. Fica como está, com o aviso.
+    if (!current.ok) throw new Error('o arquivo não é um JSON válido; conserte ou apague e rode de novo');
+    mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+    // ponytail: sem lock; dois docker:up no mesmo instante podem perder uma entrada (rodar de novo resolve).
+    const tmp = `${INSTANCES_FILE}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(instancesWith(current.value, entry), null, 2)}\n`, { mode: 0o600 });
+    renameSync(tmp, INSTANCES_FILE);
+  } catch (err) {
+    warn(tr('não consegui atualizar {0} ({1}); os hooks vão usar a porta padrão.', [tildify(INSTANCES_FILE), (err as Error).message]));
+  }
+}
+
+/** Definido em main(): os nomes desta subida (instância de sempre ou HABBLAUD_INSTANCE). */
+let names: InstanceNames = { project: SERVICE, container: SERVICE, overrideFile: 'docker-compose.override.yml', dataVolume: `${SERVICE}_habblaud-data` };
 
 // ---------------------------------------------------------------------------------------------
 // Plano de montagens e override do Compose (funções puras, sem efeitos colaterais)
@@ -299,6 +405,15 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
   return tz && /^[A-Za-z0-9_+\-]+(?:\/[A-Za-z0-9_+\-]+)*$/.test(tz) ? tz : undefined;
 }
 
+/** HABBLAUD_PROJECT_ROOTS com `~` expandido aqui no host: no container o HOME é outro e os caminhos são os do host. */
+export function projectRootsOf(env: NodeJS.ProcessEnv, home: string): string[] {
+  const roots = splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home));
+  // A lista vai separada por vírgula: uma vírgula no caminho a partiria em outras pastas dentro do container.
+  const bad = roots.find((r) => r.includes(','));
+  if (bad) fail(tr('HABBLAUD_PROJECT_ROOTS: a pasta "{0}" tem vírgula, e a lista é separada por vírgula; renomeie a pasta ou use outra.', [bad]));
+  return roots;
+}
+
 /**
  * `usageDir`: pasta do host com o uso capturado pelo tap de statusline (já existente; caminho real),
  * montada somente leitura em /usage. `timeZone`: fuso do host, repassado como TZ. `codex`: montagens das contas do
@@ -312,6 +427,7 @@ export function renderOverride(
   codex: AccountMount[] = [],
   remoteTlsDir?: string,
   extraPorts: string[] = [],
+  projectRoots: string[] = [],
 ): string {
   const env: Array<[string, string]> = [
     ['HABBLAUD_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
@@ -320,6 +436,7 @@ export function renderOverride(
   if (codex.length) env.push(['HABBLAUD_CODEX_DIRS', codex.map((m) => m.mountDir).join(',')]);
   if (usageDir) env.push(['HABBLAUD_USAGE_DIR', CONTAINER_USAGE_DIR]);
   if (timeZone) env.push(['TZ', timeZone]);
+  if (projectRoots.length) env.push(['HABBLAUD_PROJECT_ROOTS', projectRoots.join(',')]);
   const lines = [
     `# Gerado por scripts/docker-up.ts em ${generatedAt.toISOString()} — não edite: é recriado a cada \`npm run docker:up\`.`,
     '# Contém caminhos do host e e-mails das contas: fica fora do git e com permissão 600.',
@@ -408,7 +525,7 @@ export function planUp(state: DockerState, build: boolean): UpPlan {
   if (copy) {
     steps.push(
       { kind: 'compose', args: build ? ['up', '--no-start', '--build'] : ['up', '--no-start'] },
-      { kind: 'copy-volume', from: LEGACY_DOCKER.volume, to: DATA_VOLUME },
+      { kind: 'copy-volume', from: LEGACY_DOCKER.volume, to: names.dataVolume },
       { kind: 'compose', args: ['up', '-d'] },
     );
   } else steps.push({ kind: 'compose', args: build ? ['up', '-d', '--build'] : ['up', '-d'] });
@@ -493,9 +610,10 @@ function checkDocker(): void {
   if (compose.status !== 0) fail(tr('o Docker Compose v2 ("docker compose") não está disponível. Atualize o Docker Desktop.'));
 }
 
-function compose(args: string[], port: number): void {
+function compose(args: string[], port: number, withOverride = true): void {
   // HABBLAUD_PORT explícito: vale sobre um eventual .env na pasta do projeto.
-  const res = spawnSync('docker', ['compose', ...args], { cwd: ROOT, stdio: 'inherit', env: { ...process.env, HABBLAUD_PORT: String(port) } });
+  const env = { ...process.env, HABBLAUD_PORT: String(port), HABBLAUD_CONTAINER: names.container };
+  const res = spawnSync('docker', ['compose', ...composeArgs(names, args, withOverride)], { cwd: ROOT, stdio: 'inherit', env });
   if (res.error) fail(tr('não consegui rodar "docker compose {0}": {1}', [args.join(' '), res.error.message]));
   if (res.status !== 0) fail(tr('"docker compose {0}" falhou (código {1}).', [args.join(' '), res.status ?? res.signal]));
 }
@@ -523,7 +641,7 @@ function inspectDocker(): DockerState {
     legacyNetwork: exists('network', LEGACY_DOCKER.network),
     legacyVolume: exists('volume', LEGACY_DOCKER.volume),
     legacyImage: exists('image', image),
-    dataVolume: exists('volume', DATA_VOLUME),
+    dataVolume: exists('volume', names.dataVolume),
   };
 }
 
@@ -619,15 +737,18 @@ async function waitHealthy(baseUrl: string): Promise<Health | undefined> {
 function down(port: number): void {
   checkDocker();
   say(tr('Derrubando o container…'));
-  compose(['down'], port);
-  say(tr('Pronto. Os nomes dos personagens continuam guardados no volume habblaud-data.'));
+  // Primeiro sai do registro: mesmo que o down falhe, os hooks param de mandar pedidos para cá.
+  if (names.instance) registerInstance({ name: names.instance });
+  // Só o projeto basta para derrubar: o override pode ter sumido (git clean, outro checkout).
+  compose(['down'], port, false);
+  say(tr('Pronto. Os nomes dos personagens continuam guardados no volume {0}.', [names.dataVolume]));
 }
 
 async function up(opts: Options, port: number): Promise<void> {
   checkDocker();
   warnLegacyEnv();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const publicUrl = `http://localhost:${port}`;
+  const publicUrl = `http://${names.instance ? `${names.instance}.localhost` : 'localhost'}:${port}`;
 
   // Porta ocupada por um Habblaud fora do Docker (npm run dev / npm start)?
   const existing = await fetchHealth(baseUrl, 1_500);
@@ -674,23 +795,41 @@ async function up(opts: Options, port: number): Promise<void> {
     }
   }
 
+  const projectRoots = projectRootsOf(process.env, HOME);
+  if (projectRoots.length) say(tr('Escopo: só as sessões abertas em {0}.', [projectRoots.map(tildify).join(', ')]));
+  const registry = readRegistry();
+  // O container desta instância já no ar (registro perdido, por exemplo) não conta como "outro Habblaud na porta".
+  const ownRunning = !!names.instance && dockerQuiet(['container', 'inspect', '--format', '{{.State.Running}}', names.container]).out.trim() === 'true';
+  const problem = instanceProblem(names, port, projectRoots, registry.ok ? registry.value : undefined, !!existing && !ownRunning);
+  if (problem) fail(problem);
+
   migrateStateDir();
   const usageDir = ensureUsageDir();
   if (usageDir) say(tr('Uso ao vivo (mod ou tap de statusline): monta {0} em {1}, somente leitura.', [tildify(USAGE_DIR), CONTAINER_USAGE_DIR]));
-  const remoteTlsDir = prepareRemoteTls();
-  const remotePorts = remoteTlsDir || remoteInsecure() ? remotePortsToPublish() : [];
-  const tmp = `${OVERRIDE_FILE}.tmp`;
-  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts, remoteTlsDir, remotePorts), { mode: 0o600 });
+  // Acesso pelo celular: uma porta só no host (a do .env), então fica com o escritório de sempre, sem HABBLAUD_INSTANCE.
+  const remoteTlsDir = names.instance ? undefined : prepareRemoteTls();
+  const remotePorts = !names.instance && (remoteTlsDir || remoteInsecure()) ? remotePortsToPublish() : [];
+  if (names.instance && remoteConfigured()) say(tr('Acesso pelo celular: fica com o escritório sem HABBLAUD_INSTANCE (a porta dele é uma só no host).'));
+  const overrideFile = join(ROOT, names.overrideFile);
+  const tmp = `${overrideFile}.tmp`;
+  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts, remoteTlsDir, remotePorts, projectRoots), { mode: 0o600 });
   chmodSync(tmp, 0o600);
-  renameSync(tmp, OVERRIDE_FILE);
-  say(tr('docker-compose.override.yml gerado.'));
+  renameSync(tmp, overrideFile);
+  say(tr('{0} gerado.', [names.overrideFile]));
 
-  const plan = planUp(inspectDocker(), opts.build);
+  // O que sobrou do CodeTown é da instância de sempre: as outras nem olham.
+  const state = names.instance
+    ? { legacyContainer: false, legacyNetwork: false, legacyVolume: false, legacyImage: false, dataVolume: true }
+    : inspectDocker();
+  const plan = planUp(state, opts.build);
   const { copyFailed } = runPlan(plan, port, opts.build);
 
   say(tr('Aguardando o Habblaud responder em {0}…', [publicUrl]));
   const health = await waitHealthy(baseUrl);
-  if (!health) fail(tr('o Habblaud não respondeu em {0} s. Veja o que aconteceu com: npm run docker:logs', [HEALTH_TIMEOUT_MS / 1000]));
+  const logs = names.instance ? `docker logs -f ${names.container}` : 'npm run docker:logs';
+  if (!health) fail(tr('o Habblaud não respondeu em {0} s. Veja o que aconteceu com: {1}', [HEALTH_TIMEOUT_MS / 1000, logs]));
+  // Só agora, no ar, os hooks passam a mandar os pedidos desta pasta para cá.
+  if (names.instance) registerInstance({ name: names.instance, port, roots: projectRoots });
 
   console.log('');
   say(tr('Habblaud{0} no ar: {1}', [health.version ? ` ${health.version}` : '', publicUrl]));
@@ -711,7 +850,8 @@ async function up(opts: Options, port: number): Promise<void> {
   for (const line of modHint(updateMods(dirs, accounts))) say(line);
   // Com a cópia falha, os dados só existem no volume antigo: nada de sugerir apagá-lo.
   if (plan.cleanup.length && !copyFailed) say(tr('  Sobrou do CodeTown; depois de conferir o escritório, apague com: {0}', [plan.cleanup.join(' · ')]));
-  say(tr('  Logs: npm run docker:logs · Parar: npm run docker:down'));
+  if (names.instance) say(tr('  Logs: docker logs -f {0} · Parar: HABBLAUD_INSTANCE={1} npm run docker:down', [names.container, names.instance]));
+  else say(tr('  Logs: npm run docker:logs · Parar: npm run docker:down'));
 }
 
 /**
@@ -759,6 +899,14 @@ export function remotePortsFrom(env: string): string[] {
   const http = Number(readEnvValue(env, 'HABBLAUD_REMOTE_HTTP_PORT'));
   if (valid(http) && http !== port) out.push(`${bind}:${http}:4748`);
   return out;
+}
+
+function remoteConfigured(): boolean {
+  try {
+    return !!readEnvValue(readFileSync(ENV_FILE, 'utf8'), 'HABBLAUD_REMOTE_USER');
+  } catch {
+    return false;
+  }
 }
 
 function remoteInsecure(): boolean {
@@ -811,6 +959,7 @@ async function main(): Promise<void> {
     console.log(USAGE);
     return;
   }
+  names = instanceNames(process.env);
   const port = hostPort(process.env);
   if (opts.down) down(port);
   else await up(opts, port);

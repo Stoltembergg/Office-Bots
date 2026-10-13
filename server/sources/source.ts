@@ -14,6 +14,7 @@
 // que nunca chamasse endBoot calaria os avisos de todas).
 import type { Provider, RecentSession, SourceInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
+import { fileScope } from './scope';
 import { HISTORY_LIMIT } from './history';
 import { createTerminalParser, type TerminalParser } from './terminal';
 import { tr } from '../../shared/i18n';
@@ -149,10 +150,15 @@ export interface HistoryProvider extends SessionLookup {
  */
 export class HistorySet implements SessionLookup {
   private readonly list_: HistoryProvider[] = [];
-
+  /**
+   * `inScope`: escopo por pasta (HABBLAUD_PROJECT_ROOTS). Sessão sem projeto conhecido fica de fora da lista, e
+   * resolve() confere todos os cwds do próprio arquivo que vai abrir (fileScope): o id sozinho pode existir em outra
+   * pasta, e uma conversa pode ter passado por outra pasta no meio.
+   */
   constructor(
     providers: readonly HistoryProvider[] = [],
     private readonly limit = HISTORY_LIMIT,
+    private readonly inScope?: (project: string) => boolean,
   ) {
     for (const p of providers) this.add(p);
   }
@@ -174,11 +180,16 @@ export class HistorySet implements SessionLookup {
     for (const f of failures) {
       log.warnOnce(`history-list:${f.provider}:${errMsg(f.err)}`, tr('Histórico de sessões ({0}): falha ao listar ({1}).', [f.provider, errMsg(f.err)]));
     }
-    return out.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
+    const inScope = this.inScope;
+    const scoped = inScope ? out.filter((s) => s.project !== undefined && inScope(s.project)) : out;
+    const result = scoped.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
+    return result;
   }
 
   resolve(account: string, sessionId: string): HistoryResolveResult {
     const owner = this.list_.find((p) => p.hasAccount(account)) ?? this.list_[0];
-    return owner ? owner.resolve(account, sessionId) : { status: 404, error: tr('conta desconhecida') };
+    const found: HistoryResolveResult = owner ? owner.resolve(account, sessionId) : { status: 404, error: tr('conta desconhecida') };
+    if (!this.inScope || !('path' in found)) return found;
+    return fileScope(found.path, this.inScope).status === 'in' ? found : { status: 404, error: tr('sessão não encontrada') };
   }
 }

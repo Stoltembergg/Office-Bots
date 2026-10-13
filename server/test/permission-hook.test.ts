@@ -4,11 +4,13 @@
 // abertas, e o tempo limite.
 // Os processos são assíncronos (spawn): o servidor roda neste mesmo processo.
 import { spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { setQuiet } from '../log';
+import { tempDir } from './fixtures';
 import { hookJson, MAIN, servePermissions, type PermissionServer } from './permission-server';
 
 setQuiet(true);
@@ -21,8 +23,9 @@ interface HookModule {
   requestBody(input: Record<string, unknown>, timeoutMs: number): Record<string, unknown>;
   trimInput(v: unknown, max?: number): unknown;
   decisionOutput(result: unknown, input: unknown): unknown;
+  portForCwd(cwd: unknown, instances: unknown, fallback: number): number;
 }
-const { decisionOutput, parseOptions, requestBody, trimInput } = (await import(pathToFileURL(HOOK).href)) as HookModule;
+const { decisionOutput, parseOptions, portForCwd, requestBody, trimInput } = (await import(pathToFileURL(HOOK).href)) as HookModule;
 
 /**
  * tool_input de um AskUserQuestion. Os textos que voltam em `answers` são os ORIGINAIS (o escritório só vê os
@@ -190,6 +193,49 @@ describe('permission-hook.mjs (processo)', () => {
     await new Promise((ok) => setTimeout(ok, 600));
     expect(srv.registry!.size).toBe(0);
   }, 20_000);
+});
+
+describe('permission-hook.mjs: uma instância por pasta (~/.habblaud/instances.json)', () => {
+  it('o pedido vai para a instância cuja pasta contém o cwd da sessão, não para a porta padrão', async () => {
+    srv = await servePermissions();
+    const tmp = tempDir();
+    try {
+      mkdirSync(join(tmp.dir, '.habblaud'));
+      writeFileSync(join(tmp.dir, '.habblaud', 'instances.json'), JSON.stringify({ instances: [{ name: 'p', port: srv.port, roots: ['/p'] }] }));
+      // --port aponta para uma porta sem ninguém: só a instância da pasta responde.
+      const run = runHook(JSON.stringify(hookJson()), ['--port', '1'], { HOME: tmp.dir });
+      expect(srv.registry!.decide(await pendingId(srv), { behavior: 'allow' })).toBe('ok');
+      expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'allow' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('instância da pasta fora do ar (registro velho): tenta a porta padrão antes de desistir', async () => {
+    srv = await servePermissions();
+    const tmp = tempDir();
+    try {
+      mkdirSync(join(tmp.dir, '.habblaud'));
+      writeFileSync(join(tmp.dir, '.habblaud', 'instances.json'), JSON.stringify({ instances: [{ name: 'p', port: 1, roots: ['/p'] }] }));
+      const run = runHook(JSON.stringify(hookJson()), ['--port', String(srv.port)], { HOME: tmp.dir });
+      expect(srv.registry!.decide(await pendingId(srv), { behavior: 'allow' })).toBe('ok');
+      expect(JSON.parse((await run).stdout).hookSpecificOutput.decision).toEqual({ behavior: 'allow' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('portForCwd: a pasta mais específica vence; fora de todas (ou arquivo estranho) = a porta padrão', () => {
+    const instances = { instances: [{ name: 'a', port: 4801, roots: ['/Users/eu/Claude/empresa-a/'] }, { name: 'app', port: 4802, roots: ['/Users/eu/Claude/empresa-a/app'] }] };
+    expect(portForCwd('/Users/eu/Claude/empresa-a/site', instances, 4747)).toBe(4801);
+    expect(portForCwd('/Users/eu/Claude/empresa-a/app/src', instances, 4747)).toBe(4802);
+    expect(portForCwd('/Users/eu/Claude/empresa-ab', instances, 4747)).toBe(4747);
+    expect(portForCwd(undefined, instances, 4747)).toBe(4747);
+    expect(portForCwd('/x', { instances: [{ port: 'x', roots: ['/x'] }, null] }, 4747)).toBe(4747);
+    expect(portForCwd('/x', 'lixo', 4747)).toBe(4747);
+    // `..` conta pelo destino.
+    expect(portForCwd('/Users/eu/Claude/empresa-a/../empresa-b', instances, 4747)).toBe(4747);
+  });
 });
 
 describe('permission-hook.mjs (funções)', () => {

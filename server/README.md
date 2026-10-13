@@ -144,7 +144,7 @@ local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`)
 ## Linha do tempo (timelapse)
 
 `history/timeline.ts` grava o escritório para o timelapse do cliente em `<HABBLAUD_DATA_DIR>/timeline/AAAA-MM-DD.jsonl`
-(dia local do servidor; no Docker, `/data/timeline`). Formato e reconstrução em `shared/timeline.ts`; um registro por linha:
+(dia local do servidor; no Docker, `/data/timeline`; com `HABBLAUD_PROJECT_ROOTS`, dentro de `escopos/<hash>`). Formato e reconstrução em `shared/timeline.ts`; um registro por linha:
 
 - `{"t":"k", at, v, every, boot?, rooms, agents, accounts}`: **keyframe**, o estado completo. Abre cada arquivo, se
   repete a cada 5 min (`every`) e marca o boot do servidor;
@@ -205,7 +205,8 @@ Estáticos (`http/static.ts`): `/bundle/*` (saída do Vite com hash, `build.asse
 cada conta (nome com formato de UUID; subagentes ficam de fora) modificados nos últimos 7 dias, os 150 mais recentes.
 De cada arquivo lê só os primeiros 64 KB (projeto = `cwd` da primeira linha que o traz, primeira atividade, o primeiro
 prompt) e os últimos 64 KB (título e última atividade; sem nenhuma linha de título ali, procura nos últimos 512 KB),
-com leitura assíncrona e um cache por caminho válido enquanto mtime e tamanho não mudam. O título segue o do agente
+com leitura assíncrona e um cache por caminho válido enquanto mtime e tamanho não mudam (com `HABBLAUD_PROJECT_ROOTS`, o
+arquivo inteiro também passa por `fileScope`, que só deixa entrar a sessão cujos cwds são todos de dentro). O título segue o do agente
 (`custom-title`/`custom-title.json` > `agent-name` > `ai-title` > `last-prompt`) e, sem nenhum, é o primeiro prompt.
 Sessão aberta (agente principal da conta e do `sessionId` no escritório) sai com `open: true` e `agentId`; uma
 encerrada sem nenhuma linha com horário é omitida. A lista sai da atividade mais recente para a mais antiga.
@@ -376,6 +377,7 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | `HABBLAUD_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
 | `HABBLAUD_ALLOWED_HOSTS` | — | nomes extras aceitos no `Host`/`Origin` (vírgula); `localhost`, `*.localhost` e IPs sempre valem |
+| `HABBLAUD_PROJECT_ROOTS` | — | só sessões com cwd nessas pastas (vírgula, `~` vale). `Office.addMain` recusa o agente de fora e `Office.leaveScope` tira na hora quem passa a mexer em outra pasta. Antes de ler um transcript ou rollout (fonte, histórico, terminal), `sources/scope.ts` confere todos os cwds do arquivo inteiro (`fileScope`, com cache por tamanho e mtime); depois, cada linha nova passa por `cwdOutOfScope`. Os dados vão para `<HABBLAUD_DATA_DIR>/escopos/<hash das pastas>` |
 
 No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
 preferência): `HABBLAUD_PORT` (porta do Habblaud, padrão `4747`), `HABBLAUD_PERMISSION_TIMEOUT` (segundos de espera
