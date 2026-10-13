@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { tr } from '../../shared/i18n';
 import {
   BOOT_RECENT_MS,
   concludedByIdle,
   END_TURN_QUIET_MS,
   IDLE_TIMEOUT_MS,
   PENDING_TOOL_TIMEOUT_MS,
+  subagentRole,
   type IdleCheck,
 } from './subagents';
 
@@ -71,5 +73,27 @@ describe('concludedByIdle', () => {
     expect(IDLE_TIMEOUT_MS).toBe(120_000);
     expect(PENDING_TOOL_TIMEOUT_MS).toBe(600_000);
     expect(BOOT_RECENT_MS).toBe(90_000);
+  });
+});
+
+describe('subagentRole', () => {
+  it('SUBAG-10: o agentType do meta vence o spawnType', () => {
+    expect(subagentRole({ agentType: 'Explore' }, 'general-purpose')).toBe('Explore');
+  });
+
+  it('SUBAG-11: sem meta ou sem agentType, usa o spawnType', () => {
+    expect(subagentRole(undefined, 'general-purpose')).toBe('general-purpose');
+    expect(subagentRole({}, 'general-purpose')).toBe('general-purpose');
+  });
+
+  it('SUBAG-12: o tipo workflow-subagent aparece como Workflow, vindo do meta ou do spawnType', () => {
+    expect(subagentRole({ agentType: 'workflow-subagent' }, 'general-purpose')).toBe('Workflow');
+    expect(subagentRole(undefined, 'workflow-subagent')).toBe('Workflow');
+  });
+
+  it('SUBAG-13: sem nenhum tipo, o papel é o Subagente traduzido', () => {
+    expect(subagentRole(undefined)).toBe(tr('Subagente'));
+    expect(subagentRole({})).toBe(tr('Subagente'));
+    expect(subagentRole(undefined, '')).toBe(tr('Subagente'));
   });
 });
