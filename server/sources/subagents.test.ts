@@ -67,7 +67,7 @@ describe('concludedByIdle', () => {
   });
 
   it('SUBAG-08: silêncio 0 ou negativo nunca conclui, em qualquer combinação', () => {
-    for (const quiet of [0, -1_000]) {
+    for (const quiet of [0, -1_000, -600_000]) {
       for (const ended of [false, true]) {
         for (const pendingTool of [false, true]) {
           expect(concludedByIdle(idle(quiet, { ended, pendingTool }))).toBe(false);
@@ -97,6 +97,7 @@ describe('subagentRole', () => {
   it('SUBAG-12: o tipo workflow-subagent aparece como Workflow, vindo do meta ou do spawnType', () => {
     expect(subagentRole({ agentType: 'workflow-subagent' }, 'general-purpose')).toBe('Workflow');
     expect(subagentRole(undefined, 'workflow-subagent')).toBe('Workflow');
+    expect(subagentRole({ agentType: 'workflow-x' })).toBe('workflow-x');
   });
 
   it('SUBAG-13: sem nenhum tipo, o papel é o Subagente traduzido', () => {
@@ -203,7 +204,7 @@ describe('parseJournal', () => {
   });
 
   it('SUBAG-23: tipos parecidos mas não terminais mantêm done false', () => {
-    const outros = ['started', 'running', 'completing', 'success', 'finish', 'results', 'cancelling'];
+    const outros = ['started', 'running', 'completing', 'success', 'finish', 'results', 'cancelling', 'undone', 'subresult'];
     for (const type of outros) {
       expect(parseJournal(jl({ agentId: 'a', type })).get('a'), type).toEqual({ done: false });
     }
@@ -237,7 +238,8 @@ describe('parseJournal', () => {
 
   it('SUBAG-27: linha sem agentId ou sem type (ou com valor que não é string não vazia) não cria entrada', () => {
     const map = parseJournal(
-      jl({ type: 'started' }, { agentId: 'a' }, { agentId: 1, type: 'started' }, { agentId: 'a', type: '' }),
+      jl({ type: 'started' }, { agentId: 'a' }, { agentId: 1, type: 'started' }, { agentId: 'a', type: '' },
+        { agentId: '   ', type: 'started' }, { agentId: 'a', type: '   ' }),
     );
     expect(map.size).toBe(0);
   });
