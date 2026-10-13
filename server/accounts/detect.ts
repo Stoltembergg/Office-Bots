@@ -58,7 +58,7 @@ export interface ClaudeAlias {
   configDir?: string;
 }
 
-function splitList(v: string | undefined): string[] {
+export function splitList(v: string | undefined): string[] {
   return (v ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -218,6 +218,10 @@ const ALIAS_TOOLS: Record<Provider, { invokes: RegExp; dir: RegExp }> = {
   codex: {
     invokes: /(?:^|[\s;&|(])(?:[\w.~/-]*\/)?codex(?=$|[\s;&|)])/,
     dir: /\bCODEX_HOME=(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/,
+  },
+  grok: {
+    invokes: /(?:^|[\s;&|(])(?:[\w.~/-]*\/)?grok(?=$|[\s;&|)])/,
+    dir: /\bGROK_HOME=(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/,
   },
 };
 

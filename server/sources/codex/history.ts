@@ -10,6 +10,7 @@ import type { RecentSession } from '../../../shared/types';
 import { errMsg, log } from '../../log';
 import { HISTORY_LIMIT, HISTORY_MAX_AGE_MS } from '../history';
 import type { HistoryProvider, HistoryResolveResult } from '../source';
+import { fileScope } from '../scope';
 import { encodeCwd } from '../watcher';
 import { parseRolloutName, rolloutDirs } from './files';
 import { createCodexState, isThreadId, metaFromLine, parseRolloutLine, type RolloutMeta } from './rollout';
@@ -37,6 +38,8 @@ export interface CodexHistoryOptions {
   now?: () => number;
   maxAgeMs?: number;
   limit?: number;
+  /** Escopo por pasta (HABBLAUD_PROJECT_ROOTS): só threads com cwd aceito entram, antes do limite. */
+  inScope?: (project: string) => boolean;
 }
 
 /** O que o começo e o fim do rollout dizem sobre a conversa. */
@@ -78,35 +81,39 @@ export class CodexHistory implements HistoryProvider {
     const all: Candidate[] = [];
     for (const acc of this.opts.accounts()) all.push(...(await this.candidates(acc, now)));
     all.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    const picked = all.slice(0, this.limit);
-    const summaries = await mapLimit(picked, READ_CONCURRENCY, (c) => this.summaryOf(c));
-    const keep = new Set(picked.map((c) => c.path));
-    for (const path of this.cache.keys()) if (!keep.has(path)) this.cache.delete(path);
-
+    // Com escopo, as sessões de fora não contam no limite: lê de `limit` em `limit` até preencher a janela.
     const out: RecentSession[] = [];
-    picked.forEach((c, i) => {
-      const s = summaries[i];
-      // Subagentes e threads internos não são conversas suas.
-      if (s.meta?.internal || s.meta?.parentThreadId) return;
-      const agentId = this.opts.openAgentOf(c.account, c.threadId);
-      if (!agentId && s.firstAt === undefined && s.lastAt === undefined) return;
-      const cwd = s.meta?.cwd;
-      const r: RecentSession = {
-        account: c.account,
-        provider: 'codex',
-        sessionId: c.threadId,
-        projectDir: cwd ? encodeCwd(cwd) : relative(c.dir, join(c.path, '..')) || 'sessions',
-        lastAt: s.lastAt ?? c.mtimeMs,
-        size: c.size,
-        open: !!agentId,
-      };
-      if (cwd) r.project = cwd;
-      if (s.title) r.title = s.title;
-      if (s.firstAt !== undefined) r.firstAt = s.firstAt;
-      if (agentId) r.agentId = agentId;
-      out.push(r);
-    });
-    return out.sort((a, b) => b.lastAt - a.lastAt);
+    const keep = new Set<string>();
+    for (let from = 0; from < all.length && out.length < this.limit && (from === 0 || this.opts.inScope); from += this.limit) {
+      const picked = all.slice(from, from + this.limit);
+      const summaries = await mapLimit(picked, READ_CONCURRENCY, (c) => this.summaryOf(c));
+      for (const c of picked) keep.add(c.path);
+      picked.forEach((c, i) => {
+        const s = summaries[i];
+        // Subagentes e threads internos não são conversas suas.
+        if (s.meta?.internal || s.meta?.parentThreadId) return;
+        const agentId = this.opts.openAgentOf(c.account, c.threadId);
+        if (!agentId && s.firstAt === undefined && s.lastAt === undefined) return;
+        const cwd = s.meta?.cwd;
+        const r: RecentSession = {
+          account: c.account,
+          provider: 'codex',
+          sessionId: c.threadId,
+          projectDir: cwd ? encodeCwd(cwd) : relative(c.dir, join(c.path, '..')) || 'sessions',
+          lastAt: s.lastAt ?? c.mtimeMs,
+          size: c.size,
+          open: !!agentId,
+        };
+        if (cwd) r.project = cwd;
+        if (s.title) r.title = s.title;
+        if (s.firstAt !== undefined) r.firstAt = s.firstAt;
+        if (agentId) r.agentId = agentId;
+        if (this.opts.inScope && !(cwd && this.opts.inScope(cwd) && fileScope(c.path, this.opts.inScope).status === 'in')) return;
+        out.push(r);
+      });
+    }
+    for (const path of this.cache.keys()) if (!keep.has(path)) this.cache.delete(path);
+    return out.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
   }
 
   /**

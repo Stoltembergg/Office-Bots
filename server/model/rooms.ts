@@ -1,9 +1,72 @@
 // Salas do escritório: identidade (cwd normalizado), nome exibido e posição (slot) no prédio.
+import { posix } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** cwd normalizado: sem barras repetidas nem barra final. */
 export function normalizeCwd(cwd: string): string {
   const p = cwd.trim().replace(/\/{2,}/g, '/');
   return p.length > 1 ? p.replace(/\/+$/, '') : p;
+}
+
+/**
+ * O cwd está numa das raízes (a própria pasta ou algo dentro dela)? Sem raízes, tudo vale. Compara só o texto
+ * (normalizado): no Docker os caminhos são do host e não existem no container, então não dá para usar realpath.
+ */
+export function inRoots(cwd: string, roots: readonly string[]): boolean {
+  if (!roots.length) return true;
+  // posix.normalize resolve `.` e `..` pelo texto (o destino é o que conta); symlinks ficam como estão.
+  const c = normalizeCwd(posix.normalize(cwd));
+  return roots.some((root) => {
+    const r = normalizeCwd(posix.normalize(root));
+    return c === r || c.startsWith(r === '/' ? r : `${r}/`);
+  });
+}
+
+/** Todo `"cwd"` de um texto de JSONL (Claude Code: em cada linha; Codex: session_meta, turn_context e comandos). */
+const CWD_RE = /"cwd"\s*:\s*("(?:[^"\\]|\\.)*")/g;
+/**
+ * Na conversa do Grok também o `"current_dir"` (a pasta onde um comando rodou, no resultado dele). Só nela: no Claude
+ * Code e no Codex um campo com esse nome pode ser dado de uma ferramenta (um registro com `current_dir: "archive"`).
+ */
+const GROK_CWD_RE = /"(?:cwd|current_dir)"\s*:\s*("(?:[^"\\]|\\.)*")/g;
+
+/**
+ * Os cwds citados no texto, já como caminho (uma URI file:// do Codex vira o caminho dela). Busca no texto cru, sem
+ * parse da linha inteira: barato para rodar em toda linha e em arquivos grandes. Um valor ilegível vira '?' (fora).
+ * ponytail: casa a chave em qualquer nível (um argumento de ferramenta chamado cwd também conta) e só a grafia comum
+ * ("cwd", sem escapes); é o que o Claude Code e o Codex gravam.
+ */
+export function cwdsInText(text: string, grok = false): string[] {
+  if (!text.includes('"cwd"') && !(grok && text.includes('"current_dir"'))) return [];
+  const out: string[] = [];
+  for (const m of text.matchAll(grok ? GROK_CWD_RE : CWD_RE)) {
+    let v: unknown;
+    try {
+      v = JSON.parse(m[1]);
+    } catch {
+      out.push('?');
+      continue;
+    }
+    if (typeof v !== 'string') {
+      out.push('?');
+      continue;
+    }
+    if (v.startsWith('file://')) {
+      try {
+        v = fileURLToPath(v);
+      } catch {
+        out.push('?');
+        continue;
+      }
+    }
+    out.push(v as string);
+  }
+  return out;
+}
+
+/** A primeira pasta fora do escopo citada na linha, ou undefined. */
+export function cwdOutOfScope(line: string, scope: (cwd: string) => boolean, grok = false): string | undefined {
+  return cwdsInText(line, grok).find((cwd) => !scope(cwd));
 }
 
 function segments(path: string): string[] {

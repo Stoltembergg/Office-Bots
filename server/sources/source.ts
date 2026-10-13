@@ -14,6 +14,7 @@
 // que nunca chamasse endBoot calaria os avisos de todas).
 import type { Provider, RecentSession, SourceInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
+import { fileScope } from './scope';
 import { HISTORY_LIMIT } from './history';
 import { createTerminalParser, type TerminalParser } from './terminal';
 import { tr } from '../../shared/i18n';
@@ -36,6 +37,11 @@ export interface AgentSource {
    * Ausente, ou undefined, = o do Claude Code (createTerminalParser).
    */
   terminalParser?(agentId: string): TerminalParser | undefined;
+  /**
+   * Conferência do arquivo antes de cada leitura do terminal (Grok: continua dentro de sessions/, sem links). Ausente =
+   * sem conferência.
+   */
+  transcriptOk?(path: string): boolean;
 }
 
 /** Todas as fontes de agentes ligadas, vistas como uma só. */
@@ -106,6 +112,12 @@ export class SourceSet {
    * Parser NOVO para o terminal de um agente: o da fonte que conhece o transcript dele (transcriptPathOf); sem
    * fonte, ou se ela não tiver um próprio, o do Claude Code.
    */
+  /** Conferência do arquivo do terminal de um agente (AgentSource.transcriptOk da fonte dele), se houver. */
+  checkerFor(agentId: string): ((path: string) => boolean) | undefined {
+    const owner = this.list.find((s) => s.transcriptPathOf(agentId) !== undefined);
+    return owner?.transcriptOk ? (path) => owner.transcriptOk!(path) : undefined;
+  }
+
   parserFor(agentId: string): TerminalParser {
     const owner = this.list.find((s) => s.transcriptPathOf(agentId) !== undefined);
     return owner?.terminalParser?.(agentId) ?? createTerminalParser();
@@ -119,6 +131,12 @@ export interface HistorySession {
   path: string;
   /** Parser NOVO a cada chamada (o terminal cria outro quando o arquivo é truncado ou substituído). */
   createParser: () => TerminalParser;
+  /** Pasta da sessão segundo o índice da ferramenta (Grok): vale no escopo quando o arquivo não diz nenhuma. */
+  cwd?: string;
+  /** Conversa no formato do Grok: o escopo conta também o `current_dir` (cwdsInText). */
+  grok?: boolean;
+  /** Conferência do arquivo antes de cada leitura do terminal (Grok: dentro de sessions/, sem links). */
+  check?: (path: string) => boolean;
 }
 
 /** Resultado de resolve(): a sessão ou o erro HTTP. */
@@ -149,10 +167,15 @@ export interface HistoryProvider extends SessionLookup {
  */
 export class HistorySet implements SessionLookup {
   private readonly list_: HistoryProvider[] = [];
-
+  /**
+   * `inScope`: escopo por pasta (HABBLAUD_PROJECT_ROOTS). Sessão sem projeto conhecido fica de fora da lista, e
+   * resolve() confere todos os cwds do próprio arquivo que vai abrir (fileScope): o id sozinho pode existir em outra
+   * pasta, e uma conversa pode ter passado por outra pasta no meio.
+   */
   constructor(
     providers: readonly HistoryProvider[] = [],
     private readonly limit = HISTORY_LIMIT,
+    private readonly inScope?: (project: string) => boolean,
   ) {
     for (const p of providers) this.add(p);
   }
@@ -174,11 +197,18 @@ export class HistorySet implements SessionLookup {
     for (const f of failures) {
       log.warnOnce(`history-list:${f.provider}:${errMsg(f.err)}`, tr('Histórico de sessões ({0}): falha ao listar ({1}).', [f.provider, errMsg(f.err)]));
     }
-    return out.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
+    const inScope = this.inScope;
+    const scoped = inScope ? out.filter((s) => s.project !== undefined && inScope(s.project)) : out;
+    const result = scoped.sort((a, b) => b.lastAt - a.lastAt).slice(0, this.limit);
+    return result;
   }
 
   resolve(account: string, sessionId: string): HistoryResolveResult {
     const owner = this.list_.find((p) => p.hasAccount(account)) ?? this.list_[0];
-    return owner ? owner.resolve(account, sessionId) : { status: 404, error: tr('conta desconhecida') };
+    const found: HistoryResolveResult = owner ? owner.resolve(account, sessionId) : { status: 404, error: tr('conta desconhecida') };
+    if (!this.inScope || !('path' in found)) return found;
+    const st = fileScope(found.path, this.inScope, found.grok).status;
+    const ok = st === 'in' || (st === 'unknown' && found.cwd !== undefined && this.inScope(found.cwd));
+    return ok ? found : { status: 404, error: tr('sessão não encontrada') };
   }
 }

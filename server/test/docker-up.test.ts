@@ -13,8 +13,10 @@ import {
   hostTimeZone,
   parseArgs,
   planCodexMounts,
+  planGrokMount,
   planMounts,
   planUp,
+  projectRootsOf,
   renderOverride,
   sanitizeCachedUsage,
   yamlString,
@@ -124,6 +126,35 @@ describe('docker-up', () => {
     expect(hostTimeZone({ TZ: ':Europe/Lisbon' })).toBe('Europe/Lisbon');
     expect(hostTimeZone({ TZ: 'x"; rm -rf' })).toBeUndefined();
     expect(hostTimeZone({})).toMatch(/^[A-Za-z]/);
+  });
+
+  it('escopo por pasta: HABBLAUD_PROJECT_ROOTS expandido no host (no container o ~ seria outro) e repassado', () => {
+    const roots = projectRootsOf({ HABBLAUD_PROJECT_ROOTS: '~/Claude/empresa-a, /srv/b/' }, '/Users/fulano');
+    expect(roots).toEqual(['/Users/fulano/Claude/empresa-a', '/srv/b']);
+    expect(projectRootsOf({}, '/Users/fulano')).toEqual([]);
+    // Uma vírgula no caminho (do HOME, por exemplo) partiria a lista dentro do container: recusa.
+    expect(() => projectRootsOf({ HABBLAUD_PROJECT_ROOTS: '~/empresa-a' }, '/Users/eu,teste')).toThrow(/vírgula/);
+    const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
+    expect(renderOverride(mounts, new Date(0), undefined, undefined, [], undefined, [], roots)).toContain('HABBLAUD_PROJECT_ROOTS: "/Users/fulano/Claude/empresa-a,/srv/b"');
+    expect(renderOverride(mounts)).not.toContain('HABBLAUD_PROJECT_ROOTS');
+  });
+
+  it('Grok: monta só <GROK_HOME>/sessions em /grok/sessions; HABBLAUD_GROK=0 desliga', () => {
+    const grok = planGrokMount({}, '/Users/fulano', (p) => (p === '/Users/fulano/.grok/sessions' ? p : undefined));
+    expect(grok).toEqual({ hostDir: '/Users/fulano/.grok', binds: [{ source: '/Users/fulano/.grok/sessions', target: '/grok/sessions' }] });
+    expect(planGrokMount({ HABBLAUD_GROK: '0' }, '/Users/fulano', (p) => p)).toBeUndefined();
+    expect(planGrokMount({ GROK_HOME: '~/g' }, '/Users/fulano', (p) => p)?.hostDir).toBe('/Users/fulano/g');
+    expect(planGrokMount({}, '/Users/fulano', () => undefined)).toBeUndefined();
+    // sessions -> . (ou uma pasta acima): montaria a pasta inteira do Grok, com auth.json.
+    expect(planGrokMount({}, '/Users/fulano', (p) => (p.endsWith('/sessions') ? '/Users/fulano/.grok' : p))).toBeUndefined();
+    expect(planGrokMount({}, '/Users/fulano', (p) => (p.endsWith('/sessions') ? '/Users' : p))).toBeUndefined();
+    const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
+    const yml = renderOverride(mounts, new Date(0), undefined, undefined, [], undefined, [], [], grok);
+    expect(yml).toContain('HABBLAUD_GROK_DIR: "/grok"');
+    expect(yml).toContain('HABBLAUD_GROK_HOST_DIR: "/Users/fulano/.grok"');
+    expect(yml).toContain('target: "/grok/sessions"');
+    expect(yml).not.toContain('auth.json');
+    expect(renderOverride(mounts)).not.toContain('HABBLAUD_GROK');
   });
 });
 

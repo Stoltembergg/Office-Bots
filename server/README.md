@@ -144,7 +144,7 @@ local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`)
 ## Linha do tempo (timelapse)
 
 `history/timeline.ts` grava o escritório para o timelapse do cliente em `<HABBLAUD_DATA_DIR>/timeline/AAAA-MM-DD.jsonl`
-(dia local do servidor; no Docker, `/data/timeline`). Formato e reconstrução em `shared/timeline.ts`; um registro por linha:
+(dia local do servidor; no Docker, `/data/timeline`; com `HABBLAUD_PROJECT_ROOTS`, dentro de `escopos/<hash>`). Formato e reconstrução em `shared/timeline.ts`; um registro por linha:
 
 - `{"t":"k", at, v, every, boot?, rooms, agents, accounts}`: **keyframe**, o estado completo. Abre cada arquivo, se
   repete a cada 5 min (`every`) e marca o boot do servidor;
@@ -205,7 +205,8 @@ Estáticos (`http/static.ts`): `/bundle/*` (saída do Vite com hash, `build.asse
 cada conta (nome com formato de UUID; subagentes ficam de fora) modificados nos últimos 7 dias, os 150 mais recentes.
 De cada arquivo lê só os primeiros 64 KB (projeto = `cwd` da primeira linha que o traz, primeira atividade, o primeiro
 prompt) e os últimos 64 KB (título e última atividade; sem nenhuma linha de título ali, procura nos últimos 512 KB),
-com leitura assíncrona e um cache por caminho válido enquanto mtime e tamanho não mudam. O título segue o do agente
+com leitura assíncrona e um cache por caminho válido enquanto mtime e tamanho não mudam (com `HABBLAUD_PROJECT_ROOTS`, o
+arquivo inteiro também passa por `fileScope`, que só deixa entrar a sessão cujos cwds são todos de dentro). O título segue o do agente
 (`custom-title`/`custom-title.json` > `agent-name` > `ai-title` > `last-prompt`) e, sem nenhum, é o primeiro prompt.
 Sessão aberta (agente principal da conta e do `sessionId` no escritório) sai com `open: true` e `agentId`; uma
 encerrada sem nenhuma linha com horário é omitida. A lista sai da atividade mais recente para a mais antiga.
@@ -354,6 +355,37 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   `/ack` (mesma trava das mensagens). `canMessage` = há entregador (binário achado, ou auxiliar visto há até 10 s).
   Retorno 0 = entrou na fila da sessão (`delivered`); o Codex consome a fila a cada ~10 s, quando a sessão fica ociosa.
 
+## Grok
+
+Fonte `sources/grok/` (`provider: 'grok'`), ligada quando há `GROK_HOME` (ou `~/.grok`) com `sessions/` ou
+`active_sessions.json`. Uma conta só (`.grok`). Ids: `<conta>:<sessionId>`.
+
+- **Sessões abertas** (`files.ts`, `source.ts`): `active_sessions.json` (`session_id`, `pid`, `cwd` absoluto), com o
+  pid vivo, do executável `grok` (nome exato, `ps -o comm=`) e iniciado antes do `opened_at` (`ps -o lstart=`, 2 min
+  de folga; cache de 60 s). Pasta mudou no registro = sessão nova. Tudo lido
+  fica dentro do realpath de `sessions/`, sem link em nenhum componente (grupo, sessão, arquivo), conferido de novo a
+  cada leitura; o mesmo id em outra pasta não serve (e sem cwd, id ambíguo = 404). No Docker a sessão só entra com
+  um `summary.json` válido (para separar o `grok -p`). Pasta mudou no registro: sai sem graça e volta na sala nova.
+  No Docker (`HABBLAUD_GROK_DIR=/grok`, só `sessions/` montada): `updates.jsonl` modificado nos últimos 30 min, cwd do
+  `summary.json` (o Grok troca o `active_sessions.json` por rename; um bind de arquivo único ficaria velho).
+- **Conversa** (`updates.ts`): `sessions/<cwd codificado>/<id>/updates.jsonl` (updates do ACP). `user_message_chunk`
+  abre o turno, `turn_completed` fecha (e soma os tokens); `tool_call` vira atividade no vocabulário do Claude Code
+  (`read_file` = Read, `run_terminal_command` = Bash, `search_replace` = Edit...); `plan` = tarefas. Título e modelo
+  do `summary.json`; `session_kind: 'subagent'` fica de fora.
+- **Escopo por pasta:** o cwd da lista (ou do `summary.json`) precisa ser de dentro; `fileScope` no arquivo inteiro e
+  `cwdOutOfScope` em cada linha nova (uma tarefa em segundo plano grava o próprio `cwd`; um resultado de Bash, o
+  `current_dir`, que `cwdsInText(…, true)` conta só na conversa do Grok: no Claude Code e no Codex esse nome pode
+  ser dado de uma ferramenta). Como a conversa nem sempre tem `cwd`, o
+  terminal aceita arquivo sem nenhum só para agentes do Grok, pela sala (e o histórico, pelo `cwd` do índice,
+  `HistorySession.cwd`); Claude Code e Codex continuam exigindo a pasta no arquivo.
+- **Uso** (`usageTurns`/`usageWindow`, a cada 60 s): os turnos dos `usage.json` de todas as sessões (mesma
+  conferência de links; cache por mtime), com `endedAt`, custo (`costUsdTicks` / 10^10 = dólares, preço da API) e
+  `totalTokens`. Só a janela da semana (o plano do Grok não tem a de 5 h), como as do Claude Code: abre no primeiro
+  turno depois da anterior (na hora cheia) e dura 7 dias. Sem limite informado, 100% = o maior gasto já registrado
+  numa semana; semana fechada sem turno novo = 0%. `spend.sevenDay` leva custo e tokens dos últimos 7 dias para a dica. Empurrado com
+  `accounts.setUsage` (`source: 'grok'`); é o uso da conta inteira (o escopo por pasta não filtra).
+- Sem permissões, mensagens nem limite de uso (o Grok não informa).
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Uso |
@@ -363,6 +395,8 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | `HABBLAUD_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal |
 | `HABBLAUD_TERMINAL` | — | `0` desliga o terminal, as permissões e as mensagens pelo escritório (não liga com a porta exposta) |
 | `HABBLAUD_CODEX` | ligado | `0` desliga a fonte do Codex |
+| `HABBLAUD_GROK` | ligado | `0` desliga a fonte do Grok |
+| `HABBLAUD_GROK_DIR` | `GROK_HOME` ou `~/.grok` | pasta do Grok lida pelo servidor (o Docker usa `/grok`); `HABBLAUD_GROK_HOST_DIR` = a do host, para exibir |
 | `HABBLAUD_CODEX_DIRS` | — | pastas do Codex separadas por vírgula; substitui a detecção (`CODEX_HOME` e `~/.codex*`) |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0`, `false`, `off` ou `no` desligam só as mensagens pelo escritório |
@@ -376,6 +410,7 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | `HABBLAUD_ACCOUNTS` | — | JSON com metadados das contas vindos do host (Docker): `[{id, configDir, mountDir, short, name, email, organization, plan, color, cachedUsage}]`, casados por `id`, `mountDir` ou `configDir` |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` (Docker: `/usage`) | pasta do uso capturado pelo tap de statusline ou pelo mod do Claude Code, relida a cada 5 s |
 | `HABBLAUD_ALLOWED_HOSTS` | — | nomes extras aceitos no `Host`/`Origin` (vírgula); `localhost`, `*.localhost` e IPs sempre valem |
+| `HABBLAUD_PROJECT_ROOTS` | — | só sessões com cwd nessas pastas (vírgula, `~` vale). `Office.addMain` recusa o agente de fora e `Office.leaveScope` tira na hora quem passa a mexer em outra pasta. Antes de ler um transcript ou rollout (fonte, histórico, terminal), `sources/scope.ts` confere todos os cwds do arquivo inteiro (`fileScope`, com cache por tamanho e mtime); depois, cada linha nova passa por `cwdOutOfScope`. Os dados vão para `<HABBLAUD_DATA_DIR>/escopos/<hash das pastas>` |
 
 No hook de permissão (ambiente do Claude Code; os argumentos `--port`/`--timeout` gravados pelo instalador têm
 preferência): `HABBLAUD_PORT` (porta do Habblaud, padrão `4747`), `HABBLAUD_PERMISSION_TIMEOUT` (segundos de espera

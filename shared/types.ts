@@ -14,7 +14,7 @@ export type AgentKind = 'main' | 'sub';
  * - claude: Claude Code;
  * - codex: OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME).
  */
-export type Provider = 'claude' | 'codex';
+export type Provider = 'claude' | 'codex' | 'grok';
 
 /**
  * Estado de alto nível de um agente — é o que dirige o comportamento do personagem.
@@ -285,9 +285,10 @@ export interface AccountUsage {
    * - 'statusline': capturado ao vivo e gravado em ~/.habblaud/usage/<conta>.json pelo mod do Habblaud
    *   (mod/habblaud, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
    * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage);
-   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda).
+   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda);
+   * - 'grok': soma dos `usage.json` das sessões do Grok (consumo, sem limite: só `spend`, nunca janelas).
    */
-  source: 'cache' | 'statusline' | 'codex';
+  source: 'cache' | 'statusline' | 'codex' | 'grok';
   /** Quem gravou o arquivo ao vivo ('statusline'): o mod do Habblaud no Claude Code ou o tap de statusline. */
   via?: 'mod' | 'tap';
   /**
@@ -295,8 +296,16 @@ export interface AccountUsage {
    * esgotados). Não é "0% usado": as janelas ficam ausentes.
    */
   noQuota?: boolean;
+  /** Custo e tokens por trás da barra (Grok: só a semana, que é a janela do plano dele). */
+  spend?: { sevenDay: UsageSpend };
   /** Quando os números foram obtidos na origem (epoch ms). */
   fetchedAt: number;
+}
+
+/** Consumo numa janela: custo em dólar (o que o Grok registra, no preço da API) e tokens. */
+export interface UsageSpend {
+  costUsd: number;
+  tokens: number;
 }
 
 /** Uma conta do Claude (um config dir: ~/.claude, ~/.claude-conta2, ...) ou do Codex (um CODEX_HOME: ~/.codex). */

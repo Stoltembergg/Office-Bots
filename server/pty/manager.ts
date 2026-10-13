@@ -73,6 +73,8 @@ export interface PtyManagerOptions {
   claudeBin: string;
   accounts: () => PtyAccount[];
   agent: (id: string) => PtyAgentRef | undefined;
+  /** Escopo por pasta (HABBLAUD_PROJECT_ROOTS): terminal novo em pasta de fora é recusado. Ausente = qualquer pasta. */
+  inScope?: (cwd: string) => boolean;
   onChange: () => void;
   env?: NodeJS.ProcessEnv;
   now?: () => number;
@@ -384,6 +386,7 @@ export class PtyManager {
       // tratado abaixo
     }
     if (!isDir) throw new PtyError(400, tr('pasta não encontrada: {0}', [cwd]));
+    if (this.opts.inScope && !this.opts.inScope(cwd)) throw new PtyError(403, tr('pasta fora das pastas deste escritório'));
     const accounts = this.opts.accounts();
     const account = typeof p.account === 'string' ? accounts.find((a) => a.id === p.account) : (accounts.find((a) => a.isDefault) ?? accounts[0]);
     if (!account) throw new PtyError(400, tr('conta desconhecida'));

@@ -157,6 +157,13 @@ describe('PtyManager: assumir', () => {
     expect(s.killPid).not.toHaveBeenCalled();
   });
 
+  it('escopo por pasta: terminal novo em pasta de fora é recusado', () => {
+    const s = setup({ inScope: () => false });
+    expect(() => s.manager.create({ cwd: tmpdir() })).toThrow(PtyError);
+    expect(s.spawned).toEqual([]);
+    expect(() => setup({ inScope: () => true }).manager.create({ cwd: tmpdir() })).not.toThrow();
+  });
+
   it('limite de terminais: recusa antes de encerrar', async () => {
     const s = setup();
     for (let i = 0; i < MAX_PTYS; i++) s.manager.create({ cwd: tmpdir() });

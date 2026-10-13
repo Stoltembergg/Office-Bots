@@ -7,12 +7,14 @@
 // Conta do Codex: os números vêm dos arquivos de sessão dele, que só se renovam enquanto alguma sessão roda; por isso
 // a idade ("há 12 min") fica sempre à mostra. Sem cota nem créditos ("sem cota") nunca vira 0%. Não há o que
 // instalar para o uso: "Como funciona" abre a ajuda na seção do Codex. Sem Opus/Sonnet nem e-mail (só o plano).
-import type { AccountInfo } from '../../../shared/types';
+// Conta do Grok: o plano dele só tem a janela da semana (5 h fica "—"), e ele não informa o limite, então 100% é o maior
+// gasto já registrado numa semana (que abre no primeiro turno, como as do Claude Code); a dica mostra custo e tokens.
+import type { AccountInfo, UsageSpend } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
-import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
+import { FIVE_HOURS_MS, formatTokens, formatUSD, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
 import { ICONS } from './icons';
-import { isCodex } from './provider';
+import { isCodex, providerOf } from './provider';
 import { usageRowFits } from './usage-row';
 import { createAccountChip, createProviderTag, updateAccountChip, updateProviderTag } from './widgets';
 import { tr } from '../../../shared/i18n';
@@ -21,7 +23,13 @@ export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], s
   cache: tr('cache do /usage do Claude Code'),
   statusline: tr('ao vivo (statusline do Claude Code)'),
   codex: tr('arquivos do Codex'),
+  grok: tr('arquivos do Grok'),
 };
+
+/** Consumo de uma janela: "US$ 1,75 · 1,1 k tokens". */
+export function spendText(s: UsageSpend): string {
+  return tr('{0} · {1} tokens', [formatUSD(s.costUsd), formatTokens(s.tokens)]);
+}
 
 /** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do Habblaud ou pelo tap. */
 export function sourceLabel(u: NonNullable<AccountInfo['usage']>): string {
@@ -178,6 +186,7 @@ export function showsUsageAge(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'pr
 export function usageSubtitle(a: Pick<AccountInfo, 'email' | 'plan' | 'configDir' | 'provider'>): string {
   if (a.email) return a.email;
   if (isCodex(a)) return a.plan ? tr('plano {0}', [a.plan]) : 'Codex';
+  if (providerOf(a) === 'grok') return tr('100% = seu maior gasto');
   return a.configDir;
 }
 
@@ -185,7 +194,7 @@ export function usageSubtitle(a: Pick<AccountInfo, 'email' | 'plan' | 'configDir
 export function usageMessage(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>): [string, string] {
   const state = cardState(a);
   if (state === 'noquota') return [tr('sem cota'), tr('sem cota')];
-  if (isCodex(a)) return [tr('sem dados ainda'), tr('sem dados')];
+  if (isCodex(a) || providerOf(a) === 'grok') return [tr('sem dados ainda'), tr('sem dados')];
   return [tr('sem dados de uso'), tr('sem dados')];
 }
 
@@ -340,7 +349,7 @@ export class UsageCards {
     updateAccountChip(r.chip, a);
     setStyleVar(card, '--acc', a.color);
     setText(r.name, a.name);
-    updateProviderTag(r.prov, codex ? 'codex' : 'claude', a.name);
+    updateProviderTag(r.prov, providerOf(a), a.name);
     setText(r.email, usageSubtitle(a));
     setAttr(card, 'aria-label', tr('{0}{1}: uso do plano', [a.name, codex ? ' (Codex)' : '']));
 
@@ -381,7 +390,7 @@ export class UsageCards {
     setText(r.msgLong, msgLong);
     setText(r.msgShort, msgShort);
     setHidden(r.msg, state !== 'empty' && state !== 'noquota');
-    setHidden(r.how, state === 'noquota');
+    setHidden(r.how, state === 'noquota' || providerOf(a) === 'grok');
     r.msg.classList.toggle('is-noquota', state === 'noquota');
     setTitle(r.msg, state === 'noquota' ? codexUsageNote(a, now) : '');
     setText(r.howLong, codex ? tr('Como funciona') : tr('Como ativar'));
@@ -411,6 +420,9 @@ export class UsageCards {
       if (opus) rows.push([tr('Opus (semana)'), opus.summary]);
       if (sonnet) rows.push([tr('Sonnet (semana)'), sonnet.summary]);
     }
+    if (u?.spend) {
+      rows.push([tr('Gasto em 7 dias'), spendText(u.spend.sevenDay)]);
+    }
     if (u && state === 'noquota') rows.push([tr('Cota'), tr('sem cota nem créditos agora')]);
     if (u && (state !== 'empty' || codex)) {
       rows.push([tr('Origem'), sourceLabel(u)]);
@@ -418,6 +430,13 @@ export class UsageCards {
     }
     syncRows(r.tipRows, rows);
 
+    // Grok: não há limite nem o que instalar; os números são o que ele registra em cada sessão.
+    if (providerOf(a) === 'grok') {
+      setText(r.tipNote, tr('O Grok só tem o limite da semana, e não informa quanto é: 100% é o seu maior gasto já registrado numa semana, somado do usage.json de cada sessão. O custo é o preço da API da xAI; no plano por assinatura, é só uma referência.'));
+      setHidden(r.tipNote, false);
+      setHidden(r.tipSetup, true);
+      return;
+    }
     // Codex: a explicação dele, sem o passo a passo do Claude Code (não há o que instalar para o uso).
     if (codex) {
       const note = codexUsageNote(a, now);

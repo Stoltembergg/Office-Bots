@@ -30,7 +30,7 @@ import { describeGitHubEvent, githubEventKey, RoomEffects, type GitHubEvent } fr
 import { hash32 } from '../../shared/hash';
 import { applyPermission } from '../permissions/registry';
 import type { NameStore, StoredCharacter } from './names';
-import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
+import { inRoots, normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 import { tr } from '../../shared/i18n';
 
 export const OFFLINE_GRACE_MS = 20_000;
@@ -53,6 +53,8 @@ const FEED_LIMIT = 200;
 
 export interface OfficeDeps {
   names: NameStore;
+  /** Só entram agentes com cwd dentro destas pastas (HABBLAUD_PROJECT_ROOTS); vazio ou ausente = todos. */
+  projectRoots?: readonly string[];
   /** Nome escolhido pelo usuário para a sala da pasta (model/room-aliases.ts), se houver. */
   roomAlias?: (path: string) => string | undefined;
   version: string;
@@ -310,6 +312,31 @@ export class Office {
 
   // ---------------------------------------------------------------- agentes principais
 
+  /**
+   * O cwd está no escopo (OfficeDeps.projectRoots)? As fontes perguntam antes, para nem ler a sessão de fora. Função
+   * fixa (arrow), para servir de chave ao cache de fileScope.
+   */
+  readonly inScope = (cwd: string): boolean => inRoots(cwd, this.deps.projectRoots ?? []);
+
+  /** Há escopo por pasta (OfficeDeps.projectRoots não vazio). */
+  get scoped(): boolean {
+    return !!this.deps.projectRoots?.length;
+  }
+
+  /**
+   * A sessão passou a mexer em outra pasta, fora do escopo: o agente (e os subagentes dele) sai agora, sem o período
+   * de graça do closeMain, para nada do que vem depois aparecer (atividade, terminal aberto, permissão).
+   */
+  leaveScope(id: string): void {
+    if (!this.agents.has(id)) return;
+    for (const sub of this.descendants(id)) this.agents.delete(sub.info.id);
+    this.agents.delete(id);
+    const occupied = new Set([...this.agents.values()].map((r) => r.info.roomId));
+    for (const room of [...this.rooms.keys()]) if (!occupied.has(room)) this.rooms.delete(room);
+    this.recomputeRoomNames();
+    this.markDirty();
+  }
+
   addMain(p: MainInput): void {
     const now = this.now();
     const existing = this.agents.get(p.id);
@@ -319,6 +346,9 @@ export class Office {
       this.setStatus(p.id, p.status, p.waitingFor);
       return;
     }
+    // Fora do escopo: o agente nunca existe aqui, então subagentes, atividades, terminal, permissões e mensagens dele
+    // também ficam de fora (todos procuram o agente no Office).
+    if (!this.inScope(p.cwd)) return;
     const roomId = normalizeCwd(p.cwd);
     this.ensureRoom(roomId, now);
     const chosen = this.roomCharacter(roomId, p.id, p.sessionId);
