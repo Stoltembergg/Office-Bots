@@ -14,17 +14,17 @@ run('CodexAppServer', () => {
     server?.stop();
     tmp?.cleanup();
   });
-  function setup(onAgentRequest: (r: CodexAgentRequest) => Promise<CodexAgentReply> = async () => ({ kind: 'approval', allow: false })) {
+  function setup(onAgentRequest: (r: CodexAgentRequest) => Promise<CodexAgentReply> = async () => ({ kind: 'approval', allow: false }), extra: { env?: Record<string, string>; timeoutMs?: number } = {}) {
     tmp = tempDir();
     const log = join(tmp.dir, 'calls.jsonl');
     const closed: Array<{ threads: string[]; reason: string }> = [];
     server = new CodexAppServer({
       bin: writeFakeCodexApp(tmp.dir),
       codexHome: join(tmp.dir, '.codex'),
-      env: { ...process.env, FAKE_CODEX_APP_LOG: log },
+      env: { ...process.env, FAKE_CODEX_APP_LOG: log, ...extra.env },
       onAgentRequest,
       onClosed: (threads, reason) => closed.push({ threads, reason }),
-      requestTimeoutMs: 2_000,
+      requestTimeoutMs: extra.timeoutMs ?? 2_000,
     });
     const calls = () => readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { method?: string; params?: unknown; codexHome?: string; approval?: unknown; answers?: unknown });
     return { server, calls, closed };
@@ -81,6 +81,42 @@ run('CodexAppServer', () => {
     const again = await server.startThread({ cwd: '/p' });
     expect(server.hosts(again)).toBe(true);
   });
+
+  it('initialize pede a API experimental (a pergunta do agente é um método experimental)', async () => {
+    const { server, calls } = setup();
+    await server.startThread({ cwd: '/p' });
+    expect(calls().find((c) => c.method === 'initialize')?.params).toMatchObject({ capabilities: { experimentalApi: true } });
+  });
+
+  it('initialize que estoura o prazo: o processo é descartado e o pedido seguinte sobe outro', async () => {
+    const marker = join(tempDir().dir, 'init-once');
+    const { server } = setup(undefined, { env: { FAKE_CODEX_APP_HANG_INIT_ONCE: marker }, timeoutMs: 300 });
+    await expect(server.startThread({ cwd: '/p' })).rejects.toThrow(/initialize/);
+    const id = await server.startThread({ cwd: '/p' });
+    expect(server.hosts(id)).toBe(true);
+  });
+
+  it('turn/steer que estoura o prazo falha a entrega, sem mandar de novo por turn/start', async () => {
+    const { server, calls } = setup(undefined, { timeoutMs: 1_000 });
+    const id = await server.startThread({ cwd: '/p', prompt: 'demorar' });
+    // Espera o turno abrir (notificação turn/started) antes de mandar: senão a mensagem iria por turn/start.
+    for (let i = 0; i < 50 && !calls().some((c) => c.method === 'turn/start'); i++) await settle();
+    await new Promise((r) => setTimeout(r, 300));
+    await expect(server.send(id, 'devagar')).rejects.toThrow(/prazo/);
+    expect(calls().filter((c) => c.method === 'turn/start')).toHaveLength(1);
+  });
+
+  it('stop seguido de um processo novo: a saída atrasada do antigo não apaga as sessões do novo', async () => {
+    const { server, closed } = setup();
+    const old = await server.startThread({ cwd: '/p' });
+    server.stop();
+    expect(server.hosts(old)).toBe(false);
+    expect(closed).toHaveLength(1);
+    const fresh = await server.startThread({ cwd: '/p' });
+    await settle();
+    expect(server.hosts(fresh)).toBe(true);
+    expect(closed).toHaveLength(1);
+  });
 });
 
 describe('approvalResponse: cada método do Codex com o formato de resposta dele', () => {
@@ -88,7 +124,7 @@ describe('approvalResponse: cada método do Codex com o formato de resposta dele
     expect(approvalResponse('item/commandExecution/requestApproval', {}, true)).toEqual({ decision: 'accept' });
     expect(approvalResponse('item/fileChange/requestApproval', {}, false)).toEqual({ decision: 'decline' });
     expect(approvalResponse('execCommandApproval', {}, true)).toEqual({ decision: 'approved' });
-    expect(approvalResponse('applyPatchApproval', {}, false)).toEqual({ decision: 'denied' });
+    expect(approvalResponse('applyPatchApproval', {}, false)).toEqual({ decision: { denied: { rejection: 'recusado no Habblaud' } } });
     const permissions = { network: { enabled: true } };
     expect(approvalResponse('item/permissions/requestApproval', { permissions }, true)).toEqual({ permissions, scope: 'turn' });
     expect(approvalResponse('item/permissions/requestApproval', { permissions }, false)).toEqual({ permissions: {}, scope: 'turn' });

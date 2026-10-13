@@ -81,7 +81,7 @@ export class CodexRuntime implements AgentRuntime {
       return { kind: 'hosted', agentId };
     }
     if (app.hosts(a.sessionId)) return { kind: 'hosted', agentId };
-    const tui = await (this.opts.tui?.find ?? findCodexTui)(home, a.sessionId);
+    const tui = await this.findTui(home, a.sessionId);
     if (tui) {
       const result = await (this.opts.tui?.stop ?? stopCodexTui)(tui);
       if (result === 'changed') throw new RuntimeError(409, tr('o processo do Codex mudou; nada foi encerrado'));
@@ -105,7 +105,7 @@ export class CodexRuntime implements AgentRuntime {
       await app.release(a.sessionId);
       return;
     }
-    const tui = await (this.opts.tui?.find ?? findCodexTui)(home, a.sessionId);
+    const tui = await this.findTui(home, a.sessionId);
     if (!tui) throw new RuntimeError(404, tr('não achei o processo desta sessão do Codex'));
     const result = await (this.opts.tui?.stop ?? stopCodexTui)(tui);
     if (result === 'changed' || result === 'stuck') throw new RuntimeError(409, tr('não consegui encerrar a sessão do Codex'));
@@ -144,6 +144,15 @@ export class CodexRuntime implements AgentRuntime {
       answers[q.id] = [...(a.options ?? []).map((i) => q.options[i]?.label).filter((x): x is string => !!x), ...(a.other ? [a.other] : [])];
     }
     return { kind: 'question', answers };
+  }
+
+  /** TUI dono do thread; não deu para conferir quem segura o lock = 409 com o motivo (nunca "já saiu"). */
+  private async findTui(home: string, thread: string) {
+    try {
+      return await (this.opts.tui?.find ?? findCodexTui)(home, thread);
+    } catch (err) {
+      throw new RuntimeError(409, (err as Error).message);
+    }
   }
 
   private main(agentId: string): AgentInfo {

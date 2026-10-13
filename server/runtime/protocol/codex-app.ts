@@ -66,8 +66,10 @@ export class CodexAppServer {
         await peer.request('turn/steer', { threadId, expectedTurnId: turn, input });
         return;
       } catch (err) {
-        // O turno acabou entre a leitura e o envio: vira um turno novo.
-        if (!(err instanceof JsonRpcError) || peer.closed) throw err;
+        // Só quando o Codex RECUSOU o steer (respondeu com erro: o turno acabou entre a leitura e o envio) a mensagem
+        // vira um turno novo. Prazo ou processo fechado: não dá para saber se o steer entrou, então a entrega falha
+        // (mandar de novo duplicaria a mensagem).
+        if (!(err instanceof JsonRpcError) || err.code === undefined || peer.closed) throw err;
       }
     }
     const r = rec(await peer.request('turn/start', { threadId, input }));
@@ -87,14 +89,28 @@ export class CodexAppServer {
   }
 
   stop(): void {
-    this.conn?.kill();
+    const conn = this.conn;
     this.conn = undefined;
+    // As sessões saem agora: a saída do processo chega depois e é ignorada (ver onClose em connect).
+    const threads = [...this.hosted.keys()];
+    this.hosted.clear();
+    conn?.kill();
+    if (threads.length) this.opts.onClosed?.(threads, tr('o Habblaud parou o processo do Codex'));
   }
+
 
   private async peer(): Promise<JsonRpcPeer> {
     if (!this.conn || this.conn.peer.closed) this.conn = this.connect();
-    await this.conn.ready;
-    return this.conn.peer;
+    const conn = this.conn;
+    try {
+      await conn.ready;
+    } catch (err) {
+      // initialize sem resposta (ou recusado): o processo não serve; descarta para o próximo pedido subir outro.
+      if (this.conn === conn) this.conn = undefined;
+      conn.kill();
+      throw err;
+    }
+    return conn.peer;
   }
 
   private connect(): { peer: JsonRpcPeer; kill: () => void; ready: Promise<void> } {
@@ -105,12 +121,15 @@ export class CodexAppServer {
       onNotification: (method, params) => this.onNotification(method, rec(params)),
     });
     peer.onClose((reason) => {
+      // A saída atrasada de um processo já trocado (stop, initialize descartado) não mexe nas sessões do atual.
+      if (this.conn && this.conn.peer !== peer) return;
       const threads = [...this.hosted.keys()];
       this.hosted.clear();
       if (threads.length) this.opts.onClosed?.(threads, reason);
     });
     const ready = peer
-      .request('initialize', { clientInfo: { name: 'habblaud', version: '1' } })
+      // experimentalApi: a pergunta do agente (item/tool/requestUserInput) é um método experimental do app-server.
+      .request('initialize', { clientInfo: { name: 'habblaud', version: '1' }, capabilities: { experimentalApi: true } })
       .then(() => peer.notify('initialized'));
     return { peer, kill, ready };
   }
@@ -162,6 +181,6 @@ export class CodexAppServer {
  */
 export function approvalResponse(method: string, params: Record<string, unknown>, allow: boolean): Record<string, unknown> {
   if (method === 'item/permissions/requestApproval') return { permissions: allow ? (params.permissions ?? {}) : {}, scope: 'turn' };
-  if (method === 'execCommandApproval' || method === 'applyPatchApproval') return { decision: allow ? 'approved' : 'denied' };
+  if (method === 'execCommandApproval' || method === 'applyPatchApproval') return { decision: allow ? 'approved' : { denied: { rejection: tr('recusado no Habblaud') } } };
   return { decision: allow ? 'accept' : 'decline' };
 }

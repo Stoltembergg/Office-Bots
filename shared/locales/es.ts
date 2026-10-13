@@ -2614,4 +2614,7 @@ export const ES: Readonly<Record<string, string>> = {
   "ação desconhecida": "acción desconocida",
   "✓ Codex: {0} ({1})": "✓ Codex: {0} ({1})",
   "✗ Codex: {0}: {1}": "✗ Codex: {0}: {1}",
+  "não consegui conferir o processo que está com esta sessão do Codex": "no pude verificar el proceso que tiene esta sesión de Codex",
+  "recusado no Habblaud": "rechazado en Habblaud",
+  "o Habblaud parou o processo do Codex": "Habblaud detuvo el proceso de Codex",
 };

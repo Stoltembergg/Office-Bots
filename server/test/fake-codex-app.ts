@@ -4,7 +4,9 @@
 // - "pedir-aprovacao": manda item/commandExecution/requestApproval e escreve a decisão no log;
 // - "perguntar": manda item/tool/requestUserInput e escreve as respostas no log;
 // - "morrer": sai com código 3 no meio do turno;
-// - "demorar": o turno fica aberto (sem turn/completed) até um turn/interrupt.
+// - "demorar": o turno fica aberto (sem turn/completed) até um turn/interrupt;
+// - "devagar" num turn/steer: nunca responde (prazo do cliente).
+// FAKE_CODEX_APP_HANG_INIT_ONCE=<arquivo>: o primeiro initialize nunca responde (cria o arquivo); os seguintes respondem.
 import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -43,12 +45,12 @@ rl.on('line', (line) => {
   const ok = (result) => send({ id: m.id, result });
   const fail = (code, message) => send({ id: m.id, error: { code, message } });
   switch (m.method) {
-    case 'initialize': return ok({ userAgent: 'fake', codexHome: process.env.CODEX_HOME });
+    case 'initialize': { const once = process.env.FAKE_CODEX_APP_HANG_INIT_ONCE; if (once && !fs.existsSync(once)) { fs.writeFileSync(once, ''); return; } return ok({ userAgent: 'fake', codexHome: process.env.CODEX_HOME }); }
     case 'initialized': return;
     case 'thread/start': { const id = '01a2' + String(++seq).padStart(4, '0') + '-0000-7000-8000-000000000000'; threads.set(id, null); return ok({ thread: { id, cwd: p.cwd } }); }
     case 'thread/resume': if (String(p.threadId).startsWith('0199aaaa')) return fail(-32603, 'no rollout found for thread id ' + p.threadId); threads.set(p.threadId, null); return ok({ thread: { id: p.threadId } });
     case 'turn/start': if (!threads.has(p.threadId)) return fail(-32600, 'thread not loaded'); return ok({ turn: { id: startTurn(p.threadId, (p.input && p.input[0] && p.input[0].text) || ''), status: 'inProgress', items: [] } });
-    case 'turn/steer': { const t = threads.get(p.threadId); if (!t || t !== p.expectedTurnId) return fail(-32600, 'no active turn'); return ok({ turnId: t }); }
+    case 'turn/steer': { const t = threads.get(p.threadId); if (!t || t !== p.expectedTurnId) return fail(-32600, 'no active turn'); if (p.input && p.input[0] && p.input[0].text === 'devagar') return; return ok({ turnId: t }); }
     case 'turn/interrupt': { endTurn(p.threadId); return ok({}); }
     case 'thread/unsubscribe': threads.delete(p.threadId); return ok({});
     default: return fail(-32601, 'unknown method ' + m.method);

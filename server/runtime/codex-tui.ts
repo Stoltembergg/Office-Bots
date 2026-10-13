@@ -3,6 +3,8 @@
 // encerrar, confere que o pid ainda é o mesmo processo (nome e horário de início), como o PtyManager faz no Claude.
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
+import { tr } from '../../shared/i18n';
+import { readProcInfo } from '../pty/procinfo';
 
 export interface TuiProcess {
   pid: number;
@@ -23,21 +25,20 @@ export const lsofHolders: HoldersOf = async (file) =>
     .map((l) => Number.parseInt(l, 10))
     .filter((n) => Number.isInteger(n) && n > 0);
 
-export const psProc: ProcName = async (pid) => {
-  const out = (await run('ps', ['-o', 'lstart=,comm=', '-p', String(pid)])).trim();
-  const m = /^(\w{3} \w{3}\s+\d+ [\d:]+ \d{4})\s+(.+)$/.exec(out);
-  if (!m) return undefined;
-  const startMs = Date.parse(m[1]);
-  return Number.isFinite(startMs) ? { name: m[2].split('/').pop() ?? m[2], startMs } : undefined;
-};
+/** Nome e início do processo: o mesmo `ps` em inglês (LC_ALL=C) que o PtyManager usa no Claude. */
+export const psProc: ProcName = (pid) => readProcInfo(pid);
 
 export async function findCodexTui(codexHome: string, threadId: string, deps: { holders?: HoldersOf; proc?: ProcName } = {}): Promise<TuiProcess | undefined> {
   if (!UUID.test(threadId)) return undefined;
   const pids = await (deps.holders ?? lsofHolders)(join(codexHome, 'thread-writer-locks', `${threadId}.lock`));
+  let unreadable = false;
   for (const pid of pids) {
     const p = await (deps.proc ?? psProc)(pid);
-    if (p?.name === 'codex') return { pid, startMs: p.startMs };
+    if (!p) unreadable = true;
+    else if (p.name === 'codex') return { pid, startMs: p.startMs };
   }
+  // Há quem segure o lock e não deu para conferir: nunca tratar como "o TUI já saiu" (o Assumir retomaria com ele vivo).
+  if (unreadable) throw new Error(tr('não consegui conferir o processo que está com esta sessão do Codex'));
   return undefined;
 }
 

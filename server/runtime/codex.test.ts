@@ -286,3 +286,15 @@ describe('CodexRuntime', () => {
     expect(app.hosts(T)).toBe(true);
   });
 });
+
+describe('CodexRuntime: processo do TUI que não dá para conferir', () => {
+  it('assumir e encerrar recusam com 409 e o motivo, sem retomar nem encerrar nada', async () => {
+    const find = async () => {
+      throw new Error('não consegui conferir o processo que está com esta sessão do Codex');
+    };
+    const { rt, calls } = setup({ runtime: { tui: { find, stop: async () => 'stopped' } } });
+    await expect(rt.takeover(ID)).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/conferir/) });
+    await expect(rt.stop(ID)).rejects.toMatchObject({ status: 409 });
+    expect(calls).toEqual([]);
+  });
+});

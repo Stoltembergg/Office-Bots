@@ -23,3 +23,17 @@ describe('TUI do Codex dono de um thread', () => {
     await expect(stopCodexTui({ pid: 18194, startMs: 1000 }, { ...deps, kill: () => {}, isAlive: () => true })).resolves.toBe('stuck');
   });
 });
+
+describe('TUI do Codex: processo que não dá para conferir', () => {
+  it('lock com dono cujo ps não se lê: recusa (nunca trata como "o TUI já saiu")', async () => {
+    const holders = async () => [18194];
+    await expect(findCodexTui('/h/.codex', T, { holders, proc: async () => undefined })).rejects.toThrow(/conferir/);
+    await expect(findCodexTui('/h/.codex', T, { holders: async () => [], proc: async () => undefined })).resolves.toBeUndefined();
+  });
+
+  it('o ps padrão roda em inglês (LC_ALL=C): o horário de início se lê em qualquer idioma do sistema', async () => {
+    const { psProc } = await import('./codex-tui');
+    const me = await psProc(process.pid);
+    expect(me?.startMs).toBeGreaterThan(0);
+  });
+});
