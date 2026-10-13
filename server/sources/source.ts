@@ -17,6 +17,7 @@ import { errMsg, log } from '../log';
 import { fileScope } from './scope';
 import { HISTORY_LIMIT } from './history';
 import { createTerminalParser, type TerminalParser } from './terminal';
+import { tr } from '../../shared/i18n';
 
 /** Uma fonte de agentes: observa as sessões abertas de uma ferramenta e alimenta o Office. */
 export interface AgentSource {
@@ -73,7 +74,7 @@ export class SourceSet {
   start(): Promise<void> {
     const pending: Promise<void>[] = [];
     for (const s of this.list) {
-      const failed = (err: unknown) => log.error(`Fonte de agentes ${s.provider}: falha ao iniciar (${errMsg(err)}).`);
+      const failed = (err: unknown) => log.error(tr('Fonte de agentes {0}: falha ao iniciar ({1}).', [s.provider, errMsg(err)]));
       try {
         const r = s.start();
         if (r) pending.push(r.catch(failed));
@@ -89,7 +90,7 @@ export class SourceSet {
       try {
         s.stop();
       } catch (err) {
-        log.warn(`Fonte de agentes ${s.provider}: falha ao parar (${errMsg(err)}).`);
+        log.warn(tr('Fonte de agentes {0}: falha ao parar ({1}).', [s.provider, errMsg(err)]));
       }
     }
   }
@@ -194,7 +195,7 @@ export class HistorySet implements SessionLookup {
     });
     if (failures.length && failures.length === results.length) throw failures[0].err;
     for (const f of failures) {
-      log.warnOnce(`history-list:${f.provider}:${errMsg(f.err)}`, `Histórico de sessões (${f.provider}): falha ao listar (${errMsg(f.err)}).`);
+      log.warnOnce(`history-list:${f.provider}:${errMsg(f.err)}`, tr('Histórico de sessões ({0}): falha ao listar ({1}).', [f.provider, errMsg(f.err)]));
     }
     const inScope = this.inScope;
     const scoped = inScope ? out.filter((s) => s.project !== undefined && inScope(s.project)) : out;
@@ -204,10 +205,10 @@ export class HistorySet implements SessionLookup {
 
   resolve(account: string, sessionId: string): HistoryResolveResult {
     const owner = this.list_.find((p) => p.hasAccount(account)) ?? this.list_[0];
-    const found: HistoryResolveResult = owner ? owner.resolve(account, sessionId) : { status: 404, error: 'conta desconhecida' };
+    const found: HistoryResolveResult = owner ? owner.resolve(account, sessionId) : { status: 404, error: tr('conta desconhecida') };
     if (!this.inScope || !('path' in found)) return found;
     const st = fileScope(found.path, this.inScope, found.grok).status;
     const ok = st === 'in' || (st === 'unknown' && found.cwd !== undefined && this.inScope(found.cwd));
-    return ok ? found : { status: 404, error: 'sessão não encontrada' };
+    return ok ? found : { status: 404, error: tr('sessão não encontrada') };
   }
 }
