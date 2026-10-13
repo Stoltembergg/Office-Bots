@@ -12,7 +12,7 @@ import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
 import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
 import { ICONS } from './icons';
-import { isCodex } from './provider';
+import { isCodex, isOpencode, providerOf } from './provider';
 import { usageRowFits } from './usage-row';
 import { createAccountChip, createProviderTag, updateAccountChip, updateProviderTag } from './widgets';
 import { tr } from '../../../shared/i18n';
@@ -185,8 +185,19 @@ export function usageSubtitle(a: Pick<AccountInfo, 'email' | 'plan' | 'configDir
 export function usageMessage(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>): [string, string] {
   const state = cardState(a);
   if (state === 'noquota') return [tr('sem cota'), tr('sem cota')];
+  if (isOpencode(a)) return [tr('o OpenCode não tem cota única'), tr('sem cota')];
   if (isCodex(a)) return [tr('sem dados ainda'), tr('sem dados')];
   return [tr('sem dados de uso'), tr('sem dados')];
+}
+
+/** O botão "Como ativar" aparece? Não no OpenCode (sem cota única, não há o que ativar) nem sem cota. */
+export function usageHowVisible(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>): boolean {
+  return !isOpencode(a) && cardState(a) !== 'noquota';
+}
+
+/** O passo a passo "Como ter o uso ao vivo" (statusline do Claude Code) aparece na dica? Só no Claude Code. */
+export function usageSetupVisible(a: Pick<AccountInfo, 'provider'>): boolean {
+  return !isCodex(a) && !isOpencode(a);
 }
 
 /** Explicação do cartão de uma conta do Codex (dica); '' nas outras. */
@@ -340,7 +351,7 @@ export class UsageCards {
     updateAccountChip(r.chip, a);
     setStyleVar(card, '--acc', a.color);
     setText(r.name, a.name);
-    updateProviderTag(r.prov, codex ? 'codex' : 'claude', a.name);
+    updateProviderTag(r.prov, providerOf(a), a.name);
     setText(r.email, usageSubtitle(a));
     setAttr(card, 'aria-label', tr('{0}{1}: uso do plano', [a.name, codex ? ' (Codex)' : '']));
 
@@ -381,7 +392,7 @@ export class UsageCards {
     setText(r.msgLong, msgLong);
     setText(r.msgShort, msgShort);
     setHidden(r.msg, state !== 'empty' && state !== 'noquota');
-    setHidden(r.how, state === 'noquota');
+    setHidden(r.how, !usageHowVisible(a));
     r.msg.classList.toggle('is-noquota', state === 'noquota');
     setTitle(r.msg, state === 'noquota' ? codexUsageNote(a, now) : '');
     setText(r.howLong, codex ? tr('Como funciona') : tr('Como ativar'));
@@ -424,6 +435,14 @@ export class UsageCards {
       setText(r.tipNote, note);
       setHidden(r.tipNote, !note);
       setHidden(r.tipSetup, true);
+      return;
+    }
+
+    // OpenCode: vários provedores e contas, sem cota única; a dica não manda instalar nada.
+    if (isOpencode(a)) {
+      setText(r.tipNote, tr('O OpenCode usa vários provedores e contas, sem uma cota única para mostrar aqui.'));
+      setHidden(r.tipNote, false);
+      setHidden(r.tipSetup, !usageSetupVisible(a));
       return;
     }
 
