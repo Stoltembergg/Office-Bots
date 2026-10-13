@@ -33,6 +33,39 @@ describe('parseColor: controles malformados existentes', () => {
   });
 });
 
+describe('parseColor: cor malformada devolve magenta (nunca NaN)', () => {
+  it.each([
+    '#zzz',
+    '#12345g',
+    '#ggg',
+    '#12g4',
+    '#gg8800',
+    '#ff8800zz',
+    'rgb(a,b,c)',
+    'rgb(10,20,30,x)',
+    'rgb(Infinity,0,0)',
+    'rgb(1e999,0,0)',
+    'hsl(x,y,z)',
+    'hsl(0,100%,y)',
+    'hsla(0,100%,50%,x)',
+  ])('%j devolve magenta', (input) => {
+    expect(parseColor(input)).toEqual(MAGENTA);
+  });
+
+  it('o resultado nunca tem NaN, e toHex dele é um hex válido', () => {
+    for (const input of ['#zzz', '#12345g', 'rgb(a,b,c)', 'hsl(x,y,z)']) {
+      const [r, g, b, a] = parseColor(input);
+      expect([r, g, b, a].every(Number.isFinite)).toBe(true);
+      expect(toHex(r, g, b, a)).toBe('#ff00ff');
+    }
+  });
+
+  it('a mesma entrada inválida dá o mesmo resultado na segunda chamada (cache)', () => {
+    expect(parseColor('#zzz')).toEqual(MAGENTA);
+    expect(parseColor('#zzz')).toEqual(MAGENTA);
+  });
+});
+
 describe('toHex', () => {
   it('sem alfa (ou alfa 255) devolve #rrggbb; com alfa menor devolve #rrggbbaa', () => {
     expect(toHex(255, 136, 0)).toBe('#ff8800');
@@ -94,6 +127,11 @@ describe('shade', () => {
   it('mantém o alfa', () => {
     expect(shade('#e2604f80', 0.1)).toMatch(/^#[0-9a-f]{6}80$/);
   });
+
+  it('cor inválida: sombreia o magenta, sem NaN', () => {
+    expect(shade('#zzz', 0.1)).not.toContain('NaN');
+    expect(shade('#zzz', -0.1)).toBe(shade('#ff00ff', -0.1));
+  });
 });
 
 describe('mix', () => {
@@ -107,6 +145,10 @@ describe('mix', () => {
   it('t = 0.5 entre preto e branco é cinza médio; o alfa também é misturado', () => {
     expect(mix('#000000', '#ffffff', 0.5)).toBe('#808080');
     expect(mix('#00000000', '#ffffffff', 0.5)).toBe('#80808080');
+  });
+
+  it('cor inválida entra como magenta', () => {
+    expect(mix('#zzz', '#000000', 0)).toBe('#ff00ff');
   });
 });
 
