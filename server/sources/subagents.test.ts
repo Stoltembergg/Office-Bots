@@ -5,6 +5,7 @@ import {
   concludedByIdle,
   END_TURN_QUIET_MS,
   IDLE_TIMEOUT_MS,
+  parseJournal,
   parseSubagentMeta,
   PENDING_TOOL_TIMEOUT_MS,
   subagentRole,
@@ -157,5 +158,106 @@ describe('parseSubagentMeta', () => {
     expect(parseSubagentMeta('0')).toBeUndefined();
     expect(parseSubagentMeta('"x"')).toBeUndefined();
     expect(parseSubagentMeta('true')).toBeUndefined();
+  });
+});
+
+describe('parseJournal', () => {
+  const jl = (...rows: Record<string, unknown>[]): string => rows.map((r) => JSON.stringify(r)).join('\n');
+
+  it('SUBAG-21: uma entrada por agente, sem misturar, com done false enquanto nada é terminal', () => {
+    const map = parseJournal(
+      jl({ agentId: 'a', type: 'started', label: 'Revisar' }, { agentId: 'b', type: 'running', label: 'Testar' }),
+    );
+    expect(map.size).toBe(2);
+    expect(map.get('a')).toEqual({ label: 'Revisar', done: false });
+    expect(map.get('b')).toEqual({ label: 'Testar', done: false });
+  });
+
+  it('SUBAG-22: os tipos terminais marcam done true, sem diferença de maiúsculas e com espaços nas pontas', () => {
+    const terminais = [
+      'completed',
+      'complete',
+      'finished',
+      'done',
+      'failed',
+      'errored',
+      'error',
+      'killed',
+      'cancelled',
+      'canceled',
+      'stopped',
+      'succeeded',
+      'result',
+      'RESULT',
+      ' Completed ',
+    ];
+    for (const type of terminais) {
+      expect(parseJournal(jl({ agentId: 'a', type })).get('a'), type).toEqual({ done: true });
+    }
+  });
+
+  it('SUBAG-23: tipos parecidos mas não terminais mantêm done false', () => {
+    const outros = ['started', 'running', 'completing', 'success', 'finish', 'results', 'cancelling'];
+    for (const type of outros) {
+      expect(parseJournal(jl({ agentId: 'a', type })).get('a'), type).toEqual({ done: false });
+    }
+  });
+
+  it('SUBAG-24: done não volta atrás quando chega um tipo não terminal depois', () => {
+    const map = parseJournal(jl({ agentId: 'a', type: 'completed' }, { agentId: 'a', type: 'running' }));
+    expect(map.get('a')).toEqual({ done: true });
+  });
+
+  it('SUBAG-25: o último rótulo não vazio vence e uma linha sem rótulo não apaga o anterior', () => {
+    const meio = parseJournal(
+      jl({ agentId: 'a', type: 'started', label: 'L1' }, { agentId: 'a', type: 'running' }, { agentId: 'a', type: 'running', label: 'L2' }),
+    );
+    expect(meio.get('a')?.label).toBe('L2');
+    const fim = parseJournal(jl({ agentId: 'a', type: 'started', label: 'L1' }, { agentId: 'a', type: 'running' }));
+    expect(fim.get('a')?.label).toBe('L1');
+  });
+
+  it('SUBAG-26: rótulo é aparado; vazio, só espaços ou não string deixa o rótulo indefinido', () => {
+    expect(parseJournal(jl({ agentId: 'a', type: 'started', label: '  Texto  ' })).get('a')).toEqual({
+      label: 'Texto',
+      done: false,
+    });
+    for (const label of ['', '   ', 3]) {
+      const entry = parseJournal(jl({ agentId: 'a', type: 'started', label })).get('a');
+      expect(entry, String(label)).toEqual({ done: false });
+      expect('label' in entry!, String(label)).toBe(false);
+    }
+  });
+
+  it('SUBAG-27: linha sem agentId ou sem type (ou com valor que não é string não vazia) não cria entrada', () => {
+    const map = parseJournal(
+      jl({ type: 'started' }, { agentId: 'a' }, { agentId: 1, type: 'started' }, { agentId: 'a', type: '' }),
+    );
+    expect(map.size).toBe(0);
+  });
+
+  it('SUBAG-28: linha em branco ou quebrada é pulada e as linhas boas seguintes são lidas', () => {
+    const map = parseJournal(`\n   \n{oops\n${jl({ agentId: 'a', type: 'completed', label: 'Boa' })}\n`);
+    expect(map.size).toBe(1);
+    expect(map.get('a')).toEqual({ label: 'Boa', done: true });
+  });
+
+  it('SUBAG-29: linhas terminadas em CRLF dão o mesmo resultado que LF', () => {
+    const linhas = [
+      { agentId: 'a', type: 'started', label: 'Um' },
+      { agentId: 'b', type: 'completed' },
+    ];
+    const lf = parseJournal(jl(...linhas) + '\n');
+    const crlf = parseJournal(linhas.map((r) => JSON.stringify(r)).join('\r\n') + '\r\n');
+    expect(crlf.size).toBe(2);
+    expect(crlf).toEqual(lf);
+    expect(crlf.get('a')).toEqual({ label: 'Um', done: false });
+    expect(crlf.get('b')).toEqual({ done: true });
+  });
+
+  it('SUBAG-30: texto vazio devolve um Map vazio', () => {
+    const map = parseJournal('');
+    expect(map).toBeInstanceOf(Map);
+    expect(map.size).toBe(0);
   });
 });
