@@ -175,3 +175,59 @@ describe('teto de salas lembradas', () => {
     expect(acima).not.toContain('o97');
   });
 });
+
+describe('armazenamento inválido ou indisponível (salas)', () => {
+  const quebrado = (quais: { get?: boolean; set?: boolean }) => {
+    const st = install();
+    if (quais.get) st.getItem.mockImplementation(() => { throw new Error('bloqueado'); });
+    if (quais.set) st.setItem.mockImplementation(() => { throw new Error('cota cheia'); });
+    return st;
+  };
+
+  it('SALORD-20: JSON inválido guardado vira ordem original e moveRoom regrava JSON válido', () => {
+    const st = install({ [KEY]: '{oops' });
+    expect(ids(orderRooms(SALAS, idOf))).toBe('a,b,c,d');
+    expect(moveRoom(['a', 'b', 'c', 'd'], 'a', 'c', true)).toBe(true);
+    const gravado = JSON.parse(st.data.get(KEY) ?? '') as unknown;
+    expect(gravado).toEqual(['b', 'c', 'a', 'd']);
+  });
+
+  it('SALORD-21: JSON válido que não é array é tratado como sem ordem', () => {
+    for (const valor of ['null', '5', '"x"', 'true', '{"a":["b"]}']) {
+      install({ [KEY]: valor });
+      expect(ids(orderRooms(SALAS, idOf)), valor).toBe('a,b,c,d');
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('SALORD-22: elementos que não são string são descartados e só as strings valem', () => {
+    const st = install({ [KEY]: '["c", 1, null, {"x":1}, "a", false]' });
+    expect(ids(orderRooms(SALAS, idOf))).toBe('c,a,b,d');
+    // o que é regravado também só tem strings
+    expect(moveRoom(['p', 'q'], 'q', 'p', false)).toBe(true);
+    expect(JSON.parse(st.data.get(KEY) ?? '')).toEqual(['q', 'p', 'c', 'a']);
+  });
+
+  it('SALORD-23: getItem que lança não derruba orderRooms nem moveRoom', () => {
+    quebrado({ get: true });
+    expect(ids(orderRooms(SALAS, idOf))).toBe('a,b,c,d');
+    expect(moveRoom(['a', 'b', 'c', 'd'], 'a', 'c', true)).toBe(true);
+    vi.unstubAllGlobals();
+    quebrado({ get: true, set: true });
+    expect(ids(orderRooms(SALAS, idOf))).toBe('a,b,c,d');
+    expect(moveRoom(['a', 'b', 'c', 'd'], 'a', 'c', true)).toBe(true);
+  });
+
+  it('SALORD-24: setItem que lança não derruba moveRoom e a ordem original segue valendo', () => {
+    const st = quebrado({ set: true });
+    expect(moveRoom(['a', 'b', 'c', 'd'], 'a', 'c', true)).toBe(true);
+    expect(st.setItem).toHaveBeenCalled();
+    expect(ids(orderRooms(SALAS, idOf))).toBe('a,b,c,d');
+  });
+
+  it('SALORD-25: sem localStorage orderRooms devolve a ordem original e moveRoom devolve true', () => {
+    vi.stubGlobal('localStorage', undefined);
+    expect(ids(orderRooms(SALAS, idOf))).toBe('a,b,c,d');
+    expect(moveRoom(['a', 'b', 'c', 'd'], 'a', 'c', true)).toBe(true);
+  });
+});
