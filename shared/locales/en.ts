@@ -1234,6 +1234,8 @@ export const EN: Readonly<Record<string, string>> = {
   "desenho": "cartoons",
   " (a caminho)": " (on the way)",
   " · valendo 🪙{0}": " · betting 🪙{0}",
+  " com {0}": " with {0}",
+  "{0} e {1}": "{0} and {1}",
 
   // client/src/world/social/wallet.ts
   "Chegou ao escritório": "Arrived at the office",

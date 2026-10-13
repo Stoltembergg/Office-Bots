@@ -1,8 +1,9 @@
 // Integração da vida social com a simulação (sem DOM): rodas que se formam sozinhas, quem é chamado
 // de volta ao trabalho, apostas, moedinhas pelo trabalho e quem espera shell.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentInfo, OfficeSnapshot, RoomInfo } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
+import { setLocale } from '../../../../shared/i18n';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
 import { Sim } from '../sim/sim';
 import { active, KINDS } from './gathering';
@@ -222,6 +223,56 @@ describe('vida social', () => {
       expect(c.atSpot).toBe(c.homeSpot);
     }
     for (const s of sim.spots.all()) expect(sim.spots.ownerOf(s.id)?.startsWith('g:') ?? false).toBe(false);
+  });
+
+  describe('o que o agente está fazendo, em cada idioma', () => {
+    afterEach(() => setLocale('pt-BR'));
+
+    function doingWithPartners(locale: 'pt-BR' | 'en' | 'es' | 'fr', count: number): { text: string; names: string[] } {
+      const sim = newSim();
+      const clock = { now: T0 };
+      const ids = ['ana', 'caio', 'davi', 'eva'].slice(0, count + 1);
+      sim.applySnapshot(snap(ROOMS, ids.map((id, i) => agent(id, i % 2 ? '/b' : '/a', 'idle'))), clock.now);
+      run(sim, clock, 0.3);
+      expect(sim.social.force('kitchen', clock.now, ids)).toHaveLength(count + 1);
+      setLocale(locale);
+      const prefix = `${KINDS.kitchen.emoji} ${KINDS.kitchen.label} `;
+      const doing = sim.social.doing('ana')!.replace(/ \([^)]*\)$/, '');
+      expect(doing.startsWith(prefix)).toBe(true);
+      const text = doing.slice(prefix.length);
+      return { text, names: ['Caio', 'Davi', 'Eva'].slice(0, count) };
+    }
+
+    it.each([
+      ['pt-BR', 'com', 'e'],
+      ['en', 'with', 'and'],
+      ['es', 'con', 'y'],
+      ['fr', 'avec', 'et'],
+    ] as const)('%s: conector e conjunção preservam formato e nomes', (locale, connector, conjunction) => {
+      const one = doingWithPartners(locale, 1);
+      expect(one.text).toBe(`${connector} Caio`);
+
+      const two = doingWithPartners(locale, 2);
+      const twoMatch = new RegExp(`^${connector} (\\w+) ${conjunction} (\\w+)$`).exec(two.text);
+      expect(twoMatch, two.text).not.toBeNull();
+      expect([twoMatch![1], twoMatch![2]].sort()).toEqual(two.names);
+
+      const three = doingWithPartners(locale, 3);
+      const threeMatch = new RegExp(`^${connector} (\\w+), (\\w+) ${conjunction} (\\w+)$`).exec(three.text);
+      expect(threeMatch, three.text).not.toBeNull();
+      expect([threeMatch![1], threeMatch![2], threeMatch![3]].sort()).toEqual(three.names);
+    });
+
+    it.each(['pt-BR', 'en', 'es', 'fr'] as const)('%s: sozinho no espelho não ganha conector nem espaço sobrando', (locale) => {
+      const sim = newSim();
+      const clock = { now: T0 };
+      sim.applySnapshot(snap(ROOMS, [agent('ana', '/a', 'idle')]), clock.now);
+      run(sim, clock, 0.3);
+      expect(sim.social.force('mirror', clock.now, ['ana'])).toEqual(['Ana']);
+      setLocale(locale);
+      const doing = sim.social.doing('ana')!.replace(/ \([^)]*\)$/, '');
+      expect(doing).toBe(`${KINDS.mirror.emoji} ${KINDS.mirror.label}`);
+    });
   });
 
   it('a interface recebe personalidade, carteira, vínculos e o que está fazendo', () => {
