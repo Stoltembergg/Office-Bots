@@ -18,8 +18,9 @@ do meio (0.**3**.0).
   `docker:up` repassa as pastas já expandidas. O Novo agente e o terminal interativo recusam pasta de fora.
 - Grok no escritório: as sessões abertas da CLI `grok` aparecem com o selo **GROK**, com atividade, tarefas, título,
   modelo, tokens, terminal e histórico, lidas de `~/.grok` (ou `GROK_HOME`) sem instalar nada. No Docker o `docker:up`
-  monta só `~/.grok/sessions`, somente leitura. `HABBLAUD_GROK=0` desliga. O cartão de uso do Grok mostra o
-  consumo das últimas 5 h e dos últimos 7 dias (custo no preço da API da xAI e tokens), já que ele não informa limite.
+  monta só `~/.grok/sessions`, somente leitura. `HABBLAUD_GROK=0` desliga. O cartão de uso do Grok tem as
+  barras de 5 h e da semana como os outros; como o Grok não informa limite, 100% é o seu maior gasto já registrado
+  numa janela desse tamanho (a dica mostra o custo no preço da API da xAI e os tokens).
 
 ## [0.11.0] - 2026-10-13
 
