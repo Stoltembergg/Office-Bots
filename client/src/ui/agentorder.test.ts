@@ -218,3 +218,60 @@ describe('teto de projetos lembrados', () => {
     expect(chaves[chaves.length - 1]).toBe('novo');
   });
 });
+
+describe('armazenamento inválido ou indisponível (agentes)', () => {
+  const bloqueado = () => {
+    throw new Error('bloqueado');
+  };
+
+  it('AGORD-22: JSON inválido vale como sem ordem e moveAgent grava JSON válido', () => {
+    const st = install({ [KEY]: '{oops' });
+    expect(ids(ordenar())).toBe('a1,a2,a3,a4');
+    expect(moveAgent('r', ITEMS, idOf, sessionOf, 'a1', 'a2', true)).toBe(true);
+    expect(JSON.parse(st.data.get(KEY)!)).toEqual({ r: ['s2', 's1', 's3', 's4'] });
+  });
+
+  it('AGORD-23: JSON que não é objeto simples vale como sem ordem', () => {
+    for (const texto of ['null', '5', '"x"', 'true', '[["s2","s1"]]']) {
+      install({ [KEY]: texto });
+      // projeto '0': um array [["s2","s1"]] seria lido como { '0': [...] } se não fosse rejeitado
+      expect(ids(ordenar(ITEMS, '0')), texto).toBe('a1,a2,a3,a4');
+    }
+  });
+
+  it('AGORD-24: projeto cujo valor não é array é ignorado e os válidos continuam valendo', () => {
+    withOrder({ r1: 's2', r2: 5, r3: null, r4: { a: 1 }, ok: ['s4'] });
+    for (const room of ['r1', 'r2', 'r3', 'r4']) expect(ids(ordenar(ITEMS, room)), room).toBe('a1,a2,a3,a4');
+    expect(ids(ordenar(ITEMS, 'ok'))).toBe('a4,a1,a2,a3');
+  });
+
+  it('AGORD-25: elementos que não são string são descartados', () => {
+    const st = withOrder({ r: ['s3', 1, null, { x: 1 }, 's1', false], other: ['s9', 1, null, 's8'] });
+    expect(ids(ordenar())).toBe('a3,a1,a2,a4');
+    // ao gravar outro projeto, a lista de `other` volta só com as strings
+    expect(moveAgent('r', ITEMS, idOf, sessionOf, 'a1', 'a2', true)).toBe(true);
+    expect((JSON.parse(st.data.get(KEY)!) as Record<string, unknown[]>).other).toEqual(['s9', 's8']);
+  });
+
+  it('AGORD-26: getItem que lança não quebra orderAgents nem moveAgent', () => {
+    vi.stubGlobal('localStorage', { getItem: bloqueado, setItem: vi.fn() });
+    expect(ids(ordenar())).toBe('a1,a2,a3,a4');
+    expect(moveAgent('r', ITEMS, idOf, sessionOf, 'a1', 'a2', true)).toBe(true);
+
+    vi.stubGlobal('localStorage', { getItem: bloqueado, setItem: bloqueado });
+    expect(ids(ordenar())).toBe('a1,a2,a3,a4');
+    expect(moveAgent('r', ITEMS, idOf, sessionOf, 'a1', 'a2', true)).toBe(true);
+  });
+
+  it('AGORD-27: setItem que lança (cota cheia) não quebra moveAgent', () => {
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: bloqueado });
+    expect(moveAgent('r', ITEMS, idOf, sessionOf, 'a1', 'a2', true)).toBe(true);
+    expect(ids(ordenar())).toBe('a1,a2,a3,a4');
+  });
+
+  it('AGORD-28: sem localStorage as funções não lançam', () => {
+    vi.stubGlobal('localStorage', undefined);
+    expect(ids(ordenar())).toBe('a1,a2,a3,a4');
+    expect(moveAgent('r', ITEMS, idOf, sessionOf, 'a1', 'a2', true)).toBe(true);
+  });
+});
