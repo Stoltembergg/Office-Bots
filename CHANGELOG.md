@@ -10,6 +10,12 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Mudado
+
+- O `docker:up` instala o mod do Habblaud nas contas do Claude Code que ainda não o têm (uso de 5h/semanal ao vivo,
+  responder e mandar mensagens pelo escritório), pelo mesmo caminho do `npm run mod:install`. Antes ele só atualizava
+  quem já tinha. Para pular: `npm run docker:up -- --no-mod`.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
