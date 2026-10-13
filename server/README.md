@@ -423,7 +423,11 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   `acceptForSession`. Numa thread assinada, o hook recebe `{skip: 'parallel'}`. Assinada, a thread fica carregada no
   daemon com a trava de escritor presa, então a fonte avisa o turno de cada uma (`onTurn` → `setTurnOpen`): 60 s depois
   de o turno fechar (`UNSUBSCRIBE_AFTER_MS`) o serviço a desassina (`thread/unsubscribe`; os cartões dela fecham e os
-  pedidos novos voltam ao hook) e a assina de novo quando um turno abre, se ela ainda estiver carregada. No boot, e
+  pedidos novos voltam ao hook) e a assina de novo quando um turno abre, se ela ainda estiver carregada. Com o turno
+  aberto e nenhum evento da thread (notificação ou pedido do app-server, turno reaberto) por 30 min
+  (`STALE_RELEASE_MS`: o TUI fechou no meio do turno, por exemplo esperando uma aprovação), também a desassina e avisa
+  no log; a presença não serve de sinal, porque a assinatura mantém a trava presa. Um comando longo sem eventos também
+  passa do prazo: os pedidos seguintes dele vão pelo hook. Uma reconexão assina de novo e recomeça a contagem. No boot, e
   quando outro cliente carrega de novo uma thread de turno fechado (`thread/started`), ela é assinada de novo e solta
   60 s depois; uma reconexão ao mesmo daemon não reassina a que já passou dos 60 s. O daemon só descarrega a
   thread depois de ela ficar ociosa e sem inscritos, num prazo do próprio Codex (`thread_unload_delay_secs`: cerca de

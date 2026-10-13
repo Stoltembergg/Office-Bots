@@ -536,12 +536,14 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
     Node (no Docker, o container não alcança o daemon) e com o terminal do Habblaud ligado (mesma trava). O Habblaud só
     se junta a um daemon que já está rodando: nunca o inicia nem muda a configuração dele. Também só se junta às
     conversas que o daemon já tem carregadas (nunca carrega uma), solta cada uma 60 segundos depois de o turno fechar e a
-    assina de novo quando um turno abre, para não segurar a sessão de um terminal que você fechou. A cada 15 segundos
-    ele confere se o daemon responde; sem resposta em 10 segundos (um daemon travado por mais que isso conta como
-    morto), a ligação cai, os cartões abertos fecham, os pedidos novos vão pelo hook e ele tenta se ligar de novo logo
-    depois. No Windows, o canal paralelo e as mensagens usam o `codex.exe` do PATH; com o Codex instalado só pelo npm
-    (que põe no PATH só os atalhos `codex.cmd`/`codex.ps1`, sem o `codex.exe`), aponte `HABBLAUD_CODEX_BIN` para o
-    executável nativo. `HABBLAUD_CODEX_APPSERVER=0` desliga.
+    assina de novo quando um turno abre, para não segurar a sessão de um terminal que você fechou. Se o terminal fechar
+    no meio do turno (por exemplo, esperando uma aprovação), solta a conversa depois de 30 minutos sem nenhum evento
+    dela; um comando que fica mais que isso sem eventos também perde o canal, e os pedidos seguintes vão pelo hook.
+    A cada 15 segundos ele confere se o daemon responde; sem resposta em 10 segundos (um daemon travado por mais que
+    isso conta como morto), a ligação cai, os cartões abertos fecham, os pedidos novos vão pelo hook e ele tenta se
+    ligar de novo logo depois. No Windows, o canal paralelo e as mensagens usam o `codex.exe` do PATH; com o Codex
+    instalado só pelo npm (que põe no PATH só os atalhos `codex.cmd`/`codex.ps1`, sem o `codex.exe`), aponte
+    `HABBLAUD_CODEX_BIN` para o executável nativo. `HABBLAUD_CODEX_APPSERVER=0` desliga.
   - **Nos demais** (o app do Codex, a extensão do VS Code e a CLI fora do daemon): pelo hook. Com alguma página do
     Habblaud aberta, o pedido espera a sua resposta por até **25 segundos** (`npm run codex:install -- --espera <s>`,
     de 5 a 120): **Aprovar** ou **Recusar** (com o motivo). Diferente do Claude Code, o Codex só mostra a aprovação no

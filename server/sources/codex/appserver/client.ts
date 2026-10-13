@@ -126,7 +126,8 @@ const patchKey = (threadId: string, itemId: string): string => `${threadId}\n${i
 
 /**
  * Uma conexão com o app-server de uma conta. Eventos: 'approval' (ApprovalRequest), 'approvalResolved'
- * ({ requestId }), 'threadStarted' (threadId), 'threadClosed' (threadId) e 'close' (motivo), uma vez só.
+ * ({ requestId }), 'threadStarted' (threadId), 'threadClosed' (threadId), 'threadActivity' (threadId: qualquer
+ * notificação ou pedido do servidor com o threadId, menos o thread/closed) e 'close' (motivo), uma vez só.
  */
 export class CodexAppServerClient extends EventEmitter {
   private ws?: WsConnection;
@@ -258,6 +259,8 @@ export class CodexAppServerClient extends EventEmitter {
   private onNotification(method: string, params: unknown): void {
     const p = rec(params);
     if (!p) return;
+    const active = str(p.threadId);
+    if (active && method !== 'thread/closed') this.emit('threadActivity', active);
     switch (method) {
       case 'thread/started': {
         const thread = rec(p.thread);
@@ -301,10 +304,11 @@ export class CodexAppServerClient extends EventEmitter {
   }
 
   private onServerRequest(id: number | string, method: string, params: unknown): void {
-    // Só aprovação de comando e de arquivo; o resto fica sem resposta (vale o terminal).
-    if (method !== COMMAND_APPROVAL && method !== FILE_APPROVAL) return;
     const p = rec(params);
     const threadId = str(p?.threadId);
+    if (threadId) this.emit('threadActivity', threadId);
+    // Só aprovação de comando e de arquivo; o resto fica sem resposta (vale o terminal).
+    if (method !== COMMAND_APPROVAL && method !== FILE_APPROVAL) return;
     // O mesmo id de novo é o replay do resume: um pedido só.
     if (!p || !threadId || this.approvals.has(id) || this.released.has(threadId)) return;
     if (method === COMMAND_APPROVAL && !isPlainCommand(p)) return;

@@ -23,6 +23,7 @@ import {
   DISCOVERY_MS,
   RESUME_RETRY_MS,
   spawnCodexProxy,
+  STALE_RELEASE_MS,
   UNSUBSCRIBE_AFTER_MS,
   type CodexAppServerServiceOptions,
   type CodexProxy,
@@ -725,6 +726,76 @@ describe('CodexAppServerService: o Habblaud não segura thread que o usuário fe
     // Assert
     expect(s.svc.owns(ACCOUNT, THREAD)).toBe(false);
     await until(() => fake.calls('thread/unsubscribe').length === 2);
+  });
+
+  it('turno aberto sem nenhum evento da thread por STALE_RELEASE_MS (o TUI fechou esperando aprovação): desassina, o cartão fecha e avisa', async () => {
+    // Arrange
+    const s = setup();
+    const fake = await connected(s);
+    fake.request(12, COMMAND, { threadId: THREAD, ...BASE, itemId: 'call-12', command: 'npm test' });
+    await until(() => pendingOf(s).length === 1);
+
+    // Act
+    s.clock.advance(STALE_RELEASE_MS - 1);
+    s.svc.tick();
+    await flush();
+
+    // Assert
+    expect(s.svc.owns(ACCOUNT, THREAD)).toBe(true);
+    expect(pendingOf(s)).toHaveLength(1);
+    s.clock.advance(1);
+    s.svc.tick();
+    expect(s.svc.owns(ACCOUNT, THREAD)).toBe(false);
+    expect(pendingOf(s)).toEqual([]);
+    await until(() => fake.calls('thread/unsubscribe').length === 1);
+    expect(s.logs.filter((l) => l.includes('sem nenhum evento'))).toHaveLength(1);
+    // O próximo pedido da thread volta ao hook.
+    expect(s.registry.register(codexHook())).toHaveProperty('id');
+  });
+
+  it('eventos da thread (itens e pedidos do app-server) adiam a soltura; os de outra thread, não', async () => {
+    // Arrange
+    const s = setup({ threads: [THREAD, OTHER] });
+    const fake = await connected(s);
+    await until(() => s.svc.owns(ACCOUNT, OTHER));
+
+    // Act: só a THREAD tem eventos perto do prazo.
+    s.clock.advance(STALE_RELEASE_MS - 1_000);
+    fake.notify('item/started', { ...BASE, threadId: THREAD, item: { type: 'commandExecution', id: 'cmd-1' } });
+    fake.request(13, 'item/tool/requestUserInput', { ...BASE, threadId: THREAD, itemId: 'q-1' });
+    await flush();
+    s.clock.advance(1_000);
+    s.svc.tick();
+    await flush();
+
+    // Assert
+    expect(s.svc.owns(ACCOUNT, THREAD)).toBe(true);
+    expect(s.svc.owns(ACCOUNT, OTHER)).toBe(false);
+    // O prazo conta do último evento (1 s antes do primeiro prazo).
+    s.clock.advance(STALE_RELEASE_MS - 1_000 - 1);
+    s.svc.tick();
+    expect(s.svc.owns(ACCOUNT, THREAD)).toBe(true);
+    s.clock.advance(1);
+    s.svc.tick();
+    expect(s.svc.owns(ACCOUNT, THREAD)).toBe(false);
+  });
+
+  it('solta por falta de eventos: um cliente que carrega a thread de novo (thread/started) a assina outra vez', async () => {
+    // Arrange
+    const s = setup();
+    const fake = await connected(s);
+    s.clock.advance(STALE_RELEASE_MS);
+    s.svc.tick();
+    await until(() => fake.calls('thread/unsubscribe').length === 1);
+
+    // Act
+    fake.notify('thread/started', { thread: { id: THREAD, source: 'cli' } });
+
+    // Assert
+    await until(() => s.svc.owns(ACCOUNT, THREAD));
+    s.clock.advance(STALE_RELEASE_MS - 1);
+    s.svc.tick();
+    expect(s.svc.owns(ACCOUNT, THREAD)).toBe(true);
   });
 
   it('thread/started de thread sem turno fechado conhecido não cria marca: assinada, continua assinada depois de 60 s', async () => {
