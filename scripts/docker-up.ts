@@ -43,7 +43,7 @@ import { codexDirsRefused, detectAccounts, discoverClaudeDirs, type DetectedAcco
 import { HOOK_KEY_FILE, loadHookKey } from '../server/codex/key';
 import { detectCodexAccounts, discoverCodexDirs } from '../server/sources/codex/accounts';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
-import { CONTAINER_HOOK_KEY, CONTAINER_UID, CONTAINER_USAGE_DIR, hostTimeZone, keyNeedsGroup, planCodexMounts, planMounts, realDir, realFile, renderOverride } from './docker-up-mounts';
+import { CONTAINER_HOOK_KEY, CONTAINER_UID, CONTAINER_USAGE_DIR, hostTimeZone, isPrivateGroup, keyNeedsGroup, planCodexMounts, planMounts, realDir, realFile, renderOverride } from './docker-up-mounts';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 import { tr } from '../shared/i18n';
 
@@ -130,7 +130,7 @@ export function hostPort(env: NodeJS.ProcessEnv): number {
 // ---------------------------------------------------------------------------------------------
 
 // Moram em docker-up-mounts.ts; reexportados aqui para quem importa do script (os testes).
-export { accountsPayload, CODEX_MOUNTED_FILES, CODEX_MOUNTED_SUBDIRS, codexAccountsPayload, hostTimeZone, keyNeedsGroup, planCodexMounts, planMounts, renderOverride, sanitizeCachedUsage, yamlString } from './docker-up-mounts';
+export { accountsPayload, CODEX_MOUNTED_FILES, CODEX_MOUNTED_SUBDIRS, codexAccountsPayload, hostTimeZone, isPrivateGroup, keyNeedsGroup, planCodexMounts, planMounts, renderOverride, sanitizeCachedUsage, yamlString } from './docker-up-mounts';
 export type { AccountMount, AccountPayload, BindMount } from './docker-up-mounts';
 
 /**
@@ -298,6 +298,29 @@ function ensureHookKey(groupRead: boolean): string | undefined {
   const real = loadHookKey(STATE_DIR, { create: true, mode: groupRead ? 0o640 : 0o600 }) ? realFile(file) : undefined;
   if (!real) warn(tr('não consegui ler nem criar {0} (precisa ter 32 bytes; apague para recriar); no container, os eventos do hook do Codex vão ser recusados.', [tildify(file)]));
   return real;
+}
+
+/**
+ * O grupo da chave do hook (o dela, se já existe; senão o grupo primário, que ela vai ter) é só deste usuário? Sem
+ * isso, a chave não fica 0640 (outros usuários do grupo a leriam).
+ */
+function keyGroupIsPrivate(): boolean {
+  const uid = process.getuid?.();
+  let gid = process.getgid?.();
+  try {
+    gid = statSync(join(STATE_DIR, HOOK_KEY_FILE)).gid;
+  } catch {
+    // Ainda não existe: nasce com o grupo primário.
+  }
+  if (uid === undefined || gid === undefined) return false;
+  const read = (f: string) => {
+    try {
+      return readFileSync(f, 'utf8');
+    } catch {
+      return '';
+    }
+  };
+  return isPrivateGroup(gid, uid, read('/etc/group'), read('/etc/passwd'));
 }
 
 function tildify(p: string): string {
@@ -507,7 +530,11 @@ async function up(opts: Options, port: number): Promise<void> {
   const usageDir = ensureUsageDir();
   if (usageDir) say(tr('Uso ao vivo (mod ou tap de statusline): monta {0} em {1}, somente leitura.', [tildify(USAGE_DIR), CONTAINER_USAGE_DIR]));
   // Só com alguma conta do Codex montada (HABBLAUD_CODEX=0 não monta nada do Codex).
-  const groupRead = keyNeedsGroup(process.platform, process.getuid?.(), docker.desktop);
+  const needsGroup = codexMounts.length > 0 && keyNeedsGroup(process.platform, process.getuid?.(), docker.desktop);
+  const groupRead = needsGroup && keyGroupIsPrivate();
+  if (needsGroup && !groupRead) {
+    warn(tr('o grupo da chave do hook do Codex não é só seu: a chave fica 0600 e o usuário do container (uid {0}) não a lê, então os eventos do hook vão ser recusados. Rode o docker:up com um usuário de uid {0} ou com um grupo primário só seu.', [CONTAINER_UID]));
+  }
   const hookKey = codexMounts.length ? ensureHookKey(groupRead) : undefined;
   if (hookKey) say(tr('Chave do hook do Codex: monta {0} em {1}, somente leitura.', [tildify(join(STATE_DIR, HOOK_KEY_FILE)), CONTAINER_HOOK_KEY]));
   const hookKeyGid = hookKey && groupRead ? statSync(hookKey).gid : undefined;

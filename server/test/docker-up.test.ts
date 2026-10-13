@@ -15,6 +15,7 @@ import {
   envFileKeys,
   envFileValue,
   hostTimeZone,
+  isPrivateGroup,
   keyNeedsGroup,
   parseArgs,
   planCodexMounts,
@@ -366,6 +367,21 @@ describe('docker-up: chave local do hook do Codex', () => {
     expect(renderOverride([], new Date(0), undefined, undefined, codex, '/home/fulano/.habblaud/codex-hook.key')).not.toContain('group_add');
     // O grupo só existe junto da chave.
     expect(renderOverride([], new Date(0), undefined, undefined, codex, undefined, 1001)).not.toContain('group_add');
+  });
+
+  it('isPrivateGroup: o grupo só serve à chave se for só do usuário (nenhum outro membro nem outro usuário com ele como primário)', () => {
+    const passwd = 'root:x:0:0::/root:/bin/sh\nfulano:x:1001:1001::/home/fulano:/bin/bash\nciclano:x:1002:100::/home/ciclano:/bin/bash\n';
+    const group = 'root:x:0:\nusers:x:100:fulano\nfulano:x:1001:\nequipe:x:1003:fulano,beltrano\nproprio:x:1004:fulano\n';
+    expect(isPrivateGroup(1001, 1001, group, passwd)).toBe(true);
+    // O próprio usuário listado como membro não conta.
+    expect(isPrivateGroup(1004, 1001, group, passwd)).toBe(true);
+    // users: outro usuário (ciclano) tem como primário; equipe: outro membro.
+    expect(isPrivateGroup(100, 1001, group, passwd)).toBe(false);
+    expect(isPrivateGroup(1003, 1001, group, passwd)).toBe(false);
+    // Grupo ou usuário fora dos arquivos (LDAP, arquivos ilegíveis): na dúvida, não.
+    expect(isPrivateGroup(2000, 1001, group, passwd)).toBe(false);
+    expect(isPrivateGroup(1001, 1001, '', '')).toBe(false);
+    expect(isPrivateGroup(1001, 1001, 'fulano:x:1001:\r\n', 'fulano:x:1001:1001::/home/fulano:/bin/bash\r\n')).toBe(true);
   });
 
   it('keyNeedsGroup: só no Docker Engine em Linux com o uid do host diferente do usuário do container (1000)', () => {

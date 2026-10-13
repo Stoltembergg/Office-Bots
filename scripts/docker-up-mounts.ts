@@ -38,10 +38,26 @@ export const CONTAINER_UID = 1000;
 /**
  * A chave do hook precisa ser lida pelo grupo (modo 0640, com group_add do grupo dela no container)? Só no Docker Engine
  * em Linux: lá o arquivo montado mantém o dono do host, e com outro uid o `node` (CONTAINER_UID) não lê uma chave 0600.
- * No Docker Desktop, o compartilhamento de arquivos cuida do dono.
+ * No Docker Desktop, o compartilhamento de arquivos cuida do dono. O grupo ainda precisa ser privado (isPrivateGroup).
  */
 export function keyNeedsGroup(platform: NodeJS.Platform, hostUid: number | undefined, dockerDesktop: boolean): boolean {
   return platform === 'linux' && !dockerDesktop && hostUid !== undefined && hostUid !== CONTAINER_UID;
+}
+
+/**
+ * O grupo `gid` é só do usuário `uid` (grupo privado), pelos textos de /etc/group e /etc/passwd? Nenhum outro membro
+ * listado e nenhum outro usuário com ele como grupo primário. Só assim a chave do hook pode ficar 0640. Grupo ou usuário
+ * fora dos arquivos (LDAP, arquivo ilegível): na dúvida, não.
+ */
+export function isPrivateGroup(gid: number, uid: number, groupDb: string, passwdDb: string): boolean {
+  const rows = (db: string) => db.split(/\r?\n/).map((l) => l.split(':'));
+  const users = rows(passwdDb).filter((f) => f.length >= 4);
+  const me = users.find((f) => Number(f[2]) === uid)?.[0];
+  const group = rows(groupDb).find((f) => f.length >= 3 && Number(f[2]) === gid);
+  if (!me || !group) return false;
+  const members = (group[3] ?? '').split(',').filter(Boolean);
+  if (members.some((m) => m !== me)) return false;
+  return !users.some((f) => Number(f[3]) === gid && Number(f[2]) !== uid);
 }
 
 export interface BindMount {

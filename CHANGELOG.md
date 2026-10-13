@@ -95,7 +95,8 @@ mudou.
 - Com a porta do Docker aberta na rede, qualquer um que alcançasse o Habblaud conseguia forjar eventos do Codex (criar
   agentes, encerrar sessões). Agora os eventos do hook que não vêm pelo loopback só valem com a prova da chave local
   `~/.habblaud/codex-hook.key`. Rode `npm run docker:up` de novo. No Linux com o Docker Engine e um uid diferente de
-  1000, a chave fica com modo 0640 e o container ganha o grupo dela, para conseguir lê-la.
+  1000, a chave fica com modo 0640 e o container ganha o grupo dela, para conseguir lê-la, desde que esse grupo seja só
+  seu.
 - O hook do Codex aceitava a decisão de qualquer programa que ocupasse a porta do Habblaud com ele parado. Agora ele
   só decide com a prova da mesma chave. Depois de atualizar, reinicie o Habblaud.
 - Um token cortado ao meio podia escapar da máscara de segredos nos textos que o Claude Code e o Codex mostram

@@ -805,7 +805,7 @@ Mais detalhes do servidor em [`server/README.md`](server/README.md).
 | `<conta>/projects/` | `/claude/<conta>/projects` (somente leitura) | Transcripts das sessões e dos subagentes. |
 | `~/.habblaud/usage/` | `/usage` (somente leitura) | Uso capturado pelo mod (ou pelo tap de statusline). |
 | `<pasta do Codex>/sessions/`, `archived_sessions/`, `thread-writer-locks/` e `session_index.jsonl` | `/codex/<conta>/...` (somente leitura) | Conversas do Codex, travas das sessões abertas e nomes das conversas. A pasta do Codex sem `sessions/` fica de fora. |
-| `~/.habblaud/codex-hook.key` | `/keys/codex-hook.key` (somente leitura) | Chave do hook do Codex (o `docker:up` cria se faltar): no container, os eventos e pedidos do hook chegam pela rede do Docker e só valem com a prova dela. No Linux com o Docker Engine e o seu uid diferente de 1000 (o do usuário do container), a chave fica com modo 0640 e o container ganha o grupo dela (`group_add`), para conseguir lê-la. |
+| `~/.habblaud/codex-hook.key` | `/keys/codex-hook.key` (somente leitura) | Chave do hook do Codex (o `docker:up` cria se faltar): no container, os eventos e pedidos do hook chegam pela rede do Docker e só valem com a prova dela. No Linux com o Docker Engine e o seu uid diferente de 1000 (o do usuário do container), a chave fica com modo 0640 e o container ganha o grupo dela (`group_add`), para conseguir lê-la, desde que esse grupo seja só seu (senão o `docker:up` avisa e a chave continua 0600). |
 | volume `habblaud-data` | `/data` | Dados do próprio Habblaud (nomes dos personagens, linha do tempo do timelapse e estatísticas do Meu dia). |
 
 Com `HABBLAUD_CODEX=0` (no `.env` ou no ambiente), nada do Codex é montado. A pasta da conta **nunca** é montada inteira

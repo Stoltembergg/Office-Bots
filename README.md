@@ -815,7 +815,7 @@ More server details in [`server/README.md`](server/README.md).
 | `<conta>/projects/` | `/claude/<conta>/projects` (read-only) | Transcripts of the sessions and subagents. |
 | `~/.habblaud/usage/` | `/usage` (read-only) | Usage captured by the mod (or by the statusline tap). |
 | `<pasta do Codex>/sessions/`, `archived_sessions/`, `thread-writer-locks/` and `session_index.jsonl` | `/codex/<conta>/...` (read-only) | Codex conversations, locks of the open sessions and conversation names. A Codex folder without `sessions/` is left out. |
-| `~/.habblaud/codex-hook.key` | `/keys/codex-hook.key` (read-only) | Codex hook key (`docker:up` creates it if missing): in the container, the hook's events and requests arrive through Docker's network and only count with proof of it. On Linux with Docker Engine and your uid other than 1000 (the container user's), the key gets mode 0640 and the container gets its group (`group_add`), so it can read it. |
+| `~/.habblaud/codex-hook.key` | `/keys/codex-hook.key` (read-only) | Codex hook key (`docker:up` creates it if missing): in the container, the hook's events and requests arrive through Docker's network and only count with proof of it. On Linux with Docker Engine and your uid other than 1000 (the container user's), the key gets mode 0640 and the container gets its group (`group_add`), so it can read it, as long as that group is yours alone (otherwise `docker:up` warns and the key stays 0600). |
 | `habblaud-data` volume | `/data` | Habblaud's own data (character names, the timelapse timeline and the My day stats). |
 
 With `HABBLAUD_CODEX=0` (in `.env` or in the environment), nothing from Codex is mounted. The account folder is **never**
