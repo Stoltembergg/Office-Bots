@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { orderAgents } from './agentorder';
+import { moveAgent, orderAgents } from './agentorder';
 
 const KEY = 'habblaud.tabs.order';
 
@@ -97,5 +97,71 @@ describe('orderAgents', () => {
     const congelado = Object.freeze([...ITEMS]);
     expect(() => ordenar(congelado)).not.toThrow();
     expect(ids(congelado)).toBe('a1,a2,a3,a4');
+  });
+});
+
+describe('moveAgent', () => {
+  const mover = (from: string, to: string, after: boolean, room = 'r') => moveAgent(room, ITEMS, idOf, sessionOf, from, to, after);
+  const guardado = (st: ReturnType<typeof memoryStorage>) => JSON.parse(st.data.get(KEY)!) as Record<string, string[]>;
+
+  it('AGORD-09: com after falso põe from imediatamente antes de to', () => {
+    const st = install();
+    expect(mover('a1', 'a3', false)).toBe(true);
+    expect(guardado(st).r).toEqual(['s2', 's1', 's3', 's4']);
+  });
+
+  it('AGORD-10: com after verdadeiro põe from imediatamente depois de to', () => {
+    const st = install();
+    expect(mover('a1', 'a3', true)).toBe(true);
+    expect(guardado(st).r).toEqual(['s2', 's3', 's1', 's4']);
+  });
+
+  it('AGORD-11: antes do primeiro e depois do último vai para as pontas', () => {
+    const st = install();
+    expect(mover('a4', 'a1', false)).toBe(true);
+    expect(guardado(st).r).toEqual(['s4', 's1', 's2', 's3']);
+
+    const st2 = install();
+    expect(mover('a1', 'a4', true)).toBe(true);
+    expect(guardado(st2).r).toEqual(['s2', 's3', 's4', 's1']);
+  });
+
+  it('AGORD-12: grava em habblaud.tabs.order as sessões (não os ids) na nova ordem', () => {
+    const st = install();
+    expect(mover('a1', 'a2', true)).toBe(true);
+    expect(st.data.get(KEY)).toBe('{"r":["s2","s1","s3","s4"]}');
+  });
+
+  it('AGORD-13: orderAgents com os mesmos itens devolve a nova ordem', () => {
+    install();
+    expect(mover('a1', 'a2', true)).toBe(true);
+    expect(ids(ordenar())).toBe('a2,a1,a3,a4');
+  });
+
+  it('AGORD-14: mantém intactas as listas guardadas dos outros projetos', () => {
+    const st = withOrder({ other: ['s9', 's8'] });
+    expect(mover('a1', 'a2', true)).toBe(true);
+    expect(guardado(st)).toEqual({ other: ['s9', 's8'], r: ['s2', 's1', 's3', 's4'] });
+  });
+
+  it('AGORD-15: from desconhecido devolve false sem gravar', () => {
+    const st = install();
+    expect(mover('zz', 'a2', false)).toBe(false);
+    expect(st.setItem).not.toHaveBeenCalled();
+    expect(st.data.size).toBe(0);
+  });
+
+  it('AGORD-16: to desconhecido devolve false sem gravar', () => {
+    const st = install();
+    expect(mover('a1', 'zz', false)).toBe(false);
+    expect(st.setItem).not.toHaveBeenCalled();
+    expect(st.data.size).toBe(0);
+  });
+
+  it('AGORD-17: from igual a to devolve false sem gravar', () => {
+    const st = install();
+    expect(mover('a2', 'a2', false)).toBe(false);
+    expect(st.setItem).not.toHaveBeenCalled();
+    expect(st.data.size).toBe(0);
   });
 });
