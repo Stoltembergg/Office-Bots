@@ -5,6 +5,7 @@ import {
   concludedByIdle,
   END_TURN_QUIET_MS,
   IDLE_TIMEOUT_MS,
+  parseSubagentMeta,
   PENDING_TOOL_TIMEOUT_MS,
   subagentRole,
   type IdleCheck,
@@ -95,5 +96,66 @@ describe('subagentRole', () => {
     expect(subagentRole(undefined)).toBe(tr('Subagente'));
     expect(subagentRole({})).toBe(tr('Subagente'));
     expect(subagentRole(undefined, '')).toBe(tr('Subagente'));
+  });
+});
+
+describe('parseSubagentMeta', () => {
+  it('SUBAG-14: objeto com os seis campos válidos devolve exatamente os seis', () => {
+    const raw = JSON.stringify({
+      agentType: 'Explore',
+      description: 'Procurar o bug',
+      toolUseId: 'toolu_01',
+      spawnDepth: 1,
+      requestShape: 'prompt',
+      workflowPhase: 'fase-1',
+    });
+    expect(parseSubagentMeta(raw)).toStrictEqual({
+      agentType: 'Explore',
+      description: 'Procurar o bug',
+      toolUseId: 'toolu_01',
+      spawnDepth: 1,
+      requestShape: 'prompt',
+      workflowPhase: 'fase-1',
+    });
+  });
+
+  it('SUBAG-15: texto é aparado; vazio, só espaços ou não string omite a chave', () => {
+    const meta = parseSubagentMeta(
+      JSON.stringify({ agentType: '  Explore ', description: '   ', toolUseId: 3, requestShape: '' }),
+    );
+    expect(meta).toStrictEqual({ agentType: 'Explore' });
+    expect(meta).not.toBeUndefined();
+    expect('description' in meta!).toBe(false);
+    expect('toolUseId' in meta!).toBe(false);
+    expect('requestShape' in meta!).toBe(false);
+  });
+
+  it('SUBAG-16: spawnDepth numérico é mantido (0, negativo, fracionário); não numérico é omitido', () => {
+    expect(parseSubagentMeta('{"spawnDepth":0}')).toStrictEqual({ spawnDepth: 0 });
+    expect(parseSubagentMeta('{"spawnDepth":-1}')).toStrictEqual({ spawnDepth: -1 });
+    expect(parseSubagentMeta('{"spawnDepth":1.5}')).toStrictEqual({ spawnDepth: 1.5 });
+    const meta = parseSubagentMeta('{"spawnDepth":"2"}');
+    expect(meta).toStrictEqual({});
+    expect('spawnDepth' in meta!).toBe(false);
+  });
+
+  it('SUBAG-17: campos desconhecidos são ignorados', () => {
+    expect(parseSubagentMeta('{"agentType":"Explore","foo":1}')).toStrictEqual({ agentType: 'Explore' });
+  });
+
+  it('SUBAG-18: objeto vazio devolve objeto vazio, não undefined', () => {
+    expect(parseSubagentMeta('{}')).toStrictEqual({});
+  });
+
+  it('SUBAG-19: JSON inválido (inclui string vazia) devolve undefined sem lançar', () => {
+    expect(parseSubagentMeta('{oops')).toBeUndefined();
+    expect(parseSubagentMeta('')).toBeUndefined();
+  });
+
+  it('SUBAG-20: JSON válido que não é objeto (null, número, string, booleano) devolve undefined', () => {
+    expect(parseSubagentMeta('null')).toBeUndefined();
+    expect(parseSubagentMeta('0')).toBeUndefined();
+    expect(parseSubagentMeta('"x"')).toBeUndefined();
+    expect(parseSubagentMeta('true')).toBeUndefined();
   });
 });
