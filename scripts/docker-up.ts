@@ -153,7 +153,7 @@ const INSTANCE_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 export function instanceNames(env: NodeJS.ProcessEnv): InstanceNames {
   const instance = env.HABBLAUD_INSTANCE?.trim();
   if (!instance) return { project: SERVICE, container: SERVICE, overrideFile: 'docker-compose.override.yml', dataVolume: `${SERVICE}_habblaud-data` };
-  if (!INSTANCE_RE.test(instance)) fail(`HABBLAUD_INSTANCE inválida: "${instance}" (use minúsculas, dígitos e hífen, até 40 caracteres; ex.: empresa-a).`);
+  if (!INSTANCE_RE.test(instance)) fail(tr('HABBLAUD_INSTANCE inválida: "{0}" (use minúsculas, dígitos e hífen, até 40 caracteres; ex.: empresa-a).', [instance]));
   const project = `${SERVICE}-${instance}`;
   return { instance, project, container: project, overrideFile: `docker-compose.${instance}.override.yml`, dataVolume: `${project}_habblaud-data` };
 }
@@ -188,14 +188,14 @@ export function instancesWith(current: unknown, entry: InstanceEntry): { instanc
  */
 export function instanceProblem(names: InstanceNames, port: number, roots: string[], registry: unknown, portAnswers: boolean): string | undefined {
   if (names.instance && !roots.length) {
-    return `HABBLAUD_INSTANCE=${names.instance} precisa de HABBLAUD_PROJECT_ROOTS (as pastas desta instância): sem elas os hooks não sabem quais sessões são dela.`;
+    return tr('HABBLAUD_INSTANCE={0} precisa de HABBLAUD_PROJECT_ROOTS (as pastas desta instância): sem elas os hooks não sabem quais sessões são dela.', [names.instance]);
   }
   const entries = instancesWith(registry, { name: '' }).instances;
   const other = entries.find((i) => i.port === port && i.name !== names.instance);
-  if (other) return `a porta ${port} já é da instância ${other.name}. Use outra: HABBLAUD_PORT=<porta livre>.`;
+  if (other) return tr('a porta {0} já é da instância {1}. Use outra: HABBLAUD_PORT=<porta livre>.', [port, other.name]);
   const mine = entries.find((i) => i.name === names.instance);
   if (names.instance && portAnswers && mine?.port !== port) {
-    return `já há um Habblaud respondendo na porta ${port} (a instância de sempre ou outra). Use outra: HABBLAUD_PORT=<porta livre>.`;
+    return tr('já há um Habblaud respondendo na porta {0} (a instância de sempre ou outra). Use outra: HABBLAUD_PORT=<porta livre>.', [port]);
   }
   return undefined;
 }
@@ -233,7 +233,7 @@ function registerInstance(entry: InstanceEntry): void {
     writeFileSync(tmp, `${JSON.stringify(instancesWith(current.value, entry), null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, INSTANCES_FILE);
   } catch (err) {
-    warn(`não consegui atualizar ${tildify(INSTANCES_FILE)} (${(err as Error).message}); os hooks vão usar a porta padrão.`);
+    warn(tr('não consegui atualizar {0} ({1}); os hooks vão usar a porta padrão.', [tildify(INSTANCES_FILE), (err as Error).message]));
   }
 }
 
