@@ -31,6 +31,7 @@ import { FileTail } from '../tail';
 import type { TerminalParser } from '../terminal';
 import { findSessionDir, readActiveSessions, readSummary, recentSessions, sessionDirOk, updatesPathOf, updatesPathOk, type ActiveSession, type GrokSummary } from './files';
 import { createGrokState, createGrokTerminalParser, parseGrokLine, type GrokLineResult, type GrokState } from './updates';
+import { tr } from '../../../shared/i18n';
 
 /** Docker: presença = conversa modificada nos últimos 30 min (revista a cada 10 s). */
 export const RECENT_MS = 30 * 60_000;
@@ -43,7 +44,7 @@ const CLOSE_AFTER_MISSING_MS = 1_500;
 const RESOLVE_MS = 3_000;
 /** Resultados guardados ao ler a conversa antes de o agente entrar no escritório. */
 const BACKLOG_MAX = 400;
-const ROLE = 'Agente principal (Grok)';
+const ROLE = tr('Agente principal (Grok)');
 /** Sem instrução vista (ficou antes da janela lida): escreveu há pouco = trabalhando. */
 const UNKNOWN_TURN_WORKING_MS = 90_000;
 /** Quanto tempo vale a conferência de que um pid é mesmo um processo do Grok. */

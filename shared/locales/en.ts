@@ -558,7 +558,6 @@ export const EN: Readonly<Record<string, string>> = {
   "Conta desconhecida": "Unknown account",
   " · plano {0}": " · {0} plan",
   "Abra o Claude Code em qualquer projeto{0} e veja seu agente chegar.": "Open Claude Code in any project{0} and watch your agent arrive.",
-  "Abra o Claude Code{0} ou o Codex em qualquer projeto e veja seu agente chegar.": "Open Claude Code{0} or Codex in any project and watch your agent arrive.",
   "Para ver o Codex ao vivo e aprovar pelo escritório: `npm run codex:install` e aprove os hooks em `/hooks` no Codex.": "To see Codex live and approve from the office: `npm run codex:install`, then approve the hooks in `/hooks` in Codex.",
   "Pergunta antes de quase tudo": "Asks before almost everything",
   "Pergunta quando precisa": "Asks when needed",
@@ -2586,4 +2585,9 @@ export const EN: Readonly<Record<string, string>> = {
   "HABBLAUD_PROJECT_ROOTS: a pasta \"{0}\" tem vírgula, e a lista é separada por vírgula; renomeie a pasta ou use outra.": "HABBLAUD_PROJECT_ROOTS: the folder \"{0}\" has a comma, and the list is comma-separated; rename the folder or use another one.",
   "Escopo: só as sessões abertas em {0}.": "Scope: only the sessions open in {0}.",
   "pasta fora das pastas deste escritório": "folder outside this office's folders",
+  "Turno encerrado ({0})": "Turn ended ({0})",
+  "Agente principal (Grok)": "Main agent (Grok)",
+  "Para responder, use o Grok": "To reply, use Grok",
+  "Abra o Claude Code{0} ou o {1} em qualquer projeto e veja seu agente chegar.": "Open Claude Code{0} or {1} in any project and watch your agent arrive.",
+  "Abra o Claude Code{0}, o Codex ou o Grok em qualquer projeto e veja seu agente chegar.": "Open Claude Code{0}, Codex or Grok in any project and watch your agent arrive.",
 };

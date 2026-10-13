@@ -9,6 +9,7 @@ import type { HistoryProvider, HistoryResolveResult } from '../source';
 import { fileScope } from '../scope';
 import { findSessionDir, groupCwd, isGrokSessionId, readSummary, SESSIONS_DIR, SUMMARY_FILE, updatesPathOf, updatesPathOk, type GrokSummary } from './files';
 import { createGrokTerminalParser } from './updates';
+import { tr } from '../../../shared/i18n';
 
 export interface GrokHistoryOptions {
   /** A conta do Grok (id no AccountsService e pasta lida por este processo); undefined = sem Grok. */
@@ -87,11 +88,11 @@ export class GrokHistory implements HistoryProvider {
 
   resolve(account: string, sessionId: string): HistoryResolveResult {
     const acc = this.opts.account();
-    if (!acc || acc.id !== account) return { status: 404, error: 'conta desconhecida' };
-    if (!isGrokSessionId(sessionId)) return { status: 400, error: 'id de sessão inválido' };
+    if (!acc || acc.id !== account) return { status: 404, error: tr('conta desconhecida') };
+    if (!isGrokSessionId(sessionId)) return { status: 400, error: tr('id de sessão inválido') };
     const dir = findSessionDir(acc.dir, sessionId);
     const path = dir && updatesPathOf(acc.dir, dir);
-    if (!dir || !path) return { status: 404, error: 'sessão não encontrada' };
+    if (!dir || !path) return { status: 404, error: tr('sessão não encontrada') };
     const found: HistoryResolveResult = { path, createParser: () => createGrokTerminalParser(this.now), grok: true, check: (p) => updatesPathOk(acc.dir, p) };
     // A pasta da sessão nem sempre aparece no updates.jsonl: o escopo confere a do summary.json (ou a do grupo), a
     // mesma que a listagem mostra.

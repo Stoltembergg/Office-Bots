@@ -10,6 +10,7 @@
 import { describePrompt, describeTool, maskSecrets, SPECIAL, truncate, type ActivityDescription } from '../../../shared/activity';
 import type { Activity, AgentStats, TaskItem, TaskStatus, TerminalEntry } from '../../../shared/types';
 import { INPUT_MAX, marked, oneLine, prepare, RESULT_MAX, RESULT_MAX_LINES, TEXT_MAX, THINKING_MAX, TITLE_ARG_MAX, type TerminalParser } from '../terminal';
+import { tr } from '../../../shared/i18n';
 
 type Rec = Record<string, unknown>;
 
@@ -394,10 +395,10 @@ export function createGrokTerminalParser(now: () => number = Date.now): Terminal
           return [entry];
         }
         case 'auto_compact_completed':
-          return [{ kind: 'system', id, at: u.at, text: 'Conversa compactada' }];
+          return [{ kind: 'system', id, at: u.at, text: tr('Conversa compactada') }];
         case 'turn_completed': {
           const reason = str(u.update.stop_reason);
-          return reason && reason !== 'end_turn' ? [{ kind: 'system', id, at: u.at, text: `Turno encerrado (${reason})`, level: 'warn' }] : [];
+          return reason && reason !== 'end_turn' ? [{ kind: 'system', id, at: u.at, text: tr('Turno encerrado ({0})', [reason]), level: 'warn' }] : [];
         }
         default:
           return [];
