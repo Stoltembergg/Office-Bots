@@ -606,9 +606,18 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
   }
   const command = win ? windowsHookCommand(ctx.hookPath, nodeBin) : hookCommand(ctx.hookPath, nodeBin);
   if (win && opts.command !== 'uninstall') {
-    const expands = ' tem $, crase ou %: no Windows, o PowerShell e o cmd trocam esses caracteres dentro das aspas e o hook pode falhar sem aviso.';
-    if (WINDOWS_EXPANDS.test(ctx.hookPath)) out(`! O caminho do hook (${tildify(ctx.hookPath, home)})${expands} Ponha o Habblaud numa pasta sem eles e rode de novo.`);
-    if (nodeBin && WINDOWS_EXPANDS.test(nodeBin)) out(`! O caminho do Node (${tildify(nodeBin, home)})${expands} Use um Node ${MIN_NODE_MAJOR}+ numa pasta sem eles (--node <caminho>).`);
+    // No install, recusa (o hook gravado falharia calado); no status, só avisa.
+    const mark = opts.command === 'install' ? '✗' : '!';
+    const expands = ' tem $, crase ou %: no Windows, o PowerShell e o cmd trocam esses caracteres dentro das aspas e o hook falharia sem aviso.';
+    const bad = [
+      WINDOWS_EXPANDS.test(ctx.hookPath) && `${mark} O caminho do hook (${tildify(ctx.hookPath, home)})${expands} Ponha o Habblaud numa pasta sem eles e rode de novo.`,
+      nodeBin && WINDOWS_EXPANDS.test(nodeBin) && `${mark} O caminho do Node (${tildify(nodeBin, home)})${expands} Use um Node ${MIN_NODE_MAJOR}+ numa pasta sem eles (--node <caminho>).`,
+    ].filter((line): line is string => typeof line === 'string');
+    for (const line of bad) out(line);
+    if (bad.length && opts.command === 'install') {
+      out('✗ Instalação recusada: nada foi gravado.');
+      return 1;
+    }
   }
   let failures = 0;
   let changed = 0;
