@@ -8,6 +8,7 @@ import {
   parseJournal,
   parseSubagentMeta,
   PENDING_TOOL_TIMEOUT_MS,
+  sessionDirOf,
   subagentRole,
   type IdleCheck,
 } from './subagents';
@@ -259,5 +260,18 @@ describe('parseJournal', () => {
     const map = parseJournal('');
     expect(map).toBeInstanceOf(Map);
     expect(map.size).toBe(0);
+  });
+});
+
+describe('sessionDirOf', () => {
+  it('SUBAG-31: tira o sufixo .jsonl do caminho do transcript', () => {
+    expect(sessionDirOf('/a/b/s.jsonl')).toBe('/a/b/s');
+  });
+
+  it('SUBAG-32: sem .jsonl no fim devolve igual; com .jsonl.jsonl tira só um sufixo', () => {
+    for (const p of ['/a/b/s', '/a/b/s.JSONL', '/a.jsonl/b', '/a/b/s.json']) {
+      expect(sessionDirOf(p), p).toBe(p);
+    }
+    expect(sessionDirOf('/a/b/s.jsonl.jsonl')).toBe('/a/b/s.jsonl');
   });
 });
