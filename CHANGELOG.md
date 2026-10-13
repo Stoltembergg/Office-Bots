@@ -10,6 +10,11 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Mudado
+
+- Com uma conta só do Claude Code (e sem atalho no shell), ela se chama **Claude Code**, como a do Codex se chama
+  Codex, no lugar de "Conta A". Com várias contas, continua "Conta <atalho>"; `HABBLAUD_ACCOUNTS` continua mandando.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
