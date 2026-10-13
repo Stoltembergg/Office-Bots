@@ -57,6 +57,8 @@ export class TopBar implements UiComponent {
     logo.addEventListener('error', () => {
       mark.innerHTML = FALLBACK_MARK;
     });
+    // Logo customizada (maior que o 4x da marca em pixels): desenho liso, sem serrilhar.
+    logo.addEventListener('load', () => logo.classList.toggle('is-smooth', logo.naturalWidth > 128));
     mark.append(logo);
 
     this.pillText = h('span', { class: 'ui-pill__text' });

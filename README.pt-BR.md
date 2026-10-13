@@ -736,6 +736,27 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
+### Logo da sua empresa
+
+Coloque um PNG na pasta `brand/` dentro da pasta de dados (`~/.habblaud/brand/`, ou a de `HABBLAUD_DATA_DIR`):
+
+| Arquivo | Onde aparece |
+| --- | --- |
+| `logo.png` | Ícone da barra superior e da tela de abertura, favicon e ícones do app. Use uma imagem quadrada de 256×256 ou maior, de preferência com fundo transparente. |
+| `signage.png` (opcional) | Placa na parede da recepção. Formato largo (ex.: 64×16 em pixel art ou 256×64). Sem ele, a placa mostra o `logo.png`. |
+
+Basta recarregar a página, sem reiniciar. Para voltar à marca do Habblaud, apague os arquivos. O navegador guarda o
+favicon por conta própria: se a aba continuar com o ícone antigo, abra o endereço numa aba anônima para conferir.
+
+**No Docker**, a pasta de dados é o volume `/data`:
+
+```bash
+docker compose exec habblaud mkdir -p /data/brand
+docker compose cp ./logo.png habblaud:/data/brand/logo.png
+```
+
+O nome "Habblaud" ao lado do ícone e a imagem de prévia ao compartilhar o link continuam os do projeto.
+
 ## Como funciona
 
 ```

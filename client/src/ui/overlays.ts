@@ -15,6 +15,8 @@ function brandMark(size: number): HTMLElement {
   img.addEventListener('error', () => {
     mark.innerHTML = FALLBACK_MARK;
   });
+  // Logo customizada (maior que o 4x da marca em pixels): desenho liso, sem serrilhar.
+  img.addEventListener('load', () => img.classList.toggle('is-smooth', img.naturalWidth > 128));
   mark.append(img);
   return mark;
 }

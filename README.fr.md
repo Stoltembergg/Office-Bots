@@ -775,6 +775,27 @@ Tout fonctionne sans rien configurer. Si vous avez besoin d'ajuster quelque chos
 `HABBLAUD_ACCOUNTS` (lues par `docker:up` sur l'hôte) ; les autres sont fixées à l'intérieur du conteneur. Options : `npm run docker:up -- --no-build` (démarre sans reconstruire),
 `npm run docker:down` (arrête) et `npm run docker:logs` (suit les journaux).
 
+### Le logo de votre entreprise
+
+Mettez un PNG dans le dossier `brand/` du dossier de données (`~/.habblaud/brand/`, ou celui de `HABBLAUD_DATA_DIR`) :
+
+| Fichier | Où il apparaît |
+| --- | --- |
+| `logo.png` | Icône de la barre du haut et de l'écran d'ouverture, favicon et icônes de l'app. Utilisez une image carrée de 256×256 ou plus, de préférence sur fond transparent. |
+| `signage.png` (facultatif) | Enseigne au mur de l'accueil. Format large (ex. 64×16 en pixel art ou 256×64). Sans lui, l'enseigne affiche `logo.png`. |
+
+Il suffit de recharger la page, sans redémarrer. Pour revenir à la marque Habblaud, supprimez les fichiers. Le
+navigateur garde le favicon en cache : si l'onglet garde l'ancienne icône, ouvrez l'adresse en navigation privée.
+
+**Avec Docker**, le dossier de données est le volume `/data` :
+
+```bash
+docker compose exec habblaud mkdir -p /data/brand
+docker compose cp ./logo.png habblaud:/data/brand/logo.png
+```
+
+Le nom « Habblaud » à côté de l'icône et l'image d'aperçu du lien restent ceux du projet.
+
 ## Comment ça marche
 
 ```

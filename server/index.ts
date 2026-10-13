@@ -11,6 +11,7 @@ import { createApiHandler, sendJson } from './http/app';
 import { createRequestGuard, isLoopbackHost } from './http/guard';
 import { createRemoteGate, isRemoteRequest, loadSecret, RemoteSessions, startRemoteListener, type RemoteListener } from './http/remote';
 import { Hub } from './http/sse';
+import { createBrandHandler } from './http/brand';
 import { createStaticHandler } from './http/static';
 import { TerminalStreams } from './http/terminal';
 import { createTimelineHandler } from './http/timeline';
@@ -341,6 +342,9 @@ if (config.dev) {
   fallback = (req, res, url) => serveStatic(req, res, url.pathname);
 }
 
+// Marca customizada (<pasta de dados>/brand/) vem antes do cliente padrão, no dev, na produção e na porta remota.
+const brand = createBrandHandler(config.dataDir);
+
 // Host/Origin/Content-Type: barra DNS rebinding e CSRF antes de qualquer rota (inclusive o Vite).
 const guard = createRequestGuard({ allowedHosts: config.allowedHosts });
 
@@ -348,7 +352,7 @@ server.on('request', (req, res) => {
   const url = parseUrl(req);
   try {
     if (guard(req, res)) return;
-    if (!api(req, res, url)) fallback(req, res, url);
+    if (!api(req, res, url) && !brand(req, res, url.pathname)) fallback(req, res, url);
   } catch (err) {
     log.warn(tr('Erro ao responder {0} {1}: {2}', [req.method, url.pathname, errMsg(err)]));
     if (!res.headersSent) sendJson(res, 500, { error: tr('erro interno') });
@@ -382,7 +386,7 @@ if (config.remote) {
       try {
         if (guard(req, res)) return;
         if (gate(req, res, url)) return;
-        if (!api(req, res, url)) fallback(req, res, url);
+        if (!api(req, res, url) && !brand(req, res, url.pathname)) fallback(req, res, url);
       } catch (err) {
         log.warn(tr('Erro ao responder (remoto) {0} {1}: {2}', [req.method, url.pathname, errMsg(err)]));
         if (!res.headersSent) sendJson(res, 500, { error: tr('erro interno') });
