@@ -123,3 +123,25 @@ describe('migração do nome antigo (CodeTown)', () => {
     expect(Object.fromEntries(full.data)).toEqual({ 'codetown:prefs': '{}' });
   });
 });
+
+describe('preferência quotaAlerts (aviso de limite de uso)', () => {
+  it('QUOTA-18: nasce ligada por padrão', () => {
+    expect(DEFAULT_PREFS.quotaAlerts).toBe(true);
+    expect(loadPrefs(null).quotaAlerts).toBe(true);
+  });
+  it('QUOTA-18: valor que não é booleano volta ao padrão', () => {
+    expect(sanitizePrefs({ quotaAlerts: 'sim' }).quotaAlerts).toBe(true);
+    expect(sanitizePrefs({ quotaAlerts: 0 }).quotaAlerts).toBe(true);
+    expect(sanitizePrefs({ quotaAlerts: null }).quotaAlerts).toBe(true);
+  });
+  it('QUOTA-18: false persiste', () => {
+    expect(sanitizePrefs({ quotaAlerts: false }).quotaAlerts).toBe(false);
+    expect(sanitizePrefs({ quotaAlerts: true }).quotaAlerts).toBe(true);
+  });
+  it('QUOTA-18: salva e carrega de volta, junto das demais preferências', () => {
+    const st = memoryStorage();
+    savePrefs(st, { ...DEFAULT_PREFS, quotaAlerts: false });
+    expect(JSON.parse(st.data.get(PREFS_KEY) as string).quotaAlerts).toBe(false);
+    expect(loadPrefs(st).quotaAlerts).toBe(false);
+  });
+});

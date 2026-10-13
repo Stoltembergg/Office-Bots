@@ -681,6 +681,11 @@ percentages (and when they reset) in `~/.habblaud/usage/<conta>.json`. The numbe
 reply. Check with `npm run mod:status`. On earlier versions of Claude Code, the statusline tap
 (`npm run usage:install`) does the same through the statusline command, in the same file.
 
+**Usage limit alerts.** When a window (the 5-hour session or the week) of an account reaches 80% and then 95%,
+Habblaud shows a warning toast, once per account and window until it resets. It only warns on current numbers (not on
+stale readings, demo accounts or the timelapse), and it is silent: no sound and no browser notification. Turn it off in
+**Settings › Alerts › Usage limit alerts**.
+
 <details>
 <summary><b>Details of the tap and the /usage cache</b></summary>
 

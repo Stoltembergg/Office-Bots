@@ -679,6 +679,11 @@ da semana (e quando reiniciam) em `~/.habblaud/usage/<conta>.json`. Os números 
 cada conta. Confira com `npm run mod:status`. Em versões anteriores do Claude Code, o tap de statusline
 (`npm run usage:install`) faz o mesmo pelo comando de statusline, no mesmo arquivo.
 
+**Avisos de limite de uso.** Quando uma janela (a sessão de 5 horas ou a semana) de uma conta chega a 80% e depois a
+95%, o Habblaud mostra um aviso (toast), uma vez por conta e janela até reiniciar. Só avisa com números atuais (não com
+leituras antigas, contas de demonstração nem no timelapse) e é silencioso: sem som e sem notificação do navegador.
+Desligue em **Configurações › Avisos › Avisos de limite de uso**.
+
 <details>
 <summary><b>Detalhes do tap e do cache do /usage</b></summary>
 

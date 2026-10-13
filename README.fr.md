@@ -716,6 +716,12 @@ arrivent après la prochaine réponse de chaque compte. Vérifiez avec `npm run 
 de Claude Code, la dérivation de statusline (`npm run usage:install`) fait la même chose via la commande de statusline,
 dans le même fichier.
 
+**Alertes de limite d'utilisation.** Quand une fenêtre (la session de 5 heures ou la semaine) d'un compte atteint 80 %
+puis 95 %, Habblaud affiche une alerte (toast), une fois par compte et par fenêtre jusqu'à la réinitialisation. Il ne
+prévient que sur des chiffres actuels (pas sur des lectures anciennes, des comptes de démonstration ni pendant le
+timelapse) et reste silencieux : pas de son ni de notification du navigateur. Désactivez-le dans
+**Réglages › Alertes › Alertes de limite d'utilisation**.
+
 <details>
 <summary><b>Détails de la dérivation et du cache de /usage</b></summary>
 

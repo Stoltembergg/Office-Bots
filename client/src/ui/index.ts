@@ -24,6 +24,7 @@ import { HoverTip } from './hovertip';
 import { hasRunningShells } from './model';
 import { hasCodexPermission } from './provider';
 import { Notifier } from './notify';
+import { QuotaToaster } from './quota-watch';
 import { ConnectionBanner, EmptyState, Splash } from './overlays';
 import { focusPermission, nextPermissionAgent } from './permission';
 import { loadPrefs, safeLocalStorage, savePrefs, worldOptionsFrom, type UiPrefs } from './prefs';
@@ -216,6 +217,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const feed = new FeedPanel(ctx);
   const toasts = new Toasts(ctx);
   const updateToaster = new UpdateToaster(ctx, (n) => toasts.push(n));
+  const quotaToaster = new QuotaToaster(ctx, (n) => toasts.push(n));
   settings = new SettingsPopover(ctx, notifier, sound);
   help = new HelpDialog();
   const day = new DayLauncher(ctx, (el) => root.append(el));
@@ -242,7 +244,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   }));
   drawer.onLayoutChange = () => applyLayout();
 
-  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, pty, history, deliveries, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster];
+  const components: UiComponent[] = [topbar, sidebar, drawer, terminal, pty, history, deliveries, feed, toasts, settings, empty, banner, tip, notifier, splash, timelapse, sound, day, updateToaster, quotaToaster];
 
   // ---------------------------------------------------------------- renderização agrupada por quadro
   let rafId = 0;

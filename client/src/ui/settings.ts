@@ -202,6 +202,7 @@ export class SettingsPopover implements UiComponent {
         { class: 'ui-set-group' },
         h('h3', { text: tr('Avisos') }),
         sw('browserNotifications', tr('Notificações do navegador'), tr('Avisa quando alguém precisa de você e a aba está em segundo plano.'), () => void this.toggleNotifications()),
+        sw('quotaAlerts', tr('Avisos de limite de uso'), tr('Avisa uma vez quando uma janela de 5 h ou da semana chega a 80% e a 95% (por conta, até reiniciar).'), flip('quotaAlerts')),
       ),
       this.soundGroup.el,
       h('div', { class: 'ui-set-group' }, h('h3', { text: tr('Idioma') }), this.language.row),

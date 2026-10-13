@@ -586,6 +586,12 @@ export const EN: Readonly<Record<string, string>> = {
   "Claude Code encerrado (código {0})": "Claude Code exited (code {0})",
   "Claude Code encerrado": "Claude Code exited",
 
+  // client/src/ui/quota-alert.ts
+  "⚠️ {0}: {1}% da sessão de 5 h usados (reinicia {2})": "⚠️ {0}: {1}% of the 5 h session used (resets {2})",
+  "⚠️ {0}: {1}% da semana usados (reinicia {2})": "⚠️ {0}: {1}% of the week used (resets {2})",
+  "🚨 {0}: perto do limite, {1}% da sessão de 5 h usados (reinicia {2})": "🚨 {0}: near the limit, {1}% of the 5 h session used (resets {2})",
+  "🚨 {0}: perto do limite, {1}% da semana usados (reinicia {2})": "🚨 {0}: near the limit, {1}% of the week used (resets {2})",
+
   // client/src/ui/roomrename.ts
   "Nome da sala": "Room name",
   "Enter salva · Esc cancela · vazio volta a “{0}”": "Enter saves · Esc cancels · empty resets to “{0}”",
@@ -647,6 +653,8 @@ export const EN: Readonly<Record<string, string>> = {
   "Etiqueta com o nome acima de cada personagem.": "A name tag above each character.",
   "Notificações do navegador": "Browser notifications",
   "Avisa quando alguém precisa de você e a aba está em segundo plano.": "Alerts you when someone needs you and the tab is in the background.",
+  "Avisos de limite de uso": "Usage limit alerts",
+  "Avisa uma vez quando uma janela de 5 h ou da semana chega a 80% e a 95% (por conta, até reiniciar).": "Warns once when a 5 h or weekly window reaches 80% and 95% (per account, until it resets).",
   "Idioma": "Language",
   "Este navegador não oferece notificações.": "This browser doesn't support notifications.",
   "Bloqueadas pelo navegador: libere nas permissões do site.": "Blocked by the browser: allow them in the site permissions.",
