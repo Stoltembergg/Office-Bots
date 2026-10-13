@@ -140,7 +140,7 @@ class TranscriptSource implements ConversationSource {
     this.parser = this.o.createParser();
     if (this.o.check && !this.o.check(this.tail.path)) this.closed = true;
     // Escopo por pasta: o arquivo inteiro precisa ser de dentro (uma troca de pasta antes da janela lida passaria).
-    if (this.o.scope) {
+    if (this.o.scope && !this.closed) {
       const st = fileScope(this.tail.path, this.o.scope, this.o.grok).status;
       if (st === 'out' || (st === 'unknown' && !(this.o.cwd !== undefined && this.o.scope(this.o.cwd)))) this.closed = true;
     }

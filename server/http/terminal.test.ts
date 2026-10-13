@@ -524,6 +524,25 @@ describe('terminal: transporte', () => {
     }
   });
 
+  it('conferência do arquivo (Grok): recusada ao conectar, o escopo nem abre o arquivo', async () => {
+    const env = await serve({ projectRoots: ['/p'], streams: { checkerFor: () => () => false } });
+    const seen: string[] = [];
+    const inScope = env.office.inScope;
+    (env.office as { inScope: (cwd: string) => boolean }).inScope = (cwd) => (seen.push(cwd), inScope(cwd));
+    try {
+      const path = join(env.dir, 'k2.jsonl');
+      writeLines(path, [JSON.stringify({ id: 'a', text: 'SEGREDO', cwd: '/p/externo' })]);
+      env.paths.set(MAIN, path);
+      const s = await open(env.base, route(MAIN));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(s.raw).not.toContain('SEGREDO');
+      expect(seen).not.toContain('/p/externo');
+      s.close();
+    } finally {
+      await env.close();
+    }
+  });
+
   it('stop() encerra os streams abertos', async () => {
     const env = await serve();
     try {
