@@ -70,6 +70,26 @@ function setupPermissions(opts: { viewers?: number; projectRoots?: string[] } = 
 }
 
 describe('CodexRuntime', () => {
+  it('no container, delega assumir e encerrar ao auxiliar mesmo sem hospedagem; não consulta o TUI local', async () => {
+    const find = vi.fn(async () => undefined);
+    const stop = vi.fn(async () => 'gone' as const);
+    const { rt, calls } = setup({ runtime: { delegate: true, tui: { find, stop } } });
+    await expect(rt.stop(ID)).resolves.toBeUndefined();
+    await expect(rt.takeover(ID)).resolves.toEqual({ kind: 'hosted', agentId: ID });
+    await expect(rt.takeover(ID)).resolves.toEqual({ kind: 'hosted', agentId: ID });
+    await rt.stop(ID);
+    expect(calls).toEqual([`release:${T}`, `resume:${T}`, `resume:${T}`, `release:${T}`]);
+    expect(find).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('no container, mensagem de sessão ainda observada também vai ao auxiliar, que escolhe app-server ou queue no host', async () => {
+    const { rt, calls, queued } = setup({ runtime: { delegate: true, queue: undefined } });
+    await expect(rt.deliver({ codexHome: '/h/.codex', thread: T, text: 'oi' })).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([`send:${T}:oi`]);
+    expect(queued).toEqual([]);
+  });
+
   it('assumir: encerra o TUI conferido e retoma o thread no app-server; depois a mensagem vai pelo app-server', async () => {
     const { rt, calls, queued, stopped } = setup({ tuiPid: 18194 });
     await expect(rt.takeover(ID)).resolves.toEqual({ kind: 'hosted', agentId: ID });
@@ -109,6 +129,21 @@ describe('CodexRuntime', () => {
     const { rt } = setup();
     const reply = await rt.onAgentRequest('.codex', { kind: 'question', threadId: T, questions: [{ id: 'q1', header: 'B', question: 'Qual?', options: [{ label: 'a', description: '' }], isOther: false }] });
     expect(reply).toEqual({ kind: 'question', answers: null });
+  });
+
+  it('pergunta usa o caminho resolvido da sala; sem resolução mantém roomId, aprovação mantém o cwd do protocolo', async () => {
+    const register = vi.fn(() => ({ skip: 'sem página' }));
+    const { rt } = setup({ runtime: {
+      cwdOf: () => '/p/loja', agent: () => agent({ roomId: 'sala:loja' }),
+      permissions: { register, wait: () => undefined },
+    } });
+    await rt.onAgentRequest('.codex', question);
+    expect(register).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/p/loja' }));
+    await rt.onAgentRequest('.codex', { kind: 'approval', threadId: T, tool: 'Bash', input: {}, cwd: '/p/outra' });
+    expect(register).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/p/outra' }));
+    const fallback = setup({ runtime: { permissions: { register, wait: () => undefined } } });
+    await fallback.rt.onAgentRequest('.codex', question);
+    expect(register).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/p/loja' }));
   });
 
   it('registro real sem página conectada cancela a pergunta e recusa aprovação imediatamente', async () => {

@@ -26,6 +26,10 @@ export interface CodexRuntimeOptions {
     wait(id: string, ms: number): { result: Promise<WaitResult> } | undefined;
   };
   tui?: { find: typeof findCodexTui; stop: typeof stopCodexTui };
+  /** No container, o auxiliar do host assume e encerra a sessão inteira (inclusive o TUI). */
+  delegate?: boolean;
+  /** Caminho real da sala; sem resolução, usa roomId para os runtimes sem Office. */
+  cwdOf?: (a: AgentInfo) => string | undefined;
   agentIdOf: (account: string, threadId: string) => string;
 }
 
@@ -44,7 +48,7 @@ export class CodexRuntime implements AgentRuntime {
 
   readonly deliver: CodexQueueRunner = async (job) => {
     const app = this.opts.app(job.codexHome);
-    if (app.hosts(job.thread)) {
+    if (this.opts.delegate || app.hosts(job.thread)) {
       try {
         await app.send(job.thread, job.text);
         return { ok: true };
@@ -72,6 +76,10 @@ export class CodexRuntime implements AgentRuntime {
     const a = this.main(agentId);
     const home = this.homeOrFail(a);
     const app = this.opts.app(home);
+    if (this.opts.delegate) {
+      await app.resumeThread(a.sessionId);
+      return { kind: 'hosted', agentId };
+    }
     if (app.hosts(a.sessionId)) return { kind: 'hosted', agentId };
     const tui = await (this.opts.tui?.find ?? findCodexTui)(home, a.sessionId);
     if (tui) {
@@ -91,6 +99,7 @@ export class CodexRuntime implements AgentRuntime {
     const a = this.main(agentId);
     const home = this.homeOrFail(a);
     const app = this.opts.app(home);
+    if (this.opts.delegate) return app.release(a.sessionId);
     if (app.hosts(a.sessionId)) {
       await app.interrupt(a.sessionId).catch(() => undefined);
       await app.release(a.sessionId);
@@ -106,8 +115,9 @@ export class CodexRuntime implements AgentRuntime {
     const fail: CodexAgentReply = r.kind === 'question' ? { kind: 'question', answers: null } : { kind: 'approval', allow: false };
     const perms = this.opts.permissions;
     if (!perms) return fail;
-    // Perguntas não trazem cwd no protocolo; o roomId do Office é o caminho da pasta da sessão.
-    const cwd = r.kind === 'approval' ? r.cwd : this.opts.agent(this.opts.agentIdOf(account, r.threadId))?.roomId;
+    // Perguntas não trazem cwd no protocolo; o Office resolve o id da sala para o caminho da sessão.
+    const a = r.kind === 'question' ? this.opts.agent(this.opts.agentIdOf(account, r.threadId)) : undefined;
+    const cwd = r.kind === 'approval' ? r.cwd : a ? (this.opts.cwdOf ? this.opts.cwdOf(a) : a.roomId) : undefined;
     const raw = r.kind === 'question'
       ? { provider: 'codex', account, session_id: r.threadId, tool_name: ASK_TOOL, tool_input: { questions: r.questions.map((q) => ({ question: q.question, header: q.header, multiSelect: false, options: q.options })) }, cwd, timeout_ms: ANSWER_WAIT_MS }
       : { provider: 'codex', account, session_id: r.threadId, tool_name: r.tool, tool_input: r.input, cwd, timeout_ms: ANSWER_WAIT_MS };

@@ -345,15 +345,41 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   agente aparecer, UserPromptSubmit/PreToolUse = trabalhando (com a atividade de agora), PermissionRequest = esperando
   ("aprovar um comando"), Stop = ocioso, SessionEnd fecha.
 - **Aprovar pelo escritório** (`permissions/*`, `permissions/codex.ts`): o mesmo `POST /api/permissions` com
-  `provider: 'codex'`, `account` e `codexHome`; sem sugestões, sem perguntas, sem a busca no transcript; `interrupt` ou
+  `provider: 'codex'`, `account` e `codexHome`; sem sugestões nem busca no transcript; o hook não manda perguntas
+  (as do app-server passam pelo runtime abaixo); `interrupt` ou
   `suggestion` num pedido do Codex = 400. O hook espera até `permissionTimeoutS` de `~/.habblaud/codex-hook.json`
   (padrão 25 s) e imprime só `allow` ou `deny` (+`message`). O Codex só mostra a aprovação no terminal depois que o hook
   termina.
-- **Mensagens** (`messages/*`, `messages/codex.ts`): para agentes do Codex, `codex queue --thread=<id> --message=<texto>`
+- **Mensagens** (`messages/*`, `messages/codex.ts`): nas sessões hospedadas, o runtime usa o app-server (ver abaixo).
+  Para as sessões do TUI só observadas, `codex queue --thread=<id> --message=<texto>`
   com `CODEX_HOME` = pasta da conta (no host). Fora do Docker o servidor roda o comando (`HABBLAUD_CODEX_BIN` ou `codex`
   do PATH); no Docker, o auxiliar do host (`npm run codex:bridge`) busca em `POST /api/codex/bridge/poll` e confirma em
   `/ack` (mesma trava das mensagens). `canMessage` = há entregador (binário achado, ou auxiliar visto há até 10 s).
   Retorno 0 = entrou na fila da sessão (`delivered`); o Codex consome a fila a cada ~10 s, quando a sessão fica ociosa.
+
+## `server/runtime/`
+
+`AgentRuntime` define as ações por ferramenta (abrir, assumir, encerrar) e suas capacidades; `RuntimeSet` escolhe
+pelo provedor do agente e aplica o filtro por pasta antes da ação. `ClaudeRuntime` mantém o `PtyManager` e o
+`SpawnService` existentes. O snapshot publica `canStop` e `canTakeover` para os botões do cliente.
+
+`CodexRuntime` abre e retoma sessões em `CodexAppServer`, um processo `codex app-server` por `CODEX_HOME`, falando
+JSON-RPC por linhas. Sessões hospedadas rodam em always-approve (`approvalPolicy: "never"`,
+`sandbox: "danger-full-access"`); mensagens usam `turn/start` ou `turn/steer`. Assumir confere e encerra o TUI local
+antes de retomar; encerrar interrompe e libera o thread. Perguntas entram no `PermissionRegistry` e recebem a resposta
+do escritório, ou são canceladas sem página conectada/ao vencer o prazo. Sessões do TUI só observadas usam `codex queue`.
+
+No Docker, `HostQueue` guarda as ações até `npm run codex:bridge` buscá-las e confirmá-las no host. O runtime do
+container usa `delegate: true`: o auxiliar local assume, encerra e entrega mensagens, sem procurar o TUI no container.
+A pasta das perguntas é resolvida por `office.roomPath(agent.roomId)`.
+
+| Rota | Descrição |
+| --- | --- |
+| `POST /api/agents/:id/takeover` | Assume pelo runtime; Claude devolve `PtyInfo`, Codex devolve `{kind: 'hosted', agentId}`; só pelo próprio computador |
+| `POST /api/agents/:id/stop` | Encerra pelo runtime; `204` ou o status do `RuntimeError`; só pelo próprio computador |
+| `POST /api/spawn` | `{provider?: 'claude' \| 'codex', folder, prompt, account?}`; ausente = Claude, `201` com o pedido aberto |
+| `POST /api/host/runtime/poll` | Auxiliar busca `{actions}` da fila do Docker |
+| `POST /api/host/runtime/ack` | Auxiliar confirma `{results}` com os threads hospedados |
 
 ## Variáveis de ambiente
 
@@ -427,6 +453,7 @@ O repositório é também um marketplace de plugins do Claude Code (`.claude-plu
 - `history/` — gravador da linha do tempo do timelapse (`timeline.ts`) e as estatísticas do Meu dia: amostragem, persistência e retenção (`daystats.ts`; o acumulador puro fica em `shared/daystats.ts`).
 - `permissions/` — responder pelo escritório (permissões e perguntas): registro dos pedidos (`registry.ts`), rotas (`http.ts`) e a busca da chamada no transcript (`transcript.ts`).
 - `messages/` — mensagens pelo escritório: fila, presença das sessões e prazos (`registry.ts`) e rotas (`http.ts`).
+- `runtime/` — ações comuns por ferramenta, cliente JSON-RPC do Codex, conferência do TUI e fila do auxiliar do host.
 - `updates/` — verificação de versão nova nas releases do GitHub (`checker.ts`).
 
 Testes: `npx vitest run server shared` (fixtures sintéticas em `server/test/fixtures.ts`; os scripts do host —
