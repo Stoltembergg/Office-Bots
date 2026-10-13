@@ -1161,8 +1161,8 @@ describe('área externa por blocos', () => {
     const digest = (ps: readonly { x: number; y: number }[]) => ps.reduce((d, p) => (d * 31 + p.x * 7 + p.y) % 1_000_003, 0);
     for (const [n, count, dg] of [
       [1, 88, 171157],
-      [4, 109, -905702],
-      [8, 141, -95388],
+      [4, 108, 977642],
+      [8, 140, -13660],
     ] as const) {
       const ps = layoutExterior(existingBlocks(Array.from({ length: n }, (_, i) => i))).props;
       expect([ps.length, digest(ps)], `${n} salas`).toEqual([count, dg]);

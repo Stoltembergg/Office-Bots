@@ -233,6 +233,23 @@ export class Lighting {
     l.imageSmoothingEnabled = false;
     // sem suavização: pixels nítidos como o resto da arte (e bem mais barato de ampliar)
     if (ex > sx && ey > sy) l.drawImage(map, sx, sy, ex - sx, ey - sy, mx0 + sx * MAP_SCALE, my0 + sy * MAP_SCALE, (ex - sx) * MAP_SCALE, (ey - sy) * MAP_SCALE);
+    // halos dos postes além da base: na mesma camada, com o mesmo sprite e tamanho dos postes da base, para a
+    // rua de fora ficar com o mesmo tom da de dentro
+    const n = amb.night;
+    if (n >= 0.12 && scene.lampsBeyond.length) {
+      const k = Math.min(1, (n - 0.12) / 0.5);
+      const street = haloSprite(STREET_WARM, 64);
+      l.globalCompositeOperation = 'lighten';
+      l.globalAlpha = k;
+      for (const prop of scene.lampsBeyond) {
+        l.drawImage(street, prop.x - 60, prop.y + 6 - 42, 120, 84);
+        l.globalAlpha = 0.7 * k;
+        l.drawImage(street, prop.x - 15, prop.y - 30 - 12, 30, 24);
+        l.globalAlpha = k;
+      }
+      l.globalAlpha = 1;
+      l.globalCompositeOperation = 'source-over';
+    }
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'multiply';
@@ -536,15 +553,9 @@ export class Lighting {
         ctx.globalAlpha = 0.6 * n;
         ctx.drawImage(warm, Math.round(prop.x - 14), Math.round(prop.y - 43), 28, 28);
       }
-      // postes além da base: o mapa não os cobre (ele tem o tamanho da base), então o halo no chão e o da cabeça
-      // vão direto na tela, com o mesmo sprite quente, por cima do tom de fora
-      const street = haloSprite(STREET_WARM, 64);
+      // cabeça acesa dos postes além da base (o halo no chão vai na camada de luz, em drawAmbient)
       for (const prop of scene.lampsBeyond) {
         if (!inView(prop.x, prop.y, 80)) continue;
-        ctx.globalCompositeOperation = 'lighten';
-        ctx.globalAlpha = 0.5 * n;
-        ctx.drawImage(street, Math.round(prop.x - 60), Math.round(prop.y + 6 - 42), 120, 84);
-        ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 0.6 * n;
         ctx.drawImage(warm, Math.round(prop.x - 14), Math.round(prop.y - 43), 28, 28);
       }

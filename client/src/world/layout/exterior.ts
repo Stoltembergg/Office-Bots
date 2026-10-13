@@ -105,11 +105,15 @@ function pavedRect(s: Street): TileRect {
 export const CANOPY_HALF_W = 18;
 export const CANOPY_UP = 50;
 
-/** A copa de um prop com base em (x, y) (px) encosta na calçada ou no asfalto de `s` (linhas 2–10 de uma rua h; colunas 1–9 de uma v)? */
+/**
+ * A copa de um prop com base em (x, y) (px) encosta na calçada ou no asfalto de `s` (linhas 2–10 de uma rua h;
+ * colunas 1–9 de uma v)? Ao longo do eixo a rua não tem fim: o render a estende além dos bounds, e uma árvore de
+ * célula que atravessa a borda da base cairia sobre a extensão.
+ */
 export function canopyOverlapsStreet(x: number, y: number, s: Street): boolean {
   const r = s.rect;
-  const [x0, x1, y0, y1] = s.axis === 'h' ? [r.x * TILE, (r.x + r.w) * TILE, (r.y + 2) * TILE, (r.y + 11) * TILE] : [(r.x + 1) * TILE, (r.x + 10) * TILE, r.y * TILE, (r.y + r.h) * TILE];
-  return x + CANOPY_HALF_W > x0 && x - CANOPY_HALF_W < x1 && y > y0 && y - CANOPY_UP < y1;
+  if (s.axis === 'h') return y > (r.y + 2) * TILE && y - CANOPY_UP < (r.y + 11) * TILE;
+  return x + CANOPY_HALF_W > (r.x + 1) * TILE && x - CANOPY_HALF_W < (r.x + 10) * TILE;
 }
 
 /** Lados de um bloco que dão para uma rua: a cerca viva e o paving dos pátios ficam só deles. */
