@@ -15,12 +15,11 @@ do meio (0.**3**.0).
 - `HABBLAUD_PROJECT_ROOTS`: o escritório mostra só as sessões abertas nas pastas escolhidas (ex.: a de uma empresa ou cliente).
   O histórico do terminal, as permissões e os terminais abertos seguem o mesmo filtro, e uma sessão que passa a mexer
   em outra pasta sai do escritório. Nomes, timelapse e Meu dia ficam numa pasta própria de cada escopo. No Docker, o
-  `docker:up` repassa as pastas já expandidas.
+  `docker:up` repassa as pastas já expandidas. O Novo agente e o terminal interativo recusam pasta de fora.
 - Um escritório por pasta: `HABBLAUD_INSTANCE=<nome> npm run docker:up` sobe uma instância extra, lado a lado com as
   outras (container, volume e endereço `<nome>.localhost` próprios). Os hooks de permissão do Claude Code e do
   Codex mandam cada pedido para a instância da pasta da sessão, e o plugin de mensagens pergunta às portas de
-  `HABBLAUD_PORTS`.
-  `docker:up` repassa as pastas já expandidas. O Novo agente e o terminal interativo recusam pasta de fora.
+  `HABBLAUD_PORTS`. O acesso pelo celular fica com o escritório sem `HABBLAUD_INSTANCE`.
 
 ## [0.11.0] - 2026-10-13
 
