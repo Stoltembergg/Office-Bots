@@ -1,6 +1,6 @@
 // Chave local do hook do Codex (codex/key.ts): arquivo de 32 bytes em <dir>/codex-hook.key (criado com modo 0600 só com
 // create), prova HMAC por papel e o conferente de nonce (idade, reuso, prova em tempo constante). Chaves sintéticas.
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { tempDir } from '../test/fixtures';
@@ -43,6 +43,31 @@ describe('loadHookKey', () => {
     const d = dir();
     loadHookKey(d, { create: true });
     expect(statSync(join(d, HOOK_KEY_FILE)).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === 'win32')('chave já existente mais aberta que o modo pedido: tira o que sobra (0644 → 0600; com 0640, só o grupo lê)', () => {
+    const d = dir();
+    mkdirSync(d, { recursive: true });
+    const file = join(d, HOOK_KEY_FILE);
+    writeFileSync(file, KEY, { mode: 0o644 });
+    chmodSync(file, 0o644);
+    expect(loadHookKey(d)!.equals(KEY)).toBe(true);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    chmodSync(file, 0o666);
+    expect(loadHookKey(d, { mode: 0o640 })!.equals(KEY)).toBe(true);
+    expect(statSync(file).mode & 0o777).toBe(0o640);
+    // Pedir 0640 numa chave 0600 dá ao grupo a leitura (o docker:up, para o container ler); 0600 tira de novo.
+    chmodSync(file, 0o600);
+    loadHookKey(d, { create: true, mode: 0o640 });
+    expect(statSync(file).mode & 0o777).toBe(0o640);
+    loadHookKey(d);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === 'win32')('com mode 0640, a chave criada já nasce 0640', () => {
+    const d = dir();
+    loadHookKey(d, { create: true, mode: 0o640 });
+    expect(statSync(join(d, HOOK_KEY_FILE)).mode & 0o777).toBe(0o640);
   });
 
   it('arquivo com tamanho errado (vazio, texto, 33 bytes) ou pasta no lugar: undefined e nunca sobrescreve, nem com create', () => {

@@ -847,7 +847,7 @@ Plus de détails sur le serveur dans [`server/README.md`](server/README.md).
 | `<conta>/projects/` | `/claude/<conta>/projects` (lecture seule) | Transcripts des sessions et des sous-agents. |
 | `~/.habblaud/usage/` | `/usage` (lecture seule) | Utilisation capturée par le mod (ou par la dérivation de statusline). |
 | `<pasta do Codex>/sessions/`, `archived_sessions/`, `thread-writer-locks/` et `session_index.jsonl` | `/codex/<conta>/...` (lecture seule) | Conversations de Codex, verrous des sessions ouvertes et noms des conversations. Le dossier de Codex sans `sessions/` est ignoré. |
-| `~/.habblaud/codex-hook.key` | `/keys/codex-hook.key` (lecture seule) | Clé du hook de Codex (`docker:up` la crée si elle manque) : dans le conteneur, les événements et demandes du hook arrivent par le réseau de Docker et ne valent qu'avec sa preuve. |
+| `~/.habblaud/codex-hook.key` | `/keys/codex-hook.key` (lecture seule) | Clé du hook de Codex (`docker:up` la crée si elle manque) : dans le conteneur, les événements et demandes du hook arrivent par le réseau de Docker et ne valent qu'avec sa preuve. Sous Linux avec Docker Engine et un uid différent de 1000 (celui de l'utilisateur du conteneur), la clé passe en mode 0640 et le conteneur reçoit son groupe (`group_add`), pour pouvoir la lire. |
 | volume `habblaud-data` | `/data` | Données propres à Habblaud (noms des personnages, chronologie du timelapse et statistiques de Ma journée). |
 
 Avec `HABBLAUD_CODEX=0` (dans le `.env` ou dans l'environnement), rien de Codex n'est monté. Le dossier du compte n'est

@@ -15,6 +15,7 @@ import {
   envFileKeys,
   envFileValue,
   hostTimeZone,
+  keyNeedsGroup,
   parseArgs,
   planCodexMounts,
   planMounts,
@@ -355,6 +356,26 @@ describe('docker-up: chave local do hook do Codex', () => {
     for (const yml of [renderOverride([], new Date(0), undefined, undefined, codex), renderOverride([], new Date(0))]) {
       expect(yml).not.toContain('HABBLAUD_CODEX_HOOK_KEY');
       expect(yml).not.toContain('codex-hook.key');
+      expect(yml).not.toContain('group_add');
     }
+  });
+
+  it('com o grupo da chave: group_add com esse gid (o usuário do container lê a chave 0640); sem ele, nada', () => {
+    const yml = renderOverride([], new Date(0), undefined, undefined, codex, '/home/fulano/.habblaud/codex-hook.key', 1001);
+    expect(yml).toContain('    group_add:\n      - "1001"\n    volumes:');
+    expect(renderOverride([], new Date(0), undefined, undefined, codex, '/home/fulano/.habblaud/codex-hook.key')).not.toContain('group_add');
+    // O grupo só existe junto da chave.
+    expect(renderOverride([], new Date(0), undefined, undefined, codex, undefined, 1001)).not.toContain('group_add');
+  });
+
+  it('keyNeedsGroup: só no Docker Engine em Linux com o uid do host diferente do usuário do container (1000)', () => {
+    expect(keyNeedsGroup('linux', 1001, false)).toBe(true);
+    expect(keyNeedsGroup('linux', 0, false)).toBe(true);
+    expect(keyNeedsGroup('linux', 1000, false)).toBe(false);
+    // Docker Desktop: o compartilhamento de arquivos cuida do dono.
+    expect(keyNeedsGroup('linux', 1001, true)).toBe(false);
+    expect(keyNeedsGroup('darwin', 501, false)).toBe(false);
+    expect(keyNeedsGroup('win32', undefined, false)).toBe(false);
+    expect(keyNeedsGroup('linux', undefined, false)).toBe(false);
   });
 });

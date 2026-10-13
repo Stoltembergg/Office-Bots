@@ -5,7 +5,7 @@
 // responde com a própria prova do mesmo nonce, para o hook saber que fala com o Habblaud desta máquina, e não com quem
 // ocupou a porta. Nada aqui lança.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const HOOK_KEY_FILE = 'codex-hook.key';
@@ -29,20 +29,40 @@ function readKey(file: string): Buffer | undefined {
 }
 
 /**
- * Lê `<dir>/codex-hook.key` (32 bytes). create=true cria (aleatório, modo 0600) se faltar. undefined = ausente/ilegível.
+ * Deixa a chave com exatamente `mode`, se ela for do usuário deste processo (fora do Windows, onde o modo não diz nada):
+ * corrige uma chave antiga mais aberta (0644) e dá ou tira a leitura do grupo (0640 do docker:up, para o container).
+ * Uma chave de outro dono (a montada no container) fica como está.
+ */
+function fixMode(file: string, mode: number): void {
+  try {
+    const st = statSync(file);
+    if (st.uid === process.getuid?.() && (st.mode & 0o777) !== mode) chmodSync(file, mode);
+  } catch {
+    // Sem stat ou sem chmod: a chave continua valendo como está.
+  }
+}
+
+/**
+ * Lê `<dir>/codex-hook.key` (32 bytes). create=true cria (aleatório) se faltar. undefined = ausente/ilegível.
+ * mode: o modo da chave (0600; 0640 quando o grupo precisa ler, no Docker Engine em Linux), aplicado também a uma
+ * chave que já existe.
  * dir = `~/.habblaud` no host (a mesma pasta do `codex-hook.json` do upstream); no Docker, o arquivo montado
  * (env `HABBLAUD_CODEX_HOOK_KEY` com o caminho).
  * Um arquivo com outro tamanho nunca é sobrescrito (nem com create): fica ilegível até alguém apagá-lo.
  */
-export function loadHookKey(dir: string, opts: { create?: boolean } = {}): Buffer | undefined {
+export function loadHookKey(dir: string, opts: { create?: boolean; mode?: number } = {}): Buffer | undefined {
   const file = join(dir, HOOK_KEY_FILE);
+  const mode = opts.mode ?? 0o600;
   const key = readKey(file);
+  if (key) fixMode(file, mode);
   if (key || !opts.create) return key;
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const fresh = randomBytes(KEY_BYTES);
     // 'wx': só cria; se outro processo (o servidor ou o docker:up) criou no meio do caminho, vale a dele.
-    writeFileSync(file, fresh, { mode: 0o600, flag: 'wx' });
+    writeFileSync(file, fresh, { mode, flag: 'wx' });
+    // O umask pode ter tirado a leitura do grupo do 0640.
+    fixMode(file, mode);
     return fresh;
   } catch {
     return readKey(file);

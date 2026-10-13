@@ -34,7 +34,7 @@
 // versões anteriores, o tap de statusline (npm run usage:install). Os dois gravam os números na pasta
 // montada em /usage. Sem eles, vale o cache do /usage lido das contas ao subir.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -43,7 +43,7 @@ import { codexDirsRefused, detectAccounts, discoverClaudeDirs, type DetectedAcco
 import { HOOK_KEY_FILE, loadHookKey } from '../server/codex/key';
 import { detectCodexAccounts, discoverCodexDirs } from '../server/sources/codex/accounts';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
-import { CONTAINER_HOOK_KEY, CONTAINER_USAGE_DIR, hostTimeZone, planCodexMounts, planMounts, realDir, realFile, renderOverride } from './docker-up-mounts';
+import { CONTAINER_HOOK_KEY, CONTAINER_UID, CONTAINER_USAGE_DIR, hostTimeZone, keyNeedsGroup, planCodexMounts, planMounts, realDir, realFile, renderOverride } from './docker-up-mounts';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 import { tr } from '../shared/i18n';
 
@@ -130,7 +130,7 @@ export function hostPort(env: NodeJS.ProcessEnv): number {
 // ---------------------------------------------------------------------------------------------
 
 // Moram em docker-up-mounts.ts; reexportados aqui para quem importa do script (os testes).
-export { accountsPayload, CODEX_MOUNTED_FILES, CODEX_MOUNTED_SUBDIRS, codexAccountsPayload, hostTimeZone, planCodexMounts, planMounts, renderOverride, sanitizeCachedUsage, yamlString } from './docker-up-mounts';
+export { accountsPayload, CODEX_MOUNTED_FILES, CODEX_MOUNTED_SUBDIRS, codexAccountsPayload, hostTimeZone, keyNeedsGroup, planCodexMounts, planMounts, renderOverride, sanitizeCachedUsage, yamlString } from './docker-up-mounts';
 export type { AccountMount, AccountPayload, BindMount } from './docker-up-mounts';
 
 /**
@@ -289,13 +289,13 @@ function ensureUsageDir(): string | undefined {
 }
 
 /**
- * Chave local do hook do Codex no host (server/codex/key.ts: 32 bytes, criada com modo 0600 se faltar), que o hook lê em
- * ~/.habblaud. Roda depois da migração do ~/.codetown (criar ~/.habblaud antes impediria o rename). Devolve o caminho
- * real do arquivo, ou undefined com um aviso.
+ * Chave local do hook do Codex no host (server/codex/key.ts: 32 bytes, criada se faltar), que o hook lê em ~/.habblaud,
+ * com modo 0600, ou 0640 com `groupRead` (keyNeedsGroup). Roda depois da migração do ~/.codetown (criar ~/.habblaud antes
+ * impediria o rename). Devolve o caminho real do arquivo, ou undefined com um aviso.
  */
-function ensureHookKey(): string | undefined {
+function ensureHookKey(groupRead: boolean): string | undefined {
   const file = join(STATE_DIR, HOOK_KEY_FILE);
-  const real = loadHookKey(STATE_DIR, { create: true }) ? realFile(file) : undefined;
+  const real = loadHookKey(STATE_DIR, { create: true, mode: groupRead ? 0o640 : 0o600 }) ? realFile(file) : undefined;
   if (!real) warn(tr('não consegui ler nem criar {0} (precisa ter 32 bytes; apague para recriar); no container, os eventos do hook do Codex vão ser recusados.', [tildify(file)]));
   return real;
 }
@@ -308,12 +308,14 @@ function tildify(p: string): string {
 // Docker
 // ---------------------------------------------------------------------------------------------
 
-function checkDocker(): void {
-  const info = spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], { encoding: 'utf8' });
+/** Confere o Docker e o Compose; devolve se é o Docker Desktop (no Linux também pode ser o Docker Engine). */
+function checkDocker(): { desktop: boolean } {
+  const info = spawnSync('docker', ['info', '--format', '{{.OperatingSystem}}'], { encoding: 'utf8' });
   if (info.error) fail(tr('o comando "docker" não foi encontrado. Instale o Docker Desktop: https://www.docker.com/products/docker-desktop/'));
   if (info.status !== 0) fail(tr('o Docker não está respondendo. Abra o Docker Desktop, espere ele terminar de iniciar e tente de novo.'));
   const compose = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' });
   if (compose.status !== 0) fail(tr('o Docker Compose v2 ("docker compose") não está disponível. Atualize o Docker Desktop.'));
+  return { desktop: /docker desktop/i.test(info.stdout ?? '') };
 }
 
 function compose(args: string[], port: number): void {
@@ -447,7 +449,7 @@ function down(port: number): void {
 }
 
 async function up(opts: Options, port: number): Promise<void> {
-  checkDocker();
+  const docker = checkDocker();
   warnLegacyEnv();
   const baseUrl = `http://127.0.0.1:${port}`;
   const publicUrl = `http://localhost:${port}`;
@@ -505,10 +507,13 @@ async function up(opts: Options, port: number): Promise<void> {
   const usageDir = ensureUsageDir();
   if (usageDir) say(tr('Uso ao vivo (mod ou tap de statusline): monta {0} em {1}, somente leitura.', [tildify(USAGE_DIR), CONTAINER_USAGE_DIR]));
   // Só com alguma conta do Codex montada (HABBLAUD_CODEX=0 não monta nada do Codex).
-  const hookKey = codexMounts.length ? ensureHookKey() : undefined;
+  const groupRead = keyNeedsGroup(process.platform, process.getuid?.(), docker.desktop);
+  const hookKey = codexMounts.length ? ensureHookKey(groupRead) : undefined;
   if (hookKey) say(tr('Chave do hook do Codex: monta {0} em {1}, somente leitura.', [tildify(join(STATE_DIR, HOOK_KEY_FILE)), CONTAINER_HOOK_KEY]));
+  const hookKeyGid = hookKey && groupRead ? statSync(hookKey).gid : undefined;
+  if (hookKeyGid !== undefined) say(tr('Chave do hook do Codex com modo 0640: o usuário do container (uid {0}) é outro e a lê pelo grupo {1}.', [CONTAINER_UID, hookKeyGid]));
   const tmp = `${OVERRIDE_FILE}.tmp`;
-  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts, hookKey), { mode: 0o600 });
+  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts, hookKey, hookKeyGid), { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, OVERRIDE_FILE);
   say(tr('docker-compose.override.yml gerado.'));

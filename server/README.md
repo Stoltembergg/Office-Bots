@@ -397,6 +397,9 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 - **Chave do hook** (`codex/key.ts`): 32 bytes em `~/.habblaud/codex-hook.key`, fora do `CODEX_HOME`. Fora do Docker o
   servidor a cria se faltar (com o Codex no escritório); no Docker, o `docker:up` a cria no host e a monta somente
   leitura em `/keys/codex-hook.key` (`HABBLAUD_CODEX_HOOK_KEY`). Um arquivo com outro tamanho nunca é sobrescrito.
+  Modo 0600, aplicado também a uma chave que já existe (uma 0644 antiga é corrigida). No Docker Engine em Linux, com o
+  uid do host diferente do `node` do container (1000), o `docker:up` a deixa em 0640 e põe o grupo dela no container
+  (`group_add`): sem isso, o `node` não lê a chave e todo evento do hook leva 403.
   Limite da prova do servidor: ela amarra só o nonce (não o status nem o corpo da resposta), então não protege contra
   um impostor na porta que repasse a chamada do hook a uma segunda instância do Habblaud com a mesma chave (dev ou
   teste com o mesmo `HOME`).

@@ -32,6 +32,17 @@ export const CODEX_MOUNTED_FILES = ['session_index.jsonl'] as const;
  * HOOK_KEY_FILE: o servidor lê a pasta de HABBLAUD_CODEX_HOOK_KEY com loadHookKey.
  */
 export const CONTAINER_HOOK_KEY = posix.join('/keys', HOOK_KEY_FILE);
+/** uid do usuário `node` da imagem (Dockerfile: `USER node`), que lê a chave montada. */
+export const CONTAINER_UID = 1000;
+
+/**
+ * A chave do hook precisa ser lida pelo grupo (modo 0640, com group_add do grupo dela no container)? Só no Docker Engine
+ * em Linux: lá o arquivo montado mantém o dono do host, e com outro uid o `node` (CONTAINER_UID) não lê uma chave 0600.
+ * No Docker Desktop, o compartilhamento de arquivos cuida do dono.
+ */
+export function keyNeedsGroup(platform: NodeJS.Platform, hostUid: number | undefined, dockerDesktop: boolean): boolean {
+  return platform === 'linux' && !dockerDesktop && hostUid !== undefined && hostUid !== CONTAINER_UID;
+}
 
 export interface BindMount {
   /** Caminho real no host (symlinks resolvidos: o Docker Desktop não os segue). */
@@ -214,7 +225,8 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
  * `usageDir`: pasta do host com o uso capturado pelo tap de statusline (já existente; caminho real),
  * montada somente leitura em /usage. `timeZone`: fuso do host, repassado como TZ. `codex`: montagens das contas do
  * Codex (planCodexMounts). `hookKey`: caminho real, no host, da chave local do hook do Codex (só o arquivo), montada
- * somente leitura em /keys/codex-hook.key, com esse caminho em HABBLAUD_CODEX_HOOK_KEY.
+ * somente leitura em /keys/codex-hook.key, com esse caminho em HABBLAUD_CODEX_HOOK_KEY. `hookKeyGid`: o grupo da chave,
+ * acrescentado ao processo do container (group_add) quando ele só a lê pelo grupo (keyNeedsGroup).
  */
 export function renderOverride(
   mounts: AccountMount[],
@@ -223,6 +235,7 @@ export function renderOverride(
   timeZone?: string,
   codex: AccountMount[] = [],
   hookKey?: string,
+  hookKeyGid?: number,
 ): string {
   const env: Array<[string, string]> = [
     ['HABBLAUD_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
@@ -240,11 +253,13 @@ export function renderOverride(
       ? ['# Codex: SOMENTE <pasta>/sessions, <pasta>/archived_sessions, <pasta>/thread-writer-locks e <pasta>/session_index.jsonl, somente leitura.']
       : []),
     ...(hookKey ? ['# Chave do hook do Codex: SOMENTE o arquivo ~/.habblaud/codex-hook.key, somente leitura.'] : []),
+    ...(hookKey && hookKeyGid !== undefined ? ['# group_add: o grupo da chave (modo 0640), para o usuário do container ler a chave do host.'] : []),
     'services:',
     `  ${SERVICE}:`,
     '    environment:',
     ...env.map(([k, v]) => `      ${k}: ${yamlString(v)}`),
   ];
+  if (hookKey && hookKeyGid !== undefined) lines.push('    group_add:', `      - ${yamlString(String(hookKeyGid))}`);
   const binds = [...mounts, ...codex].flatMap((m) => m.binds);
   if (hookKey) binds.push({ source: hookKey, target: CONTAINER_HOOK_KEY });
   if (usageDir) binds.push({ source: usageDir, target: CONTAINER_USAGE_DIR });
