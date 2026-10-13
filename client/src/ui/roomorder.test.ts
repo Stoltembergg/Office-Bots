@@ -142,3 +142,36 @@ describe('moveRoom', () => {
     expect([...congelado]).toEqual(['a', 'b', 'c', 'd']);
   });
 });
+
+describe('teto de salas lembradas', () => {
+  const fora = (n: number) => Array.from({ length: n }, (_, i) => 'o' + i);
+  const lido = (st: ReturnType<typeof memoryStorage>) => JSON.parse(st.data.get(KEY) ?? '[]') as string[];
+
+  it('SALORD-18: com 100 guardadas fora da lista grava 100 e perde as últimas guardadas', () => {
+    const st = install({ [KEY]: JSON.stringify(fora(100)) });
+    expect(moveRoom(['n1', 'n2'], 'n2', 'n1', false)).toBe(true);
+    const out = lido(st);
+    expect(out).toHaveLength(100);
+    expect(out.slice(0, 4)).toEqual(['n2', 'n1', 'o0', 'o1']);
+    expect(out[99]).toBe('o97');
+    expect(out).not.toContain('o98');
+    expect(out).not.toContain('o99');
+  });
+
+  it('SALORD-19: total de 100 grava tudo; total de 101 grava 100 e descarta a última guardada', () => {
+    const shown = ['n1', 'n2', 'n3'];
+    const st100 = install({ [KEY]: JSON.stringify(fora(97)) });
+    expect(moveRoom(shown, 'n3', 'n1', false)).toBe(true);
+    const exato = lido(st100);
+    expect(exato).toHaveLength(100);
+    expect(exato[99]).toBe('o96');
+
+    vi.unstubAllGlobals();
+    const st101 = install({ [KEY]: JSON.stringify(fora(98)) });
+    expect(moveRoom(shown, 'n3', 'n1', false)).toBe(true);
+    const acima = lido(st101);
+    expect(acima).toHaveLength(100);
+    expect(acima[99]).toBe('o96');
+    expect(acima).not.toContain('o97');
+  });
+});
