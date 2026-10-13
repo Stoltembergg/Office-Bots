@@ -614,6 +614,8 @@ export const FR: Readonly<Record<string, string>> = {
   "Etiqueta com o nome acima de cada personagem.": "Étiquette avec le nom au-dessus de chaque personnage.",
   "Notificações do navegador": "Notifications du navigateur",
   "Avisa quando alguém precisa de você e a aba está em segundo plano.": "Prévient quand quelqu'un a besoin de vous et que l'onglet est en arrière-plan.",
+  "Avisos de limite de uso": "Alertes de limite d'utilisation",
+  "Avisa uma vez quando uma janela de 5 h ou da semana chega a 80% e a 95% (por conta, até reiniciar).": "Prévient une fois quand une fenêtre de 5 h ou hebdomadaire atteint 80 % puis 95 % (par compte, jusqu'à sa réinitialisation).",
   "Idioma": "Langue",
   "Este navegador não oferece notificações.": "Ce navigateur ne propose pas de notifications.",
   "Bloqueadas pelo navegador: libere nas permissões do site.": "Bloquées par le navigateur : autorisez-les dans les permissions du site.",
@@ -2153,6 +2155,12 @@ export const FR: Readonly<Record<string, string>> = {
   // client/src/ui/ptypane.ts
   "Claude Code encerrado (código {0})": "Claude Code terminé (code {0})",
   "Claude Code encerrado": "Claude Code terminé",
+
+  // client/src/ui/quota-alert.ts
+  "⚠️ {0}: {1}% da sessão de 5 h usados (reinicia {2})": "⚠️ {0} : session de 5 h utilisée à {1} % (réinitialisation {2})",
+  "⚠️ {0}: {1}% da semana usados (reinicia {2})": "⚠️ {0} : semaine utilisée à {1} % (réinitialisation {2})",
+  "🚨 {0}: perto do limite, {1}% da sessão de 5 h usados (reinicia {2})": "🚨 {0} : près de la limite, session de 5 h utilisée à {1} % (réinitialisation {2})",
+  "🚨 {0}: perto do limite, {1}% da semana usados (reinicia {2})": "🚨 {0} : près de la limite, semaine utilisée à {1} % (réinitialisation {2})",
 
   // client/src/ui/settings.ts
   "Tema do escritório": "Thème du bureau",
