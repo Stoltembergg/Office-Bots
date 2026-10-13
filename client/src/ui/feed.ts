@@ -120,7 +120,7 @@ export class FeedPanel implements UiComponent {
     setHidden(this.filterNote, !filtering);
     if (filtering) {
       const names = hidden.map((id) => this.ctx.account(id)?.name ?? id);
-      setText(this.filterNote, 'filtrado');
+      setText(this.filterNote, tr('filtrado'));
       setTitle(this.filterNote, tr('Sem {0} (filtro da barra lateral)', [names.join(', ')]));
     }
 

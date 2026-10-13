@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, FeedItem } from '../../../shared/types';
+import { setLocale } from '../../../shared/i18n';
 import type { SocialEvent } from '../world/api';
 import type { UiContext } from './context';
 import { FeedPanel } from './feed';
@@ -91,7 +92,10 @@ beforeEach(() => {
   vi.stubGlobal('HTMLElement', Element);
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 1; });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setLocale('pt-BR');
+});
 
 describe('FeedPanel pausado', () => {
   it.each(['SSE', 'social'])('guarda só os 50 eventos mais novos de %s, sem perder a contagem por conta', (source) => {
@@ -153,5 +157,29 @@ describe('FeedPanel pausado', () => {
     expect([...meta.keys()]).toEqual([...retainedIds.slice(1), 'sem-evento']);
     expect(p.list.children).toHaveLength(50);
     expect(p.list.children[0].firstElementChild!.children[1].dataset.sig).toContain('1|f|main|');
+  });
+});
+
+describe('FeedPanel com filtro de conta', () => {
+  it.each([
+    ['pt-BR', 'filtrado', 'Sem .claude (filtro da barra lateral)'],
+    ['en', 'filtered', 'Hiding .claude (sidebar filter)'],
+    ['es', 'filtrado', 'Sin .claude (filtro de la barra lateral)'],
+    ['fr', 'filtré', 'Sans .claude (filtre de la barre latérale)'],
+  ] as const)('mostra o rótulo traduzido em %s e o esconde sem filtro', (locale, label, title) => {
+    setLocale(locale);
+    const a = agent('conta');
+    const p = panel([], [a]);
+    const filter = elements.find((e) => e.className === 'ui-feed__filter')!;
+
+    expect(filter.hidden).toBe(true);
+    p.prefs.hiddenAccounts = ['.claude'];
+    p.view.render();
+    expect(filter.textContent).toBe(label);
+    expect(filter.title).toBe(title);
+
+    p.prefs.hiddenAccounts = [];
+    p.view.render();
+    expect(filter.hidden).toBe(true);
   });
 });
