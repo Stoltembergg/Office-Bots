@@ -2583,4 +2583,8 @@ export const EN: Readonly<Record<string, string>> = {
   "Acesso pelo celular": "Phone access",
   "Sair deste aparelho": "Sign out of this device",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Ends the login here (a copy of the cookie stops working too). To come back, sign in with your username and password.",
+  "O terminal ainda não mostra sessões do {0}.": "The terminal doesn't show {0} sessions yet.",
+  "o OpenCode não tem cota única": "OpenCode has no single quota",
+  "O OpenCode usa vários provedores e contas, sem uma cota única para mostrar aqui.": "OpenCode uses several providers and accounts, with no single quota to show here.",
+  "eventos do OpenCode só são aceitos pelo próprio computador (http://localhost ou http://127.0.0.1)": "OpenCode events are only accepted from this computer (http://localhost or http://127.0.0.1)",
 };
