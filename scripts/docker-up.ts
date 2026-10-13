@@ -304,7 +304,7 @@ export function projectRootsOf(env: NodeJS.ProcessEnv, home: string): string[] {
   const roots = splitList(env.HABBLAUD_PROJECT_ROOTS).map((p) => expandHome(p, home));
   // A lista vai separada por vírgula: uma vírgula no caminho a partiria em outras pastas dentro do container.
   const bad = roots.find((r) => r.includes(','));
-  if (bad) fail(`HABBLAUD_PROJECT_ROOTS: a pasta "${bad}" tem vírgula, e a lista é separada por vírgula; renomeie a pasta ou use outra.`);
+  if (bad) fail(tr('HABBLAUD_PROJECT_ROOTS: a pasta "{0}" tem vírgula, e a lista é separada por vírgula; renomeie a pasta ou use outra.', [bad]));
   return roots;
 }
 
@@ -686,7 +686,7 @@ async function up(opts: Options, port: number): Promise<void> {
   }
 
   const projectRoots = projectRootsOf(process.env, HOME);
-  if (projectRoots.length) say(`Escopo: só as sessões abertas em ${projectRoots.map(tildify).join(', ')}.`);
+  if (projectRoots.length) say(tr('Escopo: só as sessões abertas em {0}.', [projectRoots.map(tildify).join(', ')]));
 
   migrateStateDir();
   const usageDir = ensureUsageDir();
