@@ -18,9 +18,9 @@
 // POST /api/codex/bridge/ack. Mesmos estados, prazos e limites; canMessage = há entregador (o binário no modo Node ou
 // o auxiliar visto há até PRESENCE_MS). `delivered` = entrou na fila da sessão (entra quando ela ficar ociosa).
 import { randomBytes } from 'node:crypto';
-import { truncate } from '../../shared/activity';
-import { describeMessage, MESSAGE_MAX } from '../../shared/messages';
-import type { Activity, AgentInfo, InboxMessage, OutboxMessage } from '../../shared/types';
+import { maskSecrets, truncate } from '../../shared/activity';
+import { describeMessage, MESSAGE_MAX, panelCommandReason, slashCommandOf } from '../../shared/messages';
+import type { Activity, AgentInfo, InboxMessage, OutboxMessage, SessionCommand } from '../../shared/types';
 import { errMsg, log } from '../log';
 import type { CodexQueueResult, CodexQueueRunner } from './codex';
 import { tr } from '../../shared/i18n';
@@ -40,6 +40,10 @@ export const MAX_TEXT = MESSAGE_MAX;
 export const MAX_OPEN = 5;
 /** Mensagens entregues ao plugin por rodada. */
 export const INBOX_BATCH = 5;
+/** Comandos de barra guardados por sessão, e o tamanho do nome e da descrição de cada um. */
+export const COMMANDS_MAX = 500;
+export const COMMAND_NAME_MAX = 100;
+export const COMMAND_DESCRIPTION_MAX = 200;
 
 export const ERR_NOT_FETCHED = tr('a sessão não buscou a mensagem: o plugin habblaud-mensagens está instalado e a sessão aberta?');
 export const ERR_NOT_CONFIRMED = tr('a sessão não confirmou a entrega');
@@ -156,6 +160,30 @@ function unavailableReason(a: AgentInfo, reachable: boolean): string | undefined
   return undefined;
 }
 
+const COMMAND_NAME = /^[^\s\u0000-\u001f\u007f]+$/;
+const COMMAND_SOURCES: ReadonlySet<string> = new Set(['builtin', 'plugin', 'user', 'mcp']);
+
+/**
+ * A lista de comandos de barra que o plugin mandou (`commands` de POST /api/mod/inbox), na ordem dele: item fora do
+ * formato ou repetido fica de fora, a descrição vira uma linha mascarada e cortada e a lista para em COMMANDS_MAX.
+ */
+export function parseCommands(raw: unknown): SessionCommand[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SessionCommand[] = [];
+  const names = new Set<string>();
+  for (const item of raw) {
+    if (out.length >= COMMANDS_MAX) break;
+    const r = rec(item);
+    const name = typeof r?.name === 'string' ? r.name.replace(/^\//, '') : '';
+    if (!r || !name || name.length > COMMAND_NAME_MAX || !COMMAND_NAME.test(name) || names.has(name)) continue;
+    names.add(name);
+    const description = typeof r.description === 'string' ? truncate(maskSecrets(r.description.slice(0, COMMAND_DESCRIPTION_MAX * 4)), COMMAND_DESCRIPTION_MAX) : '';
+    const source = typeof r.source === 'string' && COMMAND_SOURCES.has(r.source) ? (r.source as SessionCommand['source']) : 'builtin';
+    out.push({ name, description, source });
+  }
+  return out;
+}
+
 /** Corpo de POST /api/messages: `{agentId, text}`. O texto não é alterado (nem aparado). */
 export function parseSend(raw: unknown): { agentId: string; text: string } {
   const r = rec(raw);
@@ -184,6 +212,8 @@ export class MessageRegistry {
   private messages = new Map<string, Entry>();
   /** Última vez que a sessão de cada agente principal perguntou pela caixa de entrada. */
   private seen = new Map<string, number>();
+  /** Comandos de barra que a sessão de cada agente principal mandou (some com a presença dela). */
+  private commands = new Map<string, { session: string; list: SessionCommand[] }>();
   /** Última vez que o auxiliar do Codex no host buscou mensagens. */
   private bridgeAt?: number;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -253,8 +283,8 @@ export class MessageRegistry {
 
   /**
    * Mensagem vinda da página. `{error}`: agente desconhecido (not-found), que não recebe mensagens (unavailable, com
-   * o motivo: subagente, saiu/concluiu, sessão sem o plugin ou Codex sem entregador) ou com mensagens demais esperando
-   * (too-many). Corpo inválido: lança InvalidRequest.
+   * o motivo: subagente, saiu/concluiu, sessão sem o plugin, Codex sem entregador ou um comando de barra que abriria um
+   * painel no terminal da sessão) ou com mensagens demais esperando (too-many). Corpo inválido: lança InvalidRequest.
    */
   send(raw: unknown): SendResult {
     const { agentId, text } = parseSend(raw);
@@ -264,6 +294,10 @@ export class MessageRegistry {
     if (!agent) return { error: 'not-found' };
     const reason = unavailableReason(agent, real ? this.canMessage(agentId) : demo!.canMessage === true);
     if (reason) return { error: 'unavailable', reason };
+    // Comando de painel do Claude Code: abriria um menu no terminal da sessão, longe de quem mandou (o texto fica na
+    // caixa). No Codex não há comandos de barra por aqui: o texto vai como mensagem comum.
+    const panel = agent.provider === 'codex' ? undefined : panelCommandReason(text, this.commandSource(agentId, text));
+    if (panel) return { error: 'unavailable', reason: panel };
     let open = 0;
     for (const e of this.messages.values()) if (e.msg.agentId === agentId && !isFinal(e)) open++;
     if (open >= MAX_OPEN) return { error: 'too-many' };
@@ -287,18 +321,16 @@ export class MessageRegistry {
 
   /**
    * Rodada do plugin: marca a presença da sessão e entrega as próximas mensagens do agente dela (marcando-as
-   * `sent`). Sessão sem agente principal conhecido: nenhuma mensagem. Corpo inválido: lança InvalidRequest.
+   * `sent`). Com `commands`, guarda a lista de comandos de barra da sessão. Sessão sem agente principal conhecido:
+   * nenhuma mensagem. Corpo inválido: lança InvalidRequest.
    */
   inbox(raw: unknown): InboxMessage[] {
     const r = rec(raw);
     const session = shortStr(r?.session, ID_MAX);
-    if (!r || !session) throw new InvalidRequest('esperado {session, account?}');
-    const account = shortStr(r.account, ID_MAX);
-    // O plugin é do Claude Code: agentes do Codex nunca recebem por aqui.
-    const agent = this.opts.office
-      .list()
-      .find((a) => a.kind === 'main' && a.provider !== 'codex' && a.sessionId === session && (!account || a.account === account) && present(a));
+    if (!r || !session) throw new InvalidRequest('esperado {session, account?, commands?}');
+    const agent = this.sessionAgent(session, shortStr(r.account, ID_MAX));
     if (!agent) return [];
+    if (Array.isArray(r.commands)) this.commands.set(agent.id, { session, list: parseCommands(r.commands) });
 
     const now = this.now();
     const was = this.canMessage(agent.id);
@@ -316,6 +348,34 @@ export class MessageRegistry {
       out.push({ id: e.msg.id, text: e.text });
     }
     return out;
+  }
+
+  /**
+   * A sessão desta rodada ainda não mandou a lista de comandos de barra (ou o Habblaud reiniciou e a perdeu): a
+   * resposta da caixa de entrada pede a lista (`needCommands`). Sessão desconhecida ou corpo inválido: false.
+   */
+  lacksCommands(raw: unknown): boolean {
+    const r = rec(raw);
+    const session = shortStr(r?.session, ID_MAX);
+    if (!r || !session) return false;
+    const agent = this.sessionAgent(session, shortStr(r.account, ID_MAX));
+    return !!agent && this.commands.get(agent.id)?.session !== session;
+  }
+
+  /** Comandos de barra da sessão do agente, na ordem em que o Claude Code os lista; sem lista (ou de outra conversa): []. */
+  commandsOf(agentId: string): SessionCommand[] {
+    const a = this.opts.office.get(agentId);
+    const known = this.commands.get(agentId);
+    return known && present(a) && a.sessionId === known.session ? known.list.map((c) => ({ ...c })) : [];
+  }
+
+  /**
+   * A pasta do projeto de um agente principal presente (a sala dele), para listar os arquivos que dá para citar com
+   * `@`. Agente desconhecido, subagente, que já saiu ou sem pasta conhecida: undefined.
+   */
+  projectOf(agentId: string): string | undefined {
+    const a = this.opts.office.get(agentId);
+    return present(a) && a.kind === 'main' && a.roomId.startsWith('/') ? a.roomId : undefined;
   }
 
   /**
@@ -417,6 +477,7 @@ export class MessageRegistry {
     for (const [agentId, at] of this.seen) {
       if (now - at < this.presenceMs && present(this.opts.office.get(agentId))) continue;
       this.seen.delete(agentId);
+      this.commands.delete(agentId);
       this.opts.office.markDirty();
     }
     if (this.bridgeAt !== undefined && now - this.bridgeAt >= this.presenceMs) {
@@ -428,6 +489,19 @@ export class MessageRegistry {
   }
 
   // ---------------------------------------------------------------- internos
+
+  /** O agente principal do Claude Code desta sessão (o plugin é do Claude Code: os do Codex nunca recebem por aqui). */
+  private sessionAgent(session: string, account: string | undefined): AgentInfo | undefined {
+    return this.opts.office
+      .list()
+      .find((a) => a.kind === 'main' && a.provider !== 'codex' && a.sessionId === session && (!account || a.account === account) && present(a));
+  }
+
+  /** De onde vem o comando de barra de `text` na sessão do agente; sem a lista dela (ou sem o comando nela), undefined. */
+  private commandSource(agentId: string, text: string): SessionCommand['source'] | undefined {
+    const name = slashCommandOf(text)?.command;
+    return name ? this.commandsOf(agentId).find((c) => c.name === name)?.source : undefined;
+  }
 
   private bridgeRecent(): boolean {
     return this.bridgeAt !== undefined && this.now() - this.bridgeAt < this.presenceMs;

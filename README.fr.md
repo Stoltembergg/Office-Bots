@@ -577,6 +577,22 @@ du [terminal](#terminal) devient une zone de saisie. Écrivez et appuyez sur `En
 texte entre dans la session **comme si vous l'aviez tapé dans son terminal**. Vous pouvez répondre quand l'agent finit
 son tour et attend la demande suivante, donner une nouvelle instruction ou corriger le cap, sans chercher la bonne fenêtre.
 
+- Les **commandes slash** fonctionnent aussi : un message qui commence par `/` (`/compact`, `/model opus`) exécute
+  la commande dans la session, comme si vous l'aviez tapée. Si l'agent est occupé, la commande attend la fin du
+  tour. Une commande que la session ne connaît pas revient comme **non remis**. Celles qui ouvrent un panneau dans le
+  terminal (`/usage`, `/config`, `/model` sans argument) ne sont pas envoyées : la zone le signale et garde le texte.
+  La sortie des commandes texte s'affiche dans le terminal du bureau. Claude Code
+  uniquement : dans Codex, le texte part comme un message ordinaire.
+- **Menu des commandes :** tapez `/` au début de la zone et elle liste les commandes de la session (celles de Claude
+  Code, des plugins, les vôtres et celles des serveurs MCP), chacune avec sa description. Continuez à taper pour
+  filtrer ; les flèches déplacent, `Entrée` ou `Tab` complètent et `Échap` ferme. Celles marquées « terminal
+  uniquement » ouvrent un panneau et ne passent pas par la zone.
+- **Citer des fichiers avec `@` :** tapez `@` et le début du nom, et la zone liste les fichiers du projet de l'agent
+  qui correspondent (la recherche est approximative et porte sur tout le chemin). `Entrée` ou `Tab` placent `@chemin`
+  dans le message ; il part comme du texte (Claude Code ne joint pas le fichier cité dans un message venant d'un
+  plugin) et l'agent l'ouvre par son chemin. La liste respecte le `.gitignore` et n'affiche jamais les fichiers d'environnement, les clés ni
+  les dossiers d'identifiants ; seuls les noms quittent l'ordinateur vers la page. Sous Docker, c'est l'auxiliaire de
+  l'hôte qui liste : laissez `npm run codex:bridge` tourner.
 - La zone indique l'état : **en file** (la session récupère les messages toutes les 2 secondes), **remis** ou **non
   remis**, avec la raison. Si l'agent est occupé, le message attend et entre quand il finit son tour, comme un
   prompt tapé pendant que l'agent travaille.
