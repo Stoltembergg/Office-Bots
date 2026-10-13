@@ -9,7 +9,7 @@
 //
 // Segurança: quem controla um terminal destes executa comandos na máquina. O recurso é opt-in (HABBLAUD_PTY=1),
 // as rotas só aceitam conexões do próprio computador (ver http/pty.ts) e ele fica desligado no Docker.
-import { chmodSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -169,6 +169,13 @@ interface SpawnPlan {
   account: PtyAccount;
   cols: number;
   rows: number;
+}
+
+/** Terminal a reabrir quando o servidor voltar (pty/restore.ts grava a lista em <dataDir>/ptys.json). */
+export interface PtyRestoreEntry {
+  sessionId: string;
+  cwd: string;
+  account: string;
 }
 
 export class PtyError extends Error {
@@ -351,6 +358,81 @@ export class PtyManager {
       this.drop(id);
       this.opts.onChange();
     }
+  }
+
+  /** Terminais rodando cuja sessão do Claude Code é conhecida: o que retomar se o servidor reiniciar. */
+  restorable(): PtyRestoreEntry[] {
+    const out: PtyRestoreEntry[] = [];
+    for (const t of this.ptys.values()) {
+      if (t.info.exitedAt !== undefined) continue;
+      const sessionId = this.opts.agent(t.info.agentId)?.sessionId ?? t.info.resumed;
+      if (sessionId && SESSION_ID.test(sessionId)) out.push({ sessionId, cwd: t.info.cwd, account: t.info.account });
+    }
+    return out;
+  }
+
+  /**
+   * Retoma (`claude --resume`) os terminais que estavam abertos antes de o servidor reiniciar. Se a sessão ainda
+   * roda num processo que sobrou (confirmado pelo registro de sessões da conta e pelo sistema, como no "Assumir"),
+   * ele é encerrado antes. Devolve quantos voltaram.
+   */
+  async restore(entries: readonly PtyRestoreEntry[]): Promise<number> {
+    let n = 0;
+    for (const e of entries) {
+      if (!SESSION_ID.test(e.sessionId)) continue;
+      if ([...this.ptys.values()].some((t) => t.info.exitedAt === undefined && (t.info.resumed === e.sessionId || this.opts.agent(t.info.agentId)?.sessionId === e.sessionId))) continue;
+      try {
+        const plan = this.plan({ cwd: e.cwd, account: e.account }, this.takeovers.size);
+        const old = this.livePidOf(e.account, e.sessionId);
+        if (old) {
+          const proc = await this.procInfo(old.pid);
+          if (!proc) throw new Error(tr('não consegui conferir o processo {0} da sessão', [old.pid]));
+          // Registro antigo (PID reaproveitado por outro programa): a sessão não está rodando, só retoma.
+          if (sameProcess(old.reg, proc)) {
+            await this.killPid(old.pid, proc);
+            if (!(await this.waitExit(old.pid, TAKEOVER_WAIT_MS))) throw new Error(tr('o processo antigo da sessão não encerrou'));
+          }
+        }
+        this.spawn(plan, { resume: e.sessionId });
+        n++;
+      } catch (err) {
+        log.warn(tr('Não consegui retomar a sessão {0} em {1}: {2}', [e.sessionId, e.cwd, errMsg(err)]));
+      }
+    }
+    return n;
+  }
+
+  /** PID vivo da sessão no registro da conta (<conta>/sessions/<pid>.json), se houver, e o que o registro diz dele. */
+  private livePidOf(accountId: string, sessionId: string): { pid: number; reg: RegisteredProc } | undefined {
+    const account = this.opts.accounts().find((a) => a.id === accountId);
+    if (!account) return undefined;
+    const dir = join(account.dir, 'sessions');
+    let names: string[] = [];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return undefined;
+    }
+    for (const name of names) {
+      const m = /^(\d+)\.json$/.exec(name);
+      if (!m) continue;
+      try {
+        const reg = JSON.parse(readFileSync(join(dir, name), 'utf8')) as { sessionId?: unknown; startedAt?: unknown; procStart?: unknown };
+        const pid = Number(m[1]);
+        if (reg?.sessionId === sessionId && this.isAlive(pid)) {
+          return {
+            pid,
+            reg: {
+              startedAt: typeof reg.startedAt === 'number' ? reg.startedAt : undefined,
+              procStart: typeof reg.procStart === 'string' ? reg.procStart : undefined,
+            },
+          };
+        }
+      } catch {
+        // registro ilegível: ignora
+      }
+    }
+    return undefined;
   }
 
   stopAll(): void {

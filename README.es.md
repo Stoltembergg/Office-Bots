@@ -506,8 +506,9 @@ agente) se puede arrastrar por la barra y redimensionar por la esquina; doble cl
 **Viene desactivada:** actívala con `HABBLAUD_PTY=1` (lee antes el aviso en [Privacidad y seguridad](#privacidad-y-seguridad)).
 Usa `node-pty`, `@xterm/headless` (dependencias opcionales) y el `claude` del PATH (`HABBLAUD_CLAUDE_BIN` para
 otro); solo acepta solicitudes de la propia computadora. Al iniciar, Habblaud abre una terminal de prueba: si `node-pty`
-o `claude` no funcionan, la función queda desactivada y el log dice el motivo. **Reiniciar Habblaud cierra las sesiones
-que abrió.**
+o `claude` no funcionan, la función queda desactivada y el log dice el motivo. Al reiniciar Habblaud, las sesiones
+que abrió vuelven solas (`claude --resume`, lista en `<HABBLAUD_DATA_DIR>/ptys.json`; `HABBLAUD_PTY_RESTORE=0`
+lo desactiva); el turno en curso se pierde, así que reinicia con los agentes detenidos.
 La terminal en vivo sigue disponible en el historial de sesiones, para los subagentes y cuando la interactiva está
 desactivada.
 

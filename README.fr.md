@@ -509,7 +509,9 @@ remet à sa place.
 Utilise `node-pty`, `@xterm/headless` (dépendances optionnelles) et le `claude` du PATH (`HABBLAUD_CLAUDE_BIN` pour
 un autre) ; n'accepte que les requêtes venant de l'ordinateur lui-même. Au démarrage, Habblaud ouvre un terminal de
 test : si `node-pty` ou `claude` ne fonctionnent pas, la fonction reste désactivée et le journal en donne la raison.
-**Redémarrer Habblaud met fin aux sessions qu'il a ouvertes.**
+Au redémarrage de Habblaud, les sessions qu'il a ouvertes reviennent d'elles-mêmes (`claude --resume`, liste dans
+`<HABBLAUD_DATA_DIR>/ptys.json` ; `HABBLAUD_PTY_RESTORE=0` le désactive) ; le tour en cours est perdu, donc redémarrez
+avec les agents à l'arrêt.
 Le terminal en direct reste disponible dans l'historique des sessions, pour les sous-agents et quand le mode interactif est désactivé.
 
 ### Timelapse de la journée

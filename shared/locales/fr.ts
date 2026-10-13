@@ -2599,4 +2599,12 @@ export const FR: Readonly<Record<string, string>> = {
   "Acesso pelo celular": "Accès depuis le téléphone",
   "Sair deste aparelho": "Se déconnecter de cet appareil",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Met fin à la connexion ici (une copie du cookie cesse aussi de fonctionner). Pour revenir, connectez-vous avec votre nom d'utilisateur et votre mot de passe.",
+
+  // server/pty/restore.ts
+  "Retomando {0} terminal(is) interativo(s) da execução anterior…": "Reprise de {0} terminal(s) interactif(s) de l'exécution précédente…",
+  "   {0} de {1} retomado(s).": "   {0} sur {1} repris.",
+  "Não consegui gravar a lista de terminais ({0}): {1}": "Impossible d'enregistrer la liste des terminaux ({0}) : {1}",
+  "Não consegui retomar a sessão {0} em {1}: {2}": "Impossible de reprendre la session {0} dans {1} : {2}",
+  "não consegui conferir o processo {0} da sessão": "impossible de vérifier le processus {0} de la session",
+  "o processo antigo da sessão não encerrou": "l'ancien processus de la session ne s'est pas arrêté",
 };

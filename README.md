@@ -484,8 +484,9 @@ drawer) can be dragged by its bar and resized from the corner; double-clicking t
 **It comes turned off:** turn it on with `HABBLAUD_PTY=1` (first read the warning in [Privacy and security](#privacy-and-security)).
 It uses `node-pty`, `@xterm/headless` (optional dependencies) and the `claude` on your PATH (`HABBLAUD_CLAUDE_BIN` for
 another one); it only accepts requests from the computer it runs on. On startup, Habblaud opens a test terminal: if `node-pty` or
-`claude` don't work, the feature stays off and the log says why. **Restarting Habblaud ends the sessions
-it opened.**
+`claude` don't work, the feature stays off and the log says why. When Habblaud restarts, the sessions
+it opened come back on their own (`claude --resume`, listed in `<HABBLAUD_DATA_DIR>/ptys.json`; `HABBLAUD_PTY_RESTORE=0`
+turns it off); the turn in progress is lost, so restart with the agents idle.
 The live terminal is still available in the session history, for subagents and when the interactive one is off.
 
 ### Day timelapse

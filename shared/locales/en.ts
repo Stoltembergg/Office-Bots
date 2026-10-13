@@ -2583,4 +2583,12 @@ export const EN: Readonly<Record<string, string>> = {
   "Acesso pelo celular": "Phone access",
   "Sair deste aparelho": "Sign out of this device",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Ends the login here (a copy of the cookie stops working too). To come back, sign in with your username and password.",
+
+  // server/pty/restore.ts
+  "Retomando {0} terminal(is) interativo(s) da execução anterior…": "Resuming {0} interactive terminal(s) from the previous run…",
+  "   {0} de {1} retomado(s).": "   {0} of {1} resumed.",
+  "Não consegui gravar a lista de terminais ({0}): {1}": "Couldn't save the terminal list ({0}): {1}",
+  "Não consegui retomar a sessão {0} em {1}: {2}": "Couldn't resume session {0} in {1}: {2}",
+  "não consegui conferir o processo {0} da sessão": "couldn't check the session's process {0}",
+  "o processo antigo da sessão não encerrou": "the session's old process didn't exit",
 };

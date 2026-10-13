@@ -10,6 +10,14 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Terminais interativos voltam depois de reiniciar:** o Habblaud grava a lista dos terminais abertos
+  (`<HABBLAUD_DATA_DIR>/ptys.json`) e, ao subir de novo, retoma cada sessão com `claude --resume`. Se o processo antigo
+  da sessão ainda estiver rodando (e o registro de sessões e o sistema confirmarem que é ele), é encerrado antes; um
+  registro antigo, com o PID reaproveitado por outro programa, não encerra ninguém. `HABBLAUD_PTY_RESTORE=0` desliga.
+  O turno em andamento se perde: reinicie com os agentes parados.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo

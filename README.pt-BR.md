@@ -482,8 +482,9 @@ agente) pode ser arrastada pela barra e redimensionada pelo canto; duplo clique 
 **Vem desligado:** ligue com `HABBLAUD_PTY=1` (leia antes o aviso em [Privacidade e segurança](#privacidade-e-segurança)).
 Usa o `node-pty`, o `@xterm/headless` (dependências opcionais) e o `claude` do PATH (`HABBLAUD_CLAUDE_BIN` para
 outro); só aceita pedidos do próprio computador. Ao iniciar, o Habblaud abre um terminal de teste: se o `node-pty` ou
-o `claude` não funcionarem, o recurso fica desligado e o log diz o motivo. **Reiniciar o Habblaud encerra as sessões
-abertas por ele.**
+o `claude` não funcionarem, o recurso fica desligado e o log diz o motivo. Ao reiniciar o Habblaud, as sessões
+abertas por ele voltam sozinhas (`claude --resume`, lista em `<HABBLAUD_DATA_DIR>/ptys.json`; `HABBLAUD_PTY_RESTORE=0`
+desliga); o turno em andamento se perde, então reinicie com os agentes parados.
 O terminal ao vivo continua no histórico de sessões, para subagentes e quando o interativo está desligado.
 
 ### Timelapse do dia
