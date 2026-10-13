@@ -14,7 +14,7 @@ setQuiet(true);
 
 const CWD = '/projetos/loja';
 
-function setup(opts: { tailBytes?: number } = {}) {
+function setup(opts: { tailBytes?: number; projectRoots?: string[] } = {}) {
   const tmp = tempDir();
   const home = tmp.dir;
   const dir = join(home, '.claude');
@@ -32,6 +32,7 @@ function setup(opts: { tailBytes?: number } = {}) {
   });
   const office = new Office({
     names: new NameStore(null),
+    projectRoots: opts.projectRoots,
     version: 'teste',
     startedAt: clock,
     accounts: (s) => accounts.list(s),
@@ -738,6 +739,127 @@ describe('ClaudeWatcher — shell lançado no começo de um transcript maior que
       const a = c.agent('.claude:800')!;
       expect(a.shells?.map((j) => [j.id, j.label, j.startedAt])).toEqual([['bcedo', 'Testes de ponta a ponta', t0 + 100]]);
       expect(a.activity?.text).toBe('Esperando o shell: Testes de ponta a ponta');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+});
+
+describe('ClaudeWatcher: escopo por pasta', () => {
+  const withCwd = (line: string, cwd: string) => JSON.stringify({ ...JSON.parse(line), cwd });
+
+  it('linha de outra pasta no meio do transcript (cd, /add-dir): o agente sai na hora e não volta', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      writeLines(c.transcript('sess-a'), [withCwd(L.prompt('dentro', { at: c.now() - 1000 }), CWD)]);
+      c.openSession(100, 'sess-a');
+      c.watcher.boot();
+      expect(c.office.has('.claude:100')).toBe(true);
+      appendLines(c.transcript('sess-a'), [withCwd(L.prompt('SEGREDO_B', { at: c.now() }), '/projetos/outra'), withCwd(L.prompt('depois', { at: c.now() }), CWD)]);
+      c.poll();
+      expect(c.office.has('.claude:100')).toBe(false);
+      c.poll();
+      expect(c.office.has('.claude:100')).toBe(false);
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_B');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('linha de outra pasta no começo de um transcript grande: nada do arquivo é lido, nem a janela do fim', async () => {
+    const c = setup({ projectRoots: [CWD], tailBytes: 200 });
+    try {
+      const big = 'x'.repeat(400);
+      writeLines(c.transcript('sess-a'), [
+        withCwd(L.prompt('começo', { at: c.now() - 4000 }), CWD),
+        withCwd(L.prompt('SEGREDO_B', { at: c.now() - 3000 }), '/projetos/outra'),
+        withCwd(L.prompt(big, { at: c.now() - 2000 }), CWD),
+        withCwd(L.prompt('fim', { at: c.now() - 1000 }), CWD),
+      ]);
+      c.openSession(100, 'sess-a');
+      c.watcher.boot();
+      await c.watcher.idle();
+      // O arquivo inteiro é conferido antes de ler a janela do fim: nada dele é lido.
+      expect(c.watcher.transcriptPathOf('.claude:100')).toBeUndefined();
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toMatch(/SEGREDO_B|fim/);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('transcript trocado por outro (truncado ou substituído) que passou por outra pasta: nada dele é lido', () => {
+    const c = setup({ projectRoots: [CWD], tailBytes: 1000 });
+    try {
+      writeLines(c.transcript('s1'), [withCwd(L.prompt('dentro '.repeat(2000), { at: c.now() - 1000 }), CWD)]);
+      c.openSession(100, 's1');
+      c.watcher.boot();
+      expect(c.office.has('.claude:100')).toBe(true);
+      // Arquivo novo e menor (reset): B no começo, fora da janela do fim; o fim só com A.
+      writeLines(c.transcript('s1'), [
+        withCwd(L.prompt('B', { at: c.now() }), '/projetos/outra'),
+        withCwd(L.prompt('x'.repeat(3000), { at: c.now() }), CWD),
+        withCwd(L.prompt('SEGREDO_RESET', { at: c.now() }), CWD),
+      ]);
+      c.poll();
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_RESET');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('/clear depois de sair do escopo: a conversa nova, toda de dentro, traz o agente de volta', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      writeLines(c.transcript('s1'), [withCwd(L.prompt('dentro', { at: c.now() - 1000 }), CWD)]);
+      c.openSession(100, 's1');
+      c.watcher.boot();
+      appendLines(c.transcript('s1'), [withCwd(L.prompt('fora', { at: c.now() }), '/projetos/outra')]);
+      c.poll();
+      expect(c.office.has('.claude:100')).toBe(false);
+      writeLines(c.transcript('s2'), [withCwd(L.prompt('nova', { at: c.now() }), CWD)]);
+      c.openSession(100, 's2');
+      c.poll();
+      expect(c.office.has('.claude:100')).toBe(true);
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('subagente sem pasta própria (nenhuma linha com cwd) não entra pelo principal de dentro', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      writeLines(c.transcript('s1'), [withCwd(L.prompt('pai', { at: c.now() - 1000 }), CWD)]);
+      const { cwd: _, ...noCwd } = JSON.parse(L.prompt('SEGREDO_SUB', { at: c.now() - 500 })) as Record<string, unknown>;
+      c.subFile('s1', 'abc123', { agentType: 'Explore' }, [JSON.stringify(noCwd)]);
+      c.openSession(100, 's1');
+      c.watcher.boot();
+      expect(c.office.has('.claude:100')).toBe(true);
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_SUB');
+    } finally {
+      c.watcher.stop();
+      c.tmp.cleanup();
+    }
+  });
+
+  it('/resume de uma conversa de outra pasta: o transcript de fora não é lido (só o de dentro)', () => {
+    const c = setup({ projectRoots: [CWD] });
+    try {
+      // A sessão roda em CWD, mas o id só existe na pasta de outro projeto (procurado pelo id, como no /resume).
+      writeLines(join(c.dir, 'projects', encodeCwd('/projetos/outra'), 'sess-b.jsonl'), [withCwd(L.prompt('SEGREDO_B', { at: c.now() - 1000 }), '/projetos/outra')]);
+      c.openSession(100, 'sess-b');
+      c.watcher.boot();
+      expect(JSON.stringify(c.office.commit().snapshot)).not.toContain('SEGREDO_B');
+      expect(c.watcher.transcriptPathOf('.claude:100')).toBeUndefined();
+      // A conversa de dentro, com o cwd gravado: lida como sempre.
+      writeLines(c.transcript('sess-a'), [withCwd(L.prompt('dentro', { at: c.now() - 500 }), CWD)]);
+      c.openSession(101, 'sess-a');
+      c.poll();
+      expect(c.watcher.transcriptPathOf('.claude:101')).toBe(c.transcript('sess-a'));
     } finally {
       c.watcher.stop();
       c.tmp.cleanup();

@@ -31,6 +31,8 @@ import type { DetectedAccount } from '../../accounts/detect';
 import type { AccountEntry, AccountsService } from '../../accounts/service';
 import { errMsg, log } from '../../log';
 import type { Office, TranscriptSummary } from '../../model/office';
+import { cwdOutOfScope } from '../../model/rooms';
+import { fileScope } from '../scope';
 import type { AgentSource } from '../source';
 import { FileTail, LineBuffer, warnOversizedLine } from '../tail';
 import type { TerminalParser } from '../terminal';
@@ -137,6 +139,8 @@ interface ThreadTracker {
   backlog: CodexLineResult[];
   inOffice: boolean;
   hookCwd?: string;
+  /** Toda pasta em que o thread já mexeu (session_meta, turn_context, hooks): o escopo por pasta confere todas. */
+  cwds: Set<string>;
   hookRole?: string;
   status: AgentStatus;
   /** Quando o status foi decidido (linha do rollout ou evento de hook): informação mais velha não o muda. */
@@ -371,10 +375,19 @@ export class CodexSource implements AgentSource, CodexLive {
       state: createCodexState(),
       backlog: [],
       inOffice: false,
+      cwds: new Set(),
       status: 'idle',
       statusAt: 0,
       subDone: false,
     };
+  }
+
+  /** Mais uma pasta do thread. Fora do escopo: sai do escritório já e não volta (wanted confere todas). */
+  private noteCwd(t: ThreadTracker, cwd: string): void {
+    t.cwds.add(cwd);
+    if (!t.inOffice || this.opts.office.inScope(cwd)) return;
+    t.inOffice = false;
+    this.opts.office.leaveScope(t.key);
   }
 
   /** Um ciclo de um thread presente: acha/lê o rollout e decide se ele está (ou continua) no escritório. */
@@ -419,6 +432,9 @@ export class CodexSource implements AgentSource, CodexLive {
     // Sem o projeto (sessão aberta ainda sem prompt, só com o lock) não há sala para o principal: espera o rollout ou um
     // hook dizer o cwd. Isso também segura um lock de subagente até o rollout dele dizer de quem ele é.
     if (t.kind === 'main' && !this.cwdOf(t)) return false;
+    // Escopo por pasta (HABBLAUD_PROJECT_ROOTS): cada thread, subagente também, só com pasta conhecida e todas dentro.
+    const office = this.opts.office;
+    if (office.scoped && (!t.cwds.size || [...t.cwds].some((c) => !office.inScope(c)))) return false;
     if (t.kind === 'sub') {
       const parent = this.parentKey(t);
       if (!parent || !this.opts.office.has(parent) || this.opts.office.isSubDone(parent) || this.opts.office.get(parent)?.status === 'offline') return false;
@@ -560,6 +576,14 @@ export class CodexSource implements AgentSource, CodexLive {
   /** Lê o começo (session_meta, título) e a janela do fim do rollout; o resto do começo vai em segundo plano. */
   private load(t: ThreadTracker, path: string): void {
     this.unwatch(t);
+    // Escopo por pasta: o rollout inteiro precisa ser de dentro antes de qualquer linha ir ao escritório (uma troca de
+    // pasta antes da janela lida passaria). Sem cwd ainda: espera.
+    const office = this.opts.office;
+    if (office.scoped) {
+      const scan = fileScope(path, office.inScope);
+      if (scan.status === 'out') return this.noteCwd(t, scan.cwd);
+      if (scan.status === 'unknown') return;
+    }
     const head = readRolloutHead(path);
     if (head.meta) this.setMeta(t, head.meta);
     const tail = new FileTail(path);
@@ -587,6 +611,7 @@ export class CodexSource implements AgentSource, CodexLive {
 
   private setMeta(t: ThreadTracker, meta: RolloutMeta): void {
     t.meta = meta;
+    if (meta.cwd) this.noteCwd(t, meta.cwd);
     if (meta.internal) t.kind = 'internal';
     else if (meta.parentThreadId) {
       if (t.kind === 'main' && t.inOffice) {
@@ -622,6 +647,9 @@ export class CodexSource implements AgentSource, CodexLive {
       switch (sig.type) {
         case 'meta':
           this.setMeta(t, sig.meta);
+          break;
+        case 'cwd':
+          this.noteCwd(t, sig.cwd);
           break;
         case 'usage':
           this.pushUsage(t.acc, sig.usage, sig.plan);
@@ -703,8 +731,10 @@ export class CodexSource implements AgentSource, CodexLive {
     this.prefixChain = this.prefixChain
       .then(async () => {
         if (this.stopped) return;
-        const prefix = await scanPrefix(path, end, t.key, PREFIX_HISTORY);
+        const office = this.opts.office;
+        const prefix = await scanPrefix(path, end, t.key, PREFIX_HISTORY, office.scoped ? (c) => office.inScope(c) : undefined);
         if (this.threads.get(t.key) !== t || t.state !== state) return;
+        if (prefix.outOfScope !== undefined) return this.noteCwd(t, prefix.outOfScope);
         state.stats.toolCalls += prefix.state.stats.toolCalls;
         state.stats.subagents += prefix.state.stats.subagents;
         state.title ??= prefix.state.title;
@@ -881,7 +911,10 @@ export class CodexSource implements AgentSource, CodexLive {
     t.lastHookAt = now;
     delete t.missingSince;
     if (t.endedAt !== undefined && now > t.endedAt) delete t.endedAt;
-    if (cwd) t.hookCwd ??= cwd;
+    if (cwd) {
+      t.hookCwd ??= cwd;
+      this.noteCwd(t, cwd);
+    }
     if (parent && !t.meta && t.kind === 'main') {
       t.kind = 'sub';
       t.parentThreadId = parent;
@@ -992,12 +1025,22 @@ function samePath(a: string, b: string | undefined): boolean {
  * Lê em stream (sem travar o event loop) os bytes [0, end) de um rollout: os números, o título e as últimas
  * `keep` atividades anteriores à janela lida ao abrir a sessão.
  */
-export async function scanPrefix(path: string, end: number, idPrefix: string, keep: number): Promise<{ state: CodexState; activities: Activity[] }> {
+export async function scanPrefix(
+  path: string,
+  end: number,
+  idPrefix: string,
+  keep: number,
+  scope?: (cwd: string) => boolean,
+): Promise<{ state: CodexState; activities: Activity[]; outOfScope?: string }> {
   const state = createCodexState();
   let activities: Activity[] = [];
   if (end <= 0) return { state, activities };
   const ctx = { idPrefix, now: Date.now(), activities: keep > 0 };
+  // Escopo por pasta: uma linha de outra pasta (turn_context, session_meta) encerra a leitura.
+  let outOfScope: string | undefined;
   const take = (line: string) => {
+    if (outOfScope !== undefined) return;
+    if (scope && (outOfScope = cwdOutOfScope(line, scope)) !== undefined) return;
     const r = parseRolloutLine(state, line, ctx);
     for (const a of r.activities) activities.push(a.activity);
     if (activities.length > keep * 2) activities = activities.slice(-keep);
@@ -1016,5 +1059,6 @@ export async function scanPrefix(path: string, end: number, idPrefix: string, ke
   const rest = pending.flush();
   if (rest?.length) take(rest.toString('utf8'));
   if (discarded) warnOversizedLine(path);
+  if (outOfScope !== undefined) return { state: createCodexState(), activities: [], outOfScope };
   return { state, activities: activities.slice(-keep) };
 }

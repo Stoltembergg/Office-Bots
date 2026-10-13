@@ -58,7 +58,7 @@ export interface ClaudeAlias {
   configDir?: string;
 }
 
-function splitList(v: string | undefined): string[] {
+export function splitList(v: string | undefined): string[] {
   return (v ?? '')
     .split(',')
     .map((s) => s.trim())

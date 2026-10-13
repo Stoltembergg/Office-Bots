@@ -2034,7 +2034,7 @@ export const ES: Readonly<Record<string, string>> = {
   "[codex] Erro inesperado: {0}": "[codex] Error inesperado: {0}",
 
   // scripts/docker-up.ts
-  "Uso: npm run docker:up [-- opções]\n\nOpções:\n  --no-build   sobe sem reconstruir a imagem\n  --down       derruba o container (o mesmo que npm run docker:down)\n  -h, --help   mostra esta ajuda\n\nVariáveis: HABBLAUD_PORT (porta no host, padrão {0}), HABBLAUD_CLAUDE_DIRS\n(config dirs separados por vírgula, se as contas não estiverem em ~/.claude*), HABBLAUD_CODEX_DIRS\n(pastas do Codex, se não estiverem em ~/.codex* nem em CODEX_HOME) e HABBLAUD_CODEX=0 (sem o Codex).": "Uso: npm run docker:up [-- opciones]\n\nOpciones:\n  --no-build   inicia sin reconstruir la imagen\n  --down       detiene el contenedor (lo mismo que npm run docker:down)\n  -h, --help   muestra esta ayuda\n\nVariables: HABBLAUD_PORT (puerto en el host, por defecto {0}), HABBLAUD_CLAUDE_DIRS\n(carpetas de configuración separadas por comas, si las cuentas no están en ~/.claude*), HABBLAUD_CODEX_DIRS\n(carpetas de Codex, si no están en ~/.codex* ni en CODEX_HOME) y HABBLAUD_CODEX=0 (sin Codex).",
+  "Uso: npm run docker:up [-- opções]\n\nOpções:\n  --no-build   sobe sem reconstruir a imagem\n  --down       derruba o container (o mesmo que npm run docker:down)\n  -h, --help   mostra esta ajuda\n\nVariáveis: HABBLAUD_PORT (porta no host, padrão {0}), HABBLAUD_CLAUDE_DIRS\n(config dirs separados por vírgula, se as contas não estiverem em ~/.claude*), HABBLAUD_CODEX_DIRS\n(pastas do Codex, se não estiverem em ~/.codex* nem em CODEX_HOME), HABBLAUD_CODEX=0 (sem o Codex) e\nHABBLAUD_PROJECT_ROOTS (só as sessões abertas nessas pastas, separadas por vírgula; ~ vale).": "Uso: npm run docker:up [-- opciones]\n\nOpciones:\n  --no-build   inicia sin reconstruir la imagen\n  --down       detiene el contenedor (lo mismo que npm run docker:down)\n  -h, --help   muestra esta ayuda\n\nVariables: HABBLAUD_PORT (puerto en el host, por defecto {0}), HABBLAUD_CLAUDE_DIRS\n(carpetas de configuración separadas por comas, si las cuentas no están en ~/.claude*), HABBLAUD_CODEX_DIRS\n(carpetas de Codex, si no están en ~/.codex* ni en CODEX_HOME), HABBLAUD_CODEX=0 (sin Codex) y\nHABBLAUD_PROJECT_ROOTS (solo las sesiones abiertas en estas carpetas, separadas por comas; ~ vale).",
   "[docker-up] Atenção: {0}": "[docker-up] Atención: {0}",
   "uso atualizado": "uso actualizado",
   "uso desatualizado": "uso desactualizado",
@@ -2583,4 +2583,7 @@ export const ES: Readonly<Record<string, string>> = {
   "Acesso pelo celular": "Acceso desde el celular",
   "Sair deste aparelho": "Cerrar sesión en este dispositivo",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Cierra el inicio de sesión aquí (una copia de la cookie también deja de valer). Para volver, entra con tu usuario y contraseña.",
+  "HABBLAUD_PROJECT_ROOTS: a pasta \"{0}\" tem vírgula, e a lista é separada por vírgula; renomeie a pasta ou use outra.": "HABBLAUD_PROJECT_ROOTS: la carpeta \"{0}\" tiene una coma, y la lista va separada por comas; renombra la carpeta o usa otra.",
+  "Escopo: só as sessões abertas em {0}.": "Alcance: solo las sesiones abiertas en {0}.",
+  "pasta fora das pastas deste escritório": "carpeta fuera de las carpetas de esta oficina",
 };
