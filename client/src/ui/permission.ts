@@ -9,6 +9,7 @@
 // Pedido do canal paralelo do Codex (`mode: 'parallel'`, TUI ligado ao daemon): Aprovar, Aprovar nesta sessão (se o
 // canal oferecer) e Recusar (sem motivo: o app-server não leva texto), sem prazo nem "Responder no terminal"; vale
 // quem responder primeiro, e o cartão fecha quando o pedido é resolvido em outro lugar.
+import { access, isLoopbackHostname } from '../net/access';
 import { ANSWER_OTHER_MAX, ASK_TOOL, checkAnswers } from '../../../shared/answers';
 import type { AgentInfo, AskQuestion, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../../shared/types';
 import type { UiContext } from './context';
@@ -125,11 +126,8 @@ export function focusPermission(ctx: UiContext, agentId: string): void {
   ctx.root.dispatchEvent(new CustomEvent(PERMISSION_FOCUS_EVENT, { detail: agentId }));
 }
 
-/** A página foi aberta pelo próprio computador? (o servidor só aceita respostas assim) */
-export function isLocalHostname(hostname: string): boolean {
-  const name = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  return name === 'localhost' || name.endsWith('.localhost') || name === '::1' || /^127(?:\.\d{1,3}){3}$/.test(name);
-}
+/** A página foi aberta pelo próprio computador? (a regra antiga; quem decide agora é o servidor, ver net/access.ts) */
+export const isLocalHostname = isLoopbackHostname;
 
 /** Pedido que se responde escolhendo (as perguntas do AskUserQuestion), não aprovando. O Codex nunca pergunta. */
 export function isQuestionRequest(p: Pick<PermissionRequestInfo, 'tool' | 'questions' | 'provider'> | undefined): boolean {
@@ -562,9 +560,9 @@ export class PermissionCard {
     this.ctx.invalidate();
   }
 
-  /** A página foi aberta pelo próprio computador (ou é o modo mock): dá para responder por aqui. */
+  /** Esta página pode responder (porta local, ou remota com permissions liberado; ou o modo mock). */
   private isLocal(): boolean {
-    return this.ctx.store.mock || isLocalHostname(location.hostname);
+    return this.ctx.store.mock || access().permissions;
   }
 
   /** Sem como responder agora: enviando, já respondido, prazo do hook do Codex vencido ou página aberta de fora do computador. */

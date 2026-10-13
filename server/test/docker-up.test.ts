@@ -342,7 +342,7 @@ describe('docker-up: chave local do hook do Codex', () => {
   );
 
   it('monta SÓ o arquivo da chave, somente leitura e sem criar nada no host, em /keys/codex-hook.key, e passa o caminho em HABBLAUD_CODEX_HOOK_KEY', () => {
-    const yml = renderOverride([], new Date(0), undefined, undefined, codex, '/Users/fu$lano/.habblaud/codex-hook.key');
+    const yml = renderOverride([], new Date(0), undefined, undefined, codex, undefined, [], '/Users/fu$lano/.habblaud/codex-hook.key');
     expect(yml).toContain('HABBLAUD_CODEX_HOOK_KEY: "/keys/codex-hook.key"');
     expect(yml).toContain(
       '      - type: bind\n        source: "/Users/fu$$lano/.habblaud/codex-hook.key"\n        target: "/keys/codex-hook.key"\n        read_only: true\n        bind:\n          create_host_path: false',
@@ -362,11 +362,11 @@ describe('docker-up: chave local do hook do Codex', () => {
   });
 
   it('com o grupo da chave: group_add com esse gid (o usuário do container lê a chave 0640); sem ele, nada', () => {
-    const yml = renderOverride([], new Date(0), undefined, undefined, codex, '/home/fulano/.habblaud/codex-hook.key', 1001);
+    const yml = renderOverride([], new Date(0), undefined, undefined, codex, undefined, [], '/home/fulano/.habblaud/codex-hook.key', 1001);
     expect(yml).toContain('    group_add:\n      - "1001"\n    volumes:');
-    expect(renderOverride([], new Date(0), undefined, undefined, codex, '/home/fulano/.habblaud/codex-hook.key')).not.toContain('group_add');
+    expect(renderOverride([], new Date(0), undefined, undefined, codex, undefined, [], '/home/fulano/.habblaud/codex-hook.key')).not.toContain('group_add');
     // O grupo só existe junto da chave.
-    expect(renderOverride([], new Date(0), undefined, undefined, codex, undefined, 1001)).not.toContain('group_add');
+    expect(renderOverride([], new Date(0), undefined, undefined, codex, undefined, [], undefined, 1001)).not.toContain('group_add');
   });
 
   it('isPrivateGroup: o grupo só serve à chave se for só do usuário (nenhum outro membro nem outro usuário com ele como primário)', () => {

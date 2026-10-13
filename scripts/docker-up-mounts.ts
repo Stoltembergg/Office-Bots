@@ -9,6 +9,8 @@ import { HOOK_KEY_FILE } from '../server/codex/key';
 
 /** Onde a pasta do uso (USAGE_DIR, em docker-up.ts) aparece no container. */
 export const CONTAINER_USAGE_DIR = '/usage';
+/** Onde o container lê o certificado do acesso remoto (server/http/remote.ts). */
+export const CONTAINER_REMOTE_TLS_DIR = '/remote-tls';
 const SERVICE = 'habblaud';
 /** Raiz das montagens dentro do container: /claude/<conta>/{projects,sessions}. */
 const CONTAINER_ROOT = '/claude';
@@ -240,9 +242,11 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
 /**
  * `usageDir`: pasta do host com o uso capturado pelo tap de statusline (já existente; caminho real),
  * montada somente leitura em /usage. `timeZone`: fuso do host, repassado como TZ. `codex`: montagens das contas do
- * Codex (planCodexMounts). `hookKey`: caminho real, no host, da chave local do hook do Codex (só o arquivo), montada
- * somente leitura em /keys/codex-hook.key, com esse caminho em HABBLAUD_CODEX_HOOK_KEY. `hookKeyGid`: o grupo da chave,
- * acrescentado ao processo do container (group_add) quando ele só a lê pelo grupo (keyNeedsGroup).
+ * Codex (planCodexMounts). `remoteTlsDir`: pasta do certificado do acesso remoto, montada em /remote-tls.
+ * `extraPorts`: portas a publicar além das do docker-compose.yml. `hookKey`: caminho real, no host, da chave local do
+ * hook do Codex (só o arquivo), montada somente leitura em /keys/codex-hook.key, com esse caminho em
+ * HABBLAUD_CODEX_HOOK_KEY. `hookKeyGid`: o grupo da chave, acrescentado ao processo do container (group_add) quando ele
+ * só a lê pelo grupo (keyNeedsGroup).
  */
 export function renderOverride(
   mounts: AccountMount[],
@@ -250,6 +254,8 @@ export function renderOverride(
   usageDir?: string,
   timeZone?: string,
   codex: AccountMount[] = [],
+  remoteTlsDir?: string,
+  extraPorts: string[] = [],
   hookKey?: string,
   hookKeyGid?: number,
 ): string {
@@ -276,9 +282,13 @@ export function renderOverride(
     ...env.map(([k, v]) => `      ${k}: ${yamlString(v)}`),
   ];
   if (hookKey && hookKeyGid !== undefined) lines.push('    group_add:', `      - ${yamlString(String(hookKeyGid))}`);
+  // O Compose junta estas portas às do docker-compose.yml.
+  if (extraPorts.length) lines.push('    ports:', ...extraPorts.map((p) => `      - ${yamlString(p)}`));
   const binds = [...mounts, ...codex].flatMap((m) => m.binds);
   if (hookKey) binds.push({ source: hookKey, target: CONTAINER_HOOK_KEY });
   if (usageDir) binds.push({ source: usageDir, target: CONTAINER_USAGE_DIR });
+  // Acesso remoto: SÓ a pasta do certificado do servidor (a chave da CA fica no host).
+  if (remoteTlsDir) binds.push({ source: remoteTlsDir, target: CONTAINER_REMOTE_TLS_DIR });
   if (binds.length) {
     lines.push('    volumes:');
     for (const b of binds) {

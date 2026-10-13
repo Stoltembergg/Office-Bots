@@ -103,6 +103,69 @@ mudou.
   (prompts, comandos, buscas, perguntas, plano, tarefas, títulos, detalhes de erro, pedidos de subagente, mensagens,
   respostas, links do GitHub e o cartão de permissão do Codex): a máscara agora vem antes de qualquer corte.
 
+## [0.11.0] - 2026-10-13
+
+Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
+celular é opcional e fica desligado até você rodar `npm run remote:setup`; o passo a passo está no README, em
+"Celular com login e HTTPS". O Novo agente precisa de `HABBLAUD_PTY=1` no `.env`.
+
+### Adicionado
+
+- **Celular com login e HTTPS (opcional, desligado até configurar):** `npm run remote:setup` pergunta usuário, senha
+  (guardada só como hash scrypt no `.env`), um nome para o endereço (`https://<nome>.local`) e, se quiser, um endereço
+  próprio (ex.: `meuclaude.home`). Ele cria uma CA local e o certificado do servidor e deixa o anúncio do
+  `<nome>.local` rodando como serviço. O celular entra numa **segunda porta** (443 se estiver livre, senão 4748), que
+  só é publicada depois do setup: toda requisição nela exige login, e por padrão o celular **aprova e recusa pedidos
+  de permissão**; mensagens, terminal (com as **Entregas**: o que cada agente terminou, com resumo e anexos) e o
+  Novo agente só com `HABBLAUD_REMOTE_ALLOW`. A porta 4747 continua só no computador e sem login. **Configurações ›
+  Acesso pelo celular › Sair** encerra o login daquele aparelho (uma cópia do cookie também deixa de valer). Contribuição de
+  @jasminaladdn (#96).
+- **Novo agente (botão + na barra do topo, opt-in com `HABBLAUD_PTY=1`):** começa uma sessão do Claude Code em
+  segundo plano no computador (`claude --bg`), na pasta escolhida (os projetos recentes vêm sugeridos), com o pedido
+  escrito e anexos; ela aparece no escritório e recebe mensagens e permissões pelo Habblaud. Numa pasta que o Claude
+  Code ainda não conhece, abre a tela de sessão nova do app do Claude preenchida. No Docker, quem começa é o auxiliar
+  do host (`npm run codex:bridge`, que agora roda também sem o Codex). Pelo celular, também precisa de `spawn` em
+  `HABBLAUD_REMOTE_ALLOW`.
+- **Ditado** no Novo agente e na caixa de mensagem: o navegador grava e o **Whisper local** transcreve (`whisper-cli`
+  + `ffmpeg` + um modelo multilíngue); a voz não sai do computador. Sem eles, o botão não aparece.
+- **Espera de até 24 h pelo escritório:** `HABBLAUD_PERMISSION_TIMEOUT` aceita até 86400 s (antes 1800, e o plugin
+  cortava em 330 s). O padrão continua 5 min. Numa espera longa, sem nenhuma página que responda por 5 min (e sem o
+  celular com login configurado para responder), o pedido volta ao terminal.
+- **Mensagens para sessões do app desktop do Claude:** o plugin `habblaud-mensagens` também pergunta ao Habblaud nas
+  sessões com `CLAUDE_CODE_ENTRYPOINT=claude-desktop` (antes só nas que tinham terminal na tela).
+- Pedido esperando sem botões no escritório (o hook já devolveu ao terminal, ou a sessão abriu sem o plugin): o
+  rodapé do terminal diz para responder no Claude Code (ou no Codex).
+
+### Segurança
+
+- Na porta remota, quem separa "do próprio computador" de "da rede" é a porta em que a conexão chegou, nunca o
+  cabeçalho Host. As rotas dos hooks, dos plugins e do auxiliar do host, o terminal interativo, o editor de
+  personagem e renomear salas nunca valem por ela, nem com login.
+- A CA local só assina `localhost`, nomes `.local`, o endereço próprio e IPs de rede privada (`nameConstraints`
+  crítico): mesmo com a chave vazada, um certificado para outro site é recusado. A chave nunca vai para o container.
+- Sessão em cookie `HttpOnly`, `SameSite=Strict` e `Secure`, assinado com HMAC (trocar a senha derruba todas). Uma
+  conferência de senha por vez, contada antes do scrypt; depois de 5 senhas erradas seguidas, cada tentativa espera
+  de 1 s a 5 min.
+- No Docker, o auxiliar do host só lê arquivos de entrega de pastas de projeto conhecidas (as que o Claude Code tem em
+  `<conta>/projects`), da pasta temporária e dos anexos, e nada com cara de segredo. Arquivos e ditado usam rodadas
+  com espera (o servidor só responde quando chega trabalho), em vez de perguntar a cada meio segundo.
+
+### Corrigido
+
+- Celular: tocar num campo de texto não dá mais zoom (o Safari do iPhone amplia campos com letra menor que 16 px).
+- No timelapse, os avisos do canto ficam acima da barra de reprodução, em vez de cobrir a linha do tempo e os botões.
+- Com muitas contas ou a janela estreita, os cartões de uso vão para uma segunda linha da barra superior, em vez de
+  cobrir os botões da direita (zoom, Meu dia, Configurações, Ajuda).
+- No celular (até 480 px), a barra superior não corta mais o logo e o botão do painel lateral: os
+  contadores descem para a linha dos cartões de uso.
+- "Meu dia" no celular: o seletor Demonstração | Dados reais não sai mais da tela (em francês, nem a 390 px).
+- Dois pedidos de permissão do mesmo agente no mesmo instante: o detalhe do mais novo não diz mais que há outro
+  pedido esperando atrás dele.
+- "Meu dia": o limite de 1.000 esperas por dia vale também quando todas estão abertas (antes a lista e o arquivo do
+  dia cresciam sem teto).
+- Um arquivo de conversa reescrito no mesmo lugar (em vez de só crescer) volta a ser lido do começo; antes o
+  conteúdo novo era ignorado ou lido a partir do meio.
+
 ## [0.10.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up`. A interface segue o idioma do navegador (ou Configurações › Idioma).

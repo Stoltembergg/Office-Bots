@@ -29,7 +29,7 @@ import type { Activity, AgentInfo, CodexDecision, PermissionAnswer, PermissionDe
 import { errMsg, log } from '../log';
 import { toolView } from '../sources/terminal';
 import { codexToolView } from './codex';
-import { askCount, askFormat, fitsFormat, isQuestion, parallelChoice, parseHookInput, pickSuggestions, present, rec, unsupportedByCodex, wrongKind, type AskFormat } from './registry-parse';
+import { askCount, askFormat, DEFAULT_TIMEOUT_MS, fitsFormat, isQuestion, parallelChoice, parseHookInput, pickSuggestions, present, rec, unsupportedByCodex, wrongKind, type AskFormat } from './registry-parse';
 import { callSignature, scanToolCall } from './transcript';
 import { tr } from '../../shared/i18n';
 
@@ -48,6 +48,12 @@ export const SCAN_EVERY_MS = 1_000;
 /** Principal que esperava (diálogo aberto) e deixou de esperar há este tempo: respondeu no terminal. */
 export const LEFT_WAITING_MS = 3_000;
 export const MAX_PENDING = 32;
+/**
+ * Espera longa (HABBLAUD_PERMISSION_TIMEOUT acima do padrão) sem nenhuma página que responda há este tempo, e sem
+ * celular que possa entrar depois: o pedido volta ao terminal (senão ficaria até 24 h onde ninguém o vê; nos
+ * subagentes em segundo plano o terminal só mostra o diálogo quando o hook termina).
+ */
+export const UNWATCHED_MS = 5 * 60_000;
 
 /** Decisões do app-server que o registro conhece (a lista padrão de um pedido 'parallel'). */
 const CODEX_DECISIONS: readonly CodexDecision[] = ['accept', 'acceptForSession', 'decline', 'cancel'];
@@ -76,6 +82,8 @@ export interface RegistryOptions {
   office: OfficeLike;
   /** Páginas locais conectadas (Hub.localSize): sem nenhuma, o pedido não é desviado do terminal. */
   viewers: () => number;
+  /** Uma página que ainda não está aberta pode responder depois (celular com login e `permissions` liberado). */
+  answerLater?: () => boolean;
   /** Transcript de um agente presente (ClaudeWatcher.transcriptPathOf). */
   transcriptPathOf?: (agentId: string) => string | undefined;
   /**
@@ -99,7 +107,7 @@ export interface RegistryOptions {
 export type SkipReason = 'no-viewers' | 'unknown-session' | 'unsupported-tool' | 'too-many' | 'parallel';
 export type RegisterResult = { id: string; expiresAt: number } | { skip: SkipReason };
 /** replaced = pedido do hook do Codex trocado pelo pedido 'parallel' da mesma thread (o hook sai sem decidir). */
-export type ReleaseReason = 'terminal' | 'answered' | 'expired' | 'orphan' | 'gone' | 'shutdown' | 'replaced';
+export type ReleaseReason = 'terminal' | 'answered' | 'expired' | 'orphan' | 'gone' | 'unwatched' | 'shutdown' | 'replaced';
 
 /** Pedido de aprovação do canal paralelo do Codex (app-server), para registerParallel. */
 export interface ParallelRequestInput {
@@ -192,6 +200,8 @@ export class PermissionRegistry {
   private sink: ParallelSink | undefined;
   /** ParallelRequestInput.key → id do pedido 'parallel' em aberto. */
   private byKey = new Map<string, string>();
+  /** Desde quando não há nenhuma página que responda (null = há). */
+  private unwatchedSince: number | null = null;
 
   constructor(private readonly opts: RegistryOptions) {
     this.now = opts.now ?? Date.now;
@@ -462,6 +472,8 @@ export class PermissionRegistry {
   /** Relógio: expiração, órfãos, agente que saiu, resposta no terminal e limpeza das decisões entregues. */
   tick(): void {
     const now = this.now();
+    this.unwatchedSince = this.opts.viewers() > 0 ? null : (this.unwatchedSince ?? now);
+    const unwatched = this.unwatchedSince !== null && now - this.unwatchedSince >= UNWATCHED_MS && !this.opts.answerLater?.();
     for (const [id, p] of this.pending) {
       if (p.outcome) {
         if (now - (p.resolvedAt ?? now) >= this.resolvedKeepMs) this.pending.delete(id);
@@ -477,6 +489,7 @@ export class PermissionRegistry {
       if (now >= p.info.expiresAt + EXPIRY_GRACE_MS) this.release(p, 'expired');
       else if (!p.waiters.size && now - p.idleSince >= this.orphanMs) this.release(p, 'orphan');
       else if (!present(this.opts.office.get(p.agentId))) this.release(p, 'gone');
+      else if (unwatched && p.info.expiresAt - p.info.createdAt > DEFAULT_TIMEOUT_MS) this.release(p, 'unwatched');
       // No Codex o terminal só pede a aprovação depois que o hook termina: não há resposta dada lá para procurar.
       else if (p.codex) continue;
       else if (now - p.lastScanAt >= SCAN_EVERY_MS && this.answeredInTerminal(p, now)) this.release(p, 'answered');
@@ -566,8 +579,14 @@ export class PermissionRegistry {
   }
 
   private queueOf(p: Pending): { queued?: number } {
+    // Pela ordem de chegada (a do Map), não pelo createdAt: dois pedidos no mesmo milissegundo empatariam e cada
+    // um contaria o outro como "atrás dele".
     let n = 0;
-    for (const o of this.pending.values()) if (o !== p && !o.outcome && o.agentId === p.agentId && o.info.createdAt >= p.info.createdAt) n++;
+    let after = false;
+    for (const o of this.pending.values()) {
+      if (o === p) after = true;
+      else if (after && !o.outcome && o.agentId === p.agentId) n++;
+    }
     return n ? { queued: n } : {};
   }
 

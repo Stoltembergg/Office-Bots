@@ -12,7 +12,7 @@ import { networkTitlePrefix } from './codex';
 /** Tempo que o hook espera por padrão (ele manda o próprio em `timeout_ms`). */
 export const DEFAULT_TIMEOUT_MS = 300_000;
 export const MIN_TIMEOUT_MS = 5_000;
-export const MAX_TIMEOUT_MS = 30 * 60_000;
+export const MAX_TIMEOUT_MS = 24 * 60 * 60_000;
 
 const DESTINATIONS = new Set(['session', 'localSettings', 'projectSettings', 'userSettings']);
 const MAX_SUGGESTIONS = 4;

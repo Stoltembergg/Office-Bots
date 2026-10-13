@@ -257,6 +257,65 @@ Luego abre `http://<ip-do-computador>:4747` en el celular (en macOS: `ipconfig g
 > la oficina) queda desactivada mientras el puerto esté expuesto. Para volver atrás: borra el `.env` y ejecuta
 > `npm run docker:up -- --no-build`.
 
+#### Celular con inicio de sesión y HTTPS (aprobar solicitudes)
+
+En lugar de exponer el puerto principal, abre un **segundo puerto con usuario, contraseña y HTTPS**. El 4747 queda solo
+en la computadora (los hooks, los plugins y tu navegador siguen funcionando sin iniciar sesión); el puerto remoto va a
+la red y toda solicitud en él exige iniciar sesión. Lo que separa a los dos es el puerto por el que llegó la conexión,
+nunca el encabezado Host. Nada de esto existe antes del setup: sin él, no se publica ningún puerto extra.
+
+```bash
+npm run remote:setup   # usuário, senha, nome do endereço e (opcional) um endereço próprio
+npm run docker:up
+```
+
+`remote:setup` guarda en el `.env` solo el **hash** de la contraseña (scrypt), crea una CA local y el certificado del
+servidor en `~/.habblaud/remote-tls` y deja un servicio que anuncia `<nome>.local` en la red (mDNS; LaunchAgent en
+macOS, systemd en Linux). Abre `https://<nome>.local` en el celular (con `:4748` si el puerto 443 estaba ocupado). La
+primera vez, acepta el aviso, toca **Instala el certificado de Habblaud** y confía en él (iPhone: Configuración ›
+Perfil descargado › Instalar y luego Configuración › General › Información › Configuración de confianza de
+certificados; Android: Seguridad › Encriptación y credenciales › Instalar un certificado › Certificado de CA),
+comprobando la huella digital que mostró el setup.
+
+- **CA restringida:** solo firma `localhost`, nombres `.local`, tu dirección propia e IP de red privada. Aunque su
+  clave se filtrara, el celular que confía en ella rechazaría un certificado para cualquier otro sitio. Cambiar la
+  dirección propia crea una CA nueva (vuelve a instalar el certificado en el celular). La clave de la CA nunca entra en
+  el contenedor.
+- **Dirección propia** (p. ej., `meuclaude.home`): entra en el certificado, pero el celular solo la encuentra con una
+  entrada en el DNS del router que apunte a la IP de la computadora. `<nome>.local` funciona sin configurar nada.
+- **Qué puede hacer el celular:** por defecto, aprobar y rechazar solicitudes de permiso. `HABBLAUD_REMOTE_ALLOW` en
+  el `.env` acepta `permissions`, `messages`, `terminal` y `spawn`, separados por comas, o `none` (solo ver). La
+  terminal interactiva nunca funciona desde el celular.
+- **Entregas** (celular, con `terminal` permitido): el botón de la cajita en la barra superior lista lo que terminó
+  cada agente, con un resumen y adjuntos (capturas de pantalla, PDFs, archivos que envió) que se abren con un toque.
+- **Nuevo agente** (el botón **+**): inicia una sesión de Claude Code en segundo plano en la computadora (`claude --bg`,
+  en la carpeta elegida), que aparece en la oficina y recibe mensajes y solicitudes de permiso a través de Habblaud. En
+  una carpeta en la que Claude Code todavía no confía, abre ya completada la pantalla de sesión nueva de la app de
+  Claude, y tú presionas Enter allí. **Viene desactivado:** necesita `HABBLAUD_PTY=1` (la misma activación que la
+  [terminal interactiva](#terminal-interactiva-tomar-el-control-nueva-sesión-y-cerrar); en Docker, ponla en el `.env` y
+  deja `npm run codex:bridge` en ejecución en la computadora) y, desde el celular, también `spawn` en
+  `HABBLAUD_REMOTE_ALLOW`.
+- **Dictado** (en Nuevo agente y en el cuadro de mensaje): necesita `whisper-cli` y `ffmpeg` (`brew install whisper-cpp
+  ffmpeg`) y un modelo multilingüe en `~/.local/share/whisper/` (`ggml-small.bin` acierta más que `ggml-base.bin`; los
+  `.en` solo entienden inglés). Sin ellos, el botón Dictar no aparece. La voz nunca sale de la computadora.
+  `HABBLAUD_WHISPER_BIN`, `HABBLAUD_FFMPEG_BIN`, `HABBLAUD_WHISPER_MODEL` y `HABBLAUD_DICTATION_LANGS` (por defecto
+  `pt,en`) lo ajustan.
+- **Fuera de casa (Tailscale):** con Tailscale en la computadora y en el celular, `tailscale serve --bg --https=443
+  https+insecure://127.0.0.1:443` publica el puerto remoto (con inicio de sesión) solo para tus dispositivos, con un
+  certificado válido en `https://<computador>.<tailnet>.ts.net`; agrega ese nombre a `HABBLAUD_ALLOWED_HOSTS`. Apunta
+  siempre al puerto remoto, nunca al 4747 (que no pide iniciar sesión).
+- **Sesión:** 30 días; cambiar la contraseña (ejecutar el setup de nuevo) las cierra todas, y **Configuración ›
+  Acceso desde el celular › Salir** cierra la de ese dispositivo. Después de 5 contraseñas incorrectas seguidas, cada nuevo intento espera de
+  1 s a 5 min.
+- **¿Cambió la IP?** `docker:up` vuelve a emitir el certificado del servidor cuando falta la IP nueva o cuando faltan
+  30 días para que venza, con la misma CA (el celular sigue confiando en ella); el servidor cambia el certificado sin
+  reiniciarse.
+- **Desactivar:** `npm run remote:setup -- --off` y `npm run docker:up`.
+
+Sin HTTPS, el puerto remoto no se inicia; `HABBLAUD_REMOTE_INSECURE_HTTP=1` fuerza HTTP plano (contraseña y cookie a
+la vista en la red). En modo Node: `HABBLAUD_REMOTE_PORT` y `HABBLAUD_REMOTE_HOST` (por defecto `0.0.0.0:4748`) y
+`HABBLAUD_REMOTE_TLS_DIR` (por defecto `~/.habblaud/remote-tls/server`).
+
 ### Actualizar
 
 La versión en uso aparece en la barra superior, junto a "Conectado", y en **Configuración › Acerca de**. Cada 6 horas,
@@ -504,13 +563,18 @@ terminal.
 - La solicitud pasa por un hook `PermissionRequest` de Claude Code (el del plugin o el del método antiguo), que solo
   la desvía cuando hay **alguna página de Habblaud abierta** en esta computadora; con Habblaud detenido o sin ninguna
   página abierta, sale de inmediato y la terminal sigue como siempre.
-- Sin respuesta desde la oficina en 5 minutos, la solicitud vuelve a valer solo en la terminal (las opciones del plugin
-  están en [`mod/README.md`](mod/README.md); en el método antiguo, `npm run hooks:install -- --timeout 120` cambia el
-  tiempo y `--port`, el puerto). En los **subagentes en segundo plano**, Claude Code solo muestra el diálogo en la
-  terminal después de que el hook termina: responde desde la oficina o usa **Responder en la terminal**.
+- Sin respuesta desde la oficina en 5 minutos (hasta 24 h con `HABBLAUD_PERMISSION_TIMEOUT=86400` en el `env` del
+  `settings.json`), la solicitud vuelve a valer solo en la terminal (las opciones del plugin están en
+  [`mod/README.md`](mod/README.md); en el método antiguo, `npm run hooks:install -- --timeout 120` cambia el tiempo y
+  `--port`, el puerto). En los **subagentes en segundo plano**, Claude Code solo muestra el diálogo en la terminal
+  después de que el hook termina: responde desde la oficina o usa **Responder en la terminal**. Con una espera de más
+  de 5 minutos, si pasan 5 minutos sin ninguna página abierta que pueda responder (y no hay ningún
+  [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes) configurado para
+  responder), la solicitud vuelve a la terminal.
 - Funciona con el mismo bloqueo que la terminal: solo con Habblaud accesible únicamente desde la propia
   computadora y abierto por `http://localhost`. Compruébalo con `npm run mod:status` (o `npm run hooks:status`, en el
   método antiguo).
+  También funciona desde el [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes) (allí, es lo predeterminado).
 - En el modo demostración, los agentes ficticios también piden permiso y hacen preguntas (de mentira), para que lo
   pruebes.
 
@@ -531,6 +595,7 @@ ventana correcta.
   subagentes no reciben mensajes.
 - Funciona con el mismo bloqueo que la terminal (solo con acceso local) y se puede desactivar con
   `HABBLAUD_MENSAGENS=0`. Lee el aviso en [Privacidad y seguridad](#privacidad-y-seguridad).
+  Desde el [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes), solo con `messages` en `HABBLAUD_REMOTE_ALLOW`.
 - En el modo demostración, los agentes ficticios también reciben mensajes (de mentira).
 
 ### Editar el personaje
@@ -754,8 +819,9 @@ Todo funciona sin configurar nada. Si necesitas ajustar algo, usa variables de e
 | `HABBLAUD_DEMO` | desactivado | `1` activa el modo demostración al iniciar. |
 | `HABBLAUD_ALLOWED_HOSTS` | — | Nombres extra aceptados en la dirección (p. ej., `meu-mac.local`), además de `localhost` y las IP. |
 | `HABBLAUD_TERMINAL` | activada (solo con acceso local) | `0` desactiva la terminal, responder y enviar mensajes desde la oficina y el editor de personajes. Con el puerto expuesto ya quedan desactivados, sin opción de activarlos. |
-| `HABBLAUD_PTY` | desactivada | `1` activa la terminal interactiva (abrir, tomar el control y cerrar sesiones de Claude Code desde la oficina). Solo con acceso local y fuera de Docker; lee el aviso en [Privacidad y seguridad](#privacidad-y-seguridad). |
-| `HABBLAUD_CLAUDE_BIN` | `claude` del PATH | El ejecutable de Claude Code que abre la terminal interactiva. |
+| `HABBLAUD_PTY` | desactivada | `1` activa la terminal interactiva (abrir, tomar el control y cerrar sesiones de Claude Code desde la oficina; solo con acceso local y fuera de Docker) y **Nuevo agente** (también en Docker, a través de `npm run codex:bridge`). Lee el aviso en [Privacidad y seguridad](#privacidad-y-seguridad). |
+| `HABBLAUD_CLAUDE_BIN` | `claude` del PATH | El ejecutable de Claude Code que ejecutan la terminal interactiva y Nuevo agente. |
+| `HABBLAUD_REMOTE_ALLOW` | `permissions` | Lo que puede hacer el [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes): `permissions`, `messages`, `terminal`, `spawn` (separados por comas) o `none`. Las demás `HABBLAUD_REMOTE_*` las escribe `npm run remote:setup`. |
 | `HABBLAUD_MENSAGENS` | activados (con la terminal) | `0` desactiva solo los mensajes desde la oficina (el cuadro en la terminal y en los detalles del agente). |
 | `HABBLAUD_CODEX` | activado | `0` desactiva Codex en la oficina. |
 | `HABBLAUD_CODEX_DIRS` | detección automática | Carpetas de Codex, separadas por comas (en lugar de `~/.codex*` y `CODEX_HOME`). |
@@ -766,7 +832,8 @@ Todo funciona sin configurar nada. Si necesitas ajustar algo, usa variables de e
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar el nombre, la letra o el color, emparejado por el nombre de la carpeta de la cuenta. P. ej.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **En Docker**, valen `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
-`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK` y `HABBLAUD_LANG` (en el `.env` o en el entorno) y `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` y
+`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY` y las
+`HABBLAUD_REMOTE_*` (en el `.env` o en el entorno) y `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` y
 `HABBLAUD_ACCOUNTS` (leídas por `docker:up` en el host); las demás quedan fijas dentro del contenedor. Opciones: `npm run docker:up -- --no-build` (inicia sin reconstruir),
 `npm run docker:down` (detiene) y `npm run docker:logs` (sigue los logs).
 
@@ -846,6 +913,7 @@ Más detalles del servidor en [`server/README.md`](server/README.md).
 | `<pasta do Codex>/sessions/`, `archived_sessions/`, `thread-writer-locks/` y `session_index.jsonl` | `/codex/<conta>/...` (solo lectura) | Conversaciones de Codex, bloqueos de las sesiones abiertas y nombres de las conversaciones. La carpeta de Codex sin `sessions/` se queda fuera. |
 | `~/.habblaud/codex-hook.key` | `/keys/codex-hook.key` (solo lectura) | Clave del hook de Codex (`docker:up` la crea si falta): en el contenedor, los eventos y solicitudes del hook llegan por la red de Docker y solo valen con la prueba de ella. En Linux con Docker Engine y tu uid distinto de 1000 (el del usuario del contenedor), la clave queda con modo 0640 y el contenedor recibe su grupo (`group_add`), para poder leerla, siempre que ese grupo sea solo tuyo (si no, `docker:up` avisa y la clave sigue en 0600). |
 | volumen `habblaud-data` | `/data` | Datos del propio Habblaud (nombres de los personajes, línea de tiempo del timelapse y estadísticas de Mi día). |
+| `~/.habblaud/remote-tls/server/` | `/remote-tls` (solo lectura) | Solo después de `npm run remote:setup`: el certificado y la clave del servidor del [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes) (nunca la clave de la CA). |
 
 Con `HABBLAUD_CODEX=0` (en el `.env` o en el entorno), no se monta nada de Codex. La carpeta de la cuenta **nunca** se
 monta entera (ahí están las credenciales y la configuración). El contenedor se ejecuta como usuario sin privilegios,
@@ -874,6 +942,7 @@ cuentas (letra, correo, organización) los lee `docker:up` en el host y se los p
   consulta anónima, sin token, a la API pública de GitHub (`api.github.com/repos/marmottajr/habblaud/releases/latest`).
   No envía nada sobre tus sesiones; GitHub ve solo tu IP y la versión en uso, que va en el `User-Agent`.
   `HABBLAUD_UPDATE_CHECK=0` desactiva la consulta.
+  El [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes) también, y solo existe después de `npm run remote:setup`.
 - **Sin credenciales:** Habblaud no lee contraseñas ni tokens de acceso. Del `.claude.json` de cada cuenta aprovecha
   solo el correo, la organización y la caché de `/usage`; el uso en vivo viene del mod (o del tap de statusline).
 - **Secretos enmascarados:** los tokens y contraseñas con formato conocido (`Bearer`, `-u usuário:senha`, `TOKEN=`,
@@ -889,6 +958,7 @@ cuentas (letra, correo, organización) los lee `docker:up` en el host y se los p
   los nombres de `HABBLAUD_ALLOWED_HOSTS` (proxies, túneles) se rechazan. Los secretos se enmascaran y los textos
   largos se truncan antes de llegar al navegador; en el modo demostración, la conversación es ficticia.
   `HABBLAUD_TERMINAL=0` la desactiva por completo.
+  La única excepción es el [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes), y solo con `terminal` en `HABBLAUD_REMOTE_ALLOW`.
 - **Línea de tiempo del timelapse:** solo los resúmenes que ya aparecen en pantalla (actividad en una línea, estado,
   títulos, uso de las cuentas; sin correos, comandos completos ni conversaciones), guardados en
   `~/.habblaud/timeline/` y borrados después de 7 días. `HABBLAUD_TIMELINE=0` desactiva la grabación.
@@ -901,6 +971,7 @@ cuentas (letra, correo, organización) los lee `docker:up` en el host y se los p
   propio Claude Code sugirió para esa solicitud. Atención: cualquier programa o persona que pueda abrir
   `http://localhost:4747` en esta máquina también puede responder; en computadoras compartidas con otros usuarios, no
   instales el hook (`npm run mod:install -- --sem-permissoes`).
+  Excepción: el [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes) también responde (es lo predeterminado) y ve el mismo comando o diff.
 - **Enviar mensajes, solo local, y con una advertencia:** el mensaje entra en la sesión como si lo hubieras escrito
   tú, así que vale lo que el agente puede hacer con una solicitud tuya. Sigue el mismo bloqueo (bind local, `Host`
   local, JSON y origen local, así que un sitio abierto en el navegador no puede enviarlo), pero **cualquier programa de
@@ -908,6 +979,7 @@ cuentas (letra, correo, organización) los lee `docker:up` en el host y se los p
   mensaje a otra sesión que tenga el plugin. Si eso no te sirve (computadora compartida, agentes ejecutándose sin
   supervisión), no instales el plugin (`npm run mod:install -- --sem-mensagens`) o desactívalo con
   `HABBLAUD_MENSAGENS=0`. El texto de los mensajes no se guarda: desaparece del servidor en cuanto se entrega.
+  Desde el [celular con inicio de sesión](#celular-con-inicio-de-sesión-y-https-aprobar-solicitudes), solo con `messages` en `HABBLAUD_REMOTE_ALLOW`.
 - **Terminal interactiva, opcional (opt-in), y con una advertencia:** con `HABBLAUD_PTY=1`, la oficina abre Claude
   Code en cualquier carpeta, escribe en él (incluido `!comando`, que se ejecuta en el shell) y cierra o toma el control
   de sesiones abiertas en otras terminales. Sigue el mismo bloqueo que la terminal (bind local, `Host` local, nada de
@@ -917,6 +989,19 @@ cuentas (letra, correo, organización) los lee `docker:up` en el host y se los p
   externo, Habblaud comprueba en el registro de sesiones y en el sistema que ese PID sigue siendo ese Claude Code
   (mismo inicio y ejecutable). En computadoras compartidas o con agentes ejecutándose sin supervisión, déjala
   desactivada.
+- **Celular con inicio de sesión, opcional (opt-in):** solo existe después de `npm run remote:setup`. Un segundo
+  puerto con HTTPS (una CA local que solo firma nombres `.local`, `localhost`, tu dirección propia e IP privadas),
+  usuario y contraseña (solo se guarda el hash scrypt); la sesión es una cookie `HttpOnly`, `SameSite=Strict` y
+  `Secure` firmada con HMAC. En ese puerto, lo permitido sale de `HABBLAUD_REMOTE_ALLOW` (por defecto, solo responder
+  solicitudes de permiso), nunca del encabezado Host; las rutas de los hooks, de los plugins y del auxiliar del host,
+  la terminal interactiva, el editor de personajes y cambiar el nombre de las salas nunca funcionan por él. Quien
+  tenga la contraseña obtiene lo que permitiste: elige una fuerte y permite solo lo que necesites. La clave de la CA
+  queda en `~/.habblaud/remote-tls/ca` y nunca entra en el contenedor.
+- **Nuevo agente, opcional (opt-in):** con `HABBLAUD_PTY=1`, la oficina inicia sesiones de Claude Code con la
+  solicitud que escribiste, en la carpeta que elijas; vale la misma advertencia que para la terminal interactiva. Los
+  adjuntos se guardan en `~/.habblaud/attachments/` (carpeta 700, archivos 600). En Docker, quien inicia las sesiones
+  es el auxiliar del host (`npm run codex:bridge`), que además solo lee los archivos de las entregas de carpetas de
+  proyecto conocidas (las que Claude Code tiene en `<conta>/projects`), de la carpeta temporal y de los adjuntos.
 - **Editor de personajes, solo local:** guardar o volver al sorteo cambia la oficina y escribe en `names.json`, así
   que sigue el mismo bloqueo que la terminal (bind local, `Host` local, nada de proxies ni túneles): sin él, el lápiz
   no aparece y el servidor responde `403`. Los cambios exigen JSON y origen local. `HABBLAUD_TERMINAL=0` también lo
