@@ -10,6 +10,28 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Comandos de barra pela caixa de mensagem (Claude Code):** uma mensagem que começa com `/` (`/compact`,
+  `/model opus`) roda o comando na sessão, como se você o tivesse digitado no terminal dela; antes voltava como "não
+  entregue". Com o agente ocupado, o comando espera o turno terminar, e um comando que a sessão não conhece volta
+  como não entregue, com o motivo. Sessões abertas pegam a mudança com `/reload-plugins`.
+- Comandos que abrem um painel no terminal da sessão (`/usage`, `/config`, `/help`, `/model` sem argumento…) não são
+  mandados pela caixa: ela avisa por quê e o texto fica nela, em vez de deixar um painel aberto num terminal que
+  ninguém está olhando. A lista desses comandos foi revisada com os comandos nativos do Claude Code 2.1.296, e só os
+  nativos são barrados: um comando de plugin, seu ou de um servidor MCP com o mesmo nome passa.
+- **Menu de comandos na caixa de mensagem (Claude Code):** digite `/` no começo e a caixa lista os comandos que a
+  sessão do agente tem (os do Claude Code, os de plugins, os seus e os de servidores MCP), com a descrição. Filtra
+  enquanto você digita; as setas andam, `Enter` ou `Tab` completam e `Esc` fecha. Os que abrem um painel vêm marcados
+  com "só no terminal". A lista vem da própria sessão, pelo plugin `habblaud-mensagens`: sessões abertas a mandam
+  depois de um `/reload-plugins`.
+
+### Alterado
+
+- **Terminal do agente:** a saída de um comando de barra (`/compact`, `/context`, o de um plugin…) aparece como uma
+  resposta comum, e não mais numa linha "Saída de /x" com o texto escondido em "detalhes". Assim ela também aparece no
+  filtro "Só prompts". Uma linha comprida demais (o comando de um hook, por exemplo) vem encurtada.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo

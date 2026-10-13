@@ -577,6 +577,16 @@ línea): el texto entra en la sesión **como si lo hubieras escrito en su termin
 termina su turno y espera la siguiente solicitud, darle una instrucción nueva o corregir el rumbo, sin buscar la
 ventana correcta.
 
+- Los **comandos de barra** también valen: un mensaje que empieza con `/` (`/compact`, `/model opus`) ejecuta el
+  comando en la sesión, como si lo hubieras escrito. Con el agente ocupado, el comando espera a que termine el
+  turno. Un comando que la sesión no conoce vuelve como **no se entregó**. Los que abren un panel en la terminal (`/usage`,
+  `/config`, `/model` sin argumento) no se envían: el cuadro avisa y el texto se queda en él. La salida de los
+  comandos de texto aparece en la terminal de la oficina. Solo en Claude Code: en Codex, el
+  texto va como un mensaje normal.
+- **Menú de comandos:** escribe `/` al principio del cuadro y lista los comandos que tiene la sesión (los de Claude
+  Code, los de plugins, los tuyos y los de servidores MCP), cada uno con su descripción. Sigue escribiendo para
+  filtrar; las flechas mueven, `Enter` o `Tab` completan y `Esc` cierra. Los marcados con "solo en la terminal" abren
+  un panel y no van por el cuadro.
 - El cuadro muestra el estado: **en cola** (la sesión busca los mensajes cada 2 segundos), **entregado** o **no se
   entregó**, con el motivo. Con el agente ocupado, el mensaje espera y entra cuando termine su turno, como un prompt
   escrito con el agente trabajando.
