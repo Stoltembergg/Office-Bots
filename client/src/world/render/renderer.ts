@@ -6,7 +6,7 @@ import type { SeasonalTheme, WorldOptions } from '../api';
 import type { WorldAssets } from '../assets';
 import type { Camera } from '../camera';
 import type { AgentInfo } from '../../../../shared/types';
-import { ENTRANCE_W, ENTRANCE_X, layoutExterior, slotShell, streetSides, type ExteriorLayout, type SlotShell } from '../layout/exterior';
+import { ENTRANCE_W, ENTRANCE_X, lampsAlong, layoutExterior, slotShell, streetSides, type ExteriorLayout, type SlotShell } from '../layout/exterior';
 import { inRect, isCoreColumn, slotAt, standingKey, STREET_W } from '../layout/geometry';
 import type { ExteriorProp, FloorPatch, TileRect } from '../layout/types';
 import { screenModeFor } from '../sim/behavior';
@@ -107,6 +107,9 @@ export class Renderer {
   readonly street: StreetLife;
   /** Faixas das ruas repetidas além da camada base: o mundo não acaba na borda dos bounds. */
   private strips: { axis: 'h' | 'v'; rect: TileRect; pattern: CanvasPattern }[] = [];
+  /** Postes além da base (fileira contínua até onde a câmera for), recalculados quando a janela visível muda. */
+  lampsBeyond: ExteriorProp[] = [];
+  private lampsKey = '';
   /** Campo de árvores procedural além dos bounds, por célula (cache do que já foi sorteado). */
   private field = new Map<string, ExteriorProp | null>();
   private ents: Ent[] = [];
@@ -440,13 +443,25 @@ export class Renderer {
     if (!pattern) return;
     const ctx = this.ctx;
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(vx0, vy0, vx1 - vx0, vy1 - vy0);
-    ctx.rect(bx0, by0, bx1 - bx0, by1 - by0);
-    ctx.clip('evenodd');
+    // o padrão cobre a janela inteira, inclusive sob a borda da base: a base vai por cima com a borda externa
+    // recortada (SEAM_OVERLAP), então a coluna reamostrada dela em zoom fracionário nunca fica exposta
     ctx.fillStyle = pattern;
     ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
     ctx.restore();
+  }
+
+  /** Postes fora da base na janela visível (em tiles, com folga de 6 para o sprite não nascer na borda). */
+  private updateLampsBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
+    const b = this.exterior.bounds;
+    const x0 = Math.floor(vx0 / TILE) - 6;
+    const y0 = Math.floor(vy0 / TILE) - 6;
+    const x1 = Math.ceil(vx1 / TILE) + 6;
+    const y1 = Math.ceil(vy1 / TILE) + 6;
+    const key = `${x0},${y0},${x1},${y1}`;
+    if (key === this.lampsKey) return;
+    this.lampsKey = key;
+    const inside = (p: ExteriorProp) => inRect(b, Math.floor(p.x / TILE), Math.floor(p.y / TILE));
+    this.lampsBeyond = x0 >= b.x && y0 >= b.y && x1 <= b.x + b.w && y1 <= b.y + b.h ? [] : lampsAlong(this.exterior.streets, this.exterior.northStreetY, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }).filter((p) => !inside(p));
   }
 
   private drawStripsBeyond(vx0: number, vy0: number, vx1: number, vy1: number): void {
@@ -560,10 +575,7 @@ export class Renderer {
     const vy0 = -oy / scale;
     const vx1 = vx0 + W / scale;
     const vy1 = vy0 + H / scale;
-    if (this.base) {
-      this.drawGrassBeyond(vx0, vy0, vx1, vy1);
-      this.drawStripsBeyond(vx0, vy0, vx1, vy1);
-    }
+    if (this.base) this.drawGrassBeyond(vx0, vy0, vx1, vy1);
     // carros e pedestres de uma borda à outra da união (base ∪ visão): nunca fora do asfalto ou da calçada,
     // mesmo com a câmera afastada
     this.street.update(real.now, real.dt, Math.min(vx0, this.baseX) - 60, Math.max(vx1, this.baseX + (this.base?.width ?? 0)) + 60, Math.min(vy0, this.baseY) - 60, Math.max(vy1, this.baseY + (this.base?.height ?? 0)) + 60);
@@ -571,11 +583,17 @@ export class Renderer {
 
     // ---- camada base (só a parte visível)
     if (this.base) {
-      const sx = Math.max(0, Math.floor(vx0 - this.baseX) - 1);
-      const sy = Math.max(0, Math.floor(vy0 - this.baseY) - 1);
-      const sw = Math.min(this.base.width - sx, Math.ceil(vx1 - vx0) + 3);
-      const sh = Math.min(this.base.height - sy, Math.ceil(vy1 - vy0) + 3);
+      // a borda externa da base fica de fora (SEAM_OVERLAP px): em zoom fracionário ela é reamostrada contra o
+      // transparente e aparecia como linha clara na emenda com o campo de fora, que já está pintado por baixo
+      const sx = Math.max(SEAM_OVERLAP, Math.floor(vx0 - this.baseX) - 1);
+      const sy = Math.max(SEAM_OVERLAP, Math.floor(vy0 - this.baseY) - 1);
+      const sw = Math.min(this.base.width - SEAM_OVERLAP - sx, Math.ceil(vx1 - vx0) + 3);
+      const sh = Math.min(this.base.height - SEAM_OVERLAP - sy, Math.ceil(vy1 - vy0) + 3);
       if (sw > 0 && sh > 0) ctx.drawImage(this.base, sx, sy, sw, sh, this.baseX + sx, this.baseY + sy, sw, sh);
+      // as ruas além da base vão por cima dela, entrando 2 px: em zoom fracionário a borda reamostrada da base
+      // não aparece como linha na emenda
+      this.drawStripsBeyond(vx0, vy0, vx1, vy1);
+      this.updateLampsBeyond(vx0, vy0, vx1, vy1);
     }
     // hora do ciclo dia/noite (preferência ou hora forçada; o relógio de parede acompanha a forçada)
     if (this.hourOverride !== null) {
@@ -660,6 +678,7 @@ export class Renderer {
       if (ch.alpha <= 0.01 || !visible(ch.x - 24, ch.y - 48, 48, 56)) continue;
       push(K.Char, ch.depth(), ch, null, 1);
     }
+    for (const prop of this.lampsBeyond) push(K.Prop, prop.y, prop, null, 1);
     for (const prop of this.exterior.props) {
       if (!visible(prop.x - 24, prop.y - 56, 48, 60)) continue;
       let alpha = 1;

@@ -27,6 +27,43 @@ export interface Street {
   cars: boolean;
 }
 
+/**
+ * Postes de 6 em 6 tiles numa grade fixa do mundo (não mudam de lugar quando o mundo cresce), dentro de `area`:
+ * nas duas calçadas da rua principal (a do sul deslocada de 3 tiles), na calçada sul da rua norte e ao longo da
+ * calçada leste de cada rua norte–sul; nenhum no asfalto das ruas norte–sul, junto à entrada (caminho de pedra,
+ * totem, banco e semáforos) nem nos cruzamentos. A base chama com os seus limites; o render chama com a parte
+ * visível além da base, para a fileira seguir até onde a câmera for.
+ */
+export function lampsAlong(streets: readonly Street[], northStreetY: number | null, area: TileRect): ExteriorProp[] {
+  const out: ExteriorProp[] = [];
+  const px = (t: number) => t * TILE;
+  const asphaltV = streets.filter((s) => s.axis === 'v').map((s) => ({ x0: s.rect.x + 3, x1: s.rect.x + 8 }));
+  const nearEntrance = (x: number) => x >= ENTRANCE_X - 4 && x < ENTRANCE_X + ENTRANCE_W + 5;
+  const main = streets.find((s) => s.axis === 'h' && s.cars);
+  const lampRow = (offset: number, y: number, seed: number) => {
+    if (Math.floor(y / TILE) < area.y || Math.floor(y / TILE) >= area.y + area.h) return;
+    for (let x = Math.floor(area.x / 6) * 6 + offset; x < area.x + area.w; x += 6) {
+      if (x < area.x || nearEntrance(x) || asphaltV.some((a) => x >= a.x0 - 1 && x < a.x1 + 1)) continue;
+      out.push({ kind: 'lamp', x: px(x), y, seed: x + seed });
+    }
+  };
+  if (main) {
+    lampRow(2, px(main.rect.y + 3) + 6, 0);
+    lampRow(5, px(main.rect.y + 10) + 6, 2);
+  }
+  if (northStreetY !== null) lampRow(2, px(northStreetY - 3) + 6, 1);
+  const hStreets = streets.filter((s) => s.axis === 'h');
+  for (const v of streets.filter((s) => s.axis === 'v')) {
+    const lx = v.rect.x + 8;
+    if (lx < area.x || lx >= area.x + area.w) continue;
+    for (let y = Math.ceil(area.y / 6) * 6 + 2; y < area.y + area.h; y += 6) {
+      if (hStreets.some((h) => y >= h.rect.y - 1 && y < h.rect.y + STREET_W + 2)) continue;
+      out.push({ kind: 'lamp', x: px(lx) + 8, y: px(y) + 6, seed: y + 7 });
+    }
+  }
+  return out;
+}
+
 export interface ExteriorLayout {
   /** Limites da área desenhada (tiles). */
   bounds: TileRect;
@@ -39,6 +76,8 @@ export interface ExteriorLayout {
   /** Linha central da rua principal (px), para as faixas tracejadas. */
   streetY: number;
   streetH: number;
+  /** y (tiles) do topo do principal quando há rua norte (os postes dela ficam em y − 3); null sem ela. */
+  northStreetY: number | null;
   /** Todas as ruas: principal, norte (com bloco em by = −1) e norte–sul (uma por coluna de blocos |bx| ≥ 1). */
   streets: Street[];
   /** Cruzamentos (tiles): o asfalto comum de cada rua norte–sul com cada rua leste–oeste (5×5). */
@@ -171,28 +210,11 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
       }
     }
   }
+  for (const l of lampsAlong(streets, northStreet ? main.y : null, bounds)) place(l, true);
   // postes: de 6 em 6 tiles numa grade fixa do mundo (não mudam de lugar quando o mundo cresce para oeste), nas duas
   // calçadas da rua principal (a do sul é deslocada de 3 tiles), na calçada sul da rua norte e ao longo da calçada leste
   // de cada rua norte–sul; nenhum no asfalto das ruas norte–sul, junto à entrada (caminho de pedra, totem, banco e
   // semáforos) nem nos cruzamentos
-  const asphaltV = streets.filter((s) => s.axis === 'v').map((s) => ({ x0: s.rect.x + 3, x1: s.rect.x + 8 }));
-  const nearEntrance = (x: number) => x >= ENTRANCE_X - 4 && x < ENTRANCE_X + ENTRANCE_W + 5;
-  const lampRow = (offset: number, y: number, seed: number) => {
-    for (let x = Math.floor(bounds.x / 6) * 6 + offset; x < bounds.x + bounds.w; x += 6) {
-      if (x < bounds.x || nearEntrance(x) || asphaltV.some((a) => x >= a.x0 - 1 && x < a.x1 + 1)) continue;
-      place({ kind: 'lamp', x: px(x), y, seed: x + seed }, true);
-    }
-  };
-  lampRow(2, px(south + 3) + 6, 0);
-  lampRow(5, px(south + 10) + 6, 2);
-  if (northStreet) lampRow(2, px(main.y - 3) + 6, 1);
-  const hStreets = streets.filter((s) => s.axis === 'h');
-  for (const v of streets.filter((s) => s.axis === 'v')) {
-    for (let y = Math.ceil(bounds.y / 6) * 6 + 2; y < bounds.y + bounds.h; y += 6) {
-      if (hStreets.some((h) => y >= h.rect.y - 1 && y < h.rect.y + STREET_W + 2)) continue;
-      place({ kind: 'lamp', x: px(v.rect.x + 8) + 8, y: px(y) + 6, seed: y + 7 }, true);
-    }
-  }
   // banco e totem com a marca na calçada, dos dois lados do caminho de pedra (longe dos postes em x 34 e 44)
   place({ kind: 'bench', x: px(ENTRANCE_X + ENTRANCE_W + 4), y: px(south + 2) + 4, seed: 1 }, true);
   place({ kind: 'totem', x: px(ENTRANCE_X - 3) + 8, y: px(south + 2) + 4, seed: 2 }, true);
@@ -216,6 +238,7 @@ export function layoutExterior(blocks: readonly BlockLayout[], bridges: readonly
     bounds,
     floors,
     props,
+    northStreetY: northStreet ? main.y : null,
     lanes: [
       { y: streetY + Math.round(streetH * 0.36), dir: 1 },
       { y: streetY + Math.round(streetH * 0.86), dir: -1 },

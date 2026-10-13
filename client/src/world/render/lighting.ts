@@ -9,6 +9,7 @@ import { TILE, type ArtModule, type ScreenMode } from '../../art/api';
 import { mulberry32 } from '../../../../shared/hash';
 import { CORRIDOR_H } from '../constants';
 import type { ExteriorLayout, SlotShell } from '../layout/exterior';
+import type { ExteriorProp } from '../layout/types';
 import { blockAt, standingKey } from '../layout/geometry';
 import type { RoomState } from '../sim/room-state';
 import type { Sim } from '../sim/sim';
@@ -36,6 +37,8 @@ const FIREFLIES = 26;
 export interface LightScene {
   readonly areas: ReadonlyMap<string, AreaVis>;
   readonly exterior: ExteriorLayout;
+  /** Postes além da base, na janela visível (a fileira continua até onde a câmera for). */
+  readonly lampsBeyond: readonly ExteriorProp[];
   readonly shells: readonly SlotShell[];
   readonly shellWindows: readonly WallVis[];
   readonly cars: readonly { axis: 'h' | 'v'; x: number; y: number; dir: 1 | -1 }[];
@@ -149,6 +152,7 @@ export class Lighting {
   private override: number | null = null;
   private map: HTMLCanvasElement | null = null;
   private mapCtx: CanvasRenderingContext2D | null = null;
+  private layer: HTMLCanvasElement | null = null;
   private mapKey = '';
   private mapX = 0;
   private mapY = 0;
@@ -210,29 +214,44 @@ export class Lighting {
     if (!map) return;
     const mx0 = this.mapX;
     const my0 = this.mapY;
-    const mx1 = mx0 + map.width * MAP_SCALE;
-    const my1 = my0 + map.height * MAP_SCALE;
-    ctx.save();
-    ctx.globalCompositeOperation = 'multiply';
     // parte visível do mapa (em pixels inteiros do mapa)
     const sx = Math.max(0, Math.floor((view.x0 - mx0) / MAP_SCALE) - 1);
     const sy = Math.max(0, Math.floor((view.y0 - my0) / MAP_SCALE) - 1);
     const ex = Math.min(map.width, Math.ceil((view.x1 - mx0) / MAP_SCALE) + 1);
     const ey = Math.min(map.height, Math.ceil((view.y1 - my0) / MAP_SCALE) + 1);
+    // o mapa e o tom de fora vão numa camada de tela (source-over: fora por baixo de tudo, mapa por cima) e
+    // essa camada é multiplicada uma vez só. Em duas formas separadas em 'multiply', a borda antisserrilhada de
+    // cada uma cobria só parte do pixel na emenda em zoom fracionário e sobrava uma coluna clara
+    const layer = this.screenLayer(ctx.canvas.width, ctx.canvas.height);
+    if (!layer) return;
+    const l = layer.getContext('2d')!;
+    l.setTransform(1, 0, 0, 1, 0, 0);
+    l.globalCompositeOperation = 'source-over';
+    l.fillStyle = rgbCss(amb.outside);
+    l.fillRect(0, 0, layer.width, layer.height);
+    l.setTransform(ctx.getTransform());
+    l.imageSmoothingEnabled = false;
     // sem suavização: pixels nítidos como o resto da arte (e bem mais barato de ampliar)
-    if (ex > sx && ey > sy) ctx.drawImage(map, sx, sy, ex - sx, ey - sy, mx0 + sx * MAP_SCALE, my0 + sy * MAP_SCALE, (ex - sx) * MAP_SCALE, (ey - sy) * MAP_SCALE);
-    // além do mapa: o mesmo tom do exterior
-    ctx.fillStyle = rgbCss(amb.outside);
-    const w = view.x1 - view.x0 + 4;
-    if (view.y0 < my0) ctx.fillRect(view.x0 - 2, view.y0 - 2, w, my0 - view.y0 + 2);
-    if (view.y1 > my1) ctx.fillRect(view.x0 - 2, my1, w, view.y1 - my1 + 2);
-    const top = Math.max(view.y0 - 2, my0);
-    const bottom = Math.min(view.y1 + 2, my1);
-    if (bottom > top) {
-      if (view.x0 < mx0) ctx.fillRect(view.x0 - 2, top, mx0 - view.x0 + 2, bottom - top);
-      if (view.x1 > mx1) ctx.fillRect(mx1, top, view.x1 - mx1 + 2, bottom - top);
-    }
+    if (ex > sx && ey > sy) l.drawImage(map, sx, sy, ex - sx, ey - sy, mx0 + sx * MAP_SCALE, my0 + sy * MAP_SCALE, (ex - sx) * MAP_SCALE, (ey - sy) * MAP_SCALE);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(layer, 0, 0);
     ctx.restore();
+  }
+
+  /** Camada do tamanho da tela para montar a luz ambiente (reaproveitada entre quadros). */
+  private screenLayer(w: number, h: number): HTMLCanvasElement | null {
+    if (!this.layer || this.layer.width !== w || this.layer.height !== h) {
+      try {
+        this.layer = document.createElement('canvas');
+        this.layer.width = w;
+        this.layer.height = h;
+      } catch {
+        this.layer = null;
+      }
+    }
+    return this.layer;
   }
 
   /** Áreas comuns acendem com gente dentro (banheiro com sensor de presença, copa, lounge). */
@@ -514,6 +533,18 @@ export class Lighting {
     if (n > 0.2) {
       for (const prop of scene.exterior.props) {
         if (prop.kind !== 'lamp' || !inView(prop.x, prop.y, 64)) continue;
+        ctx.globalAlpha = 0.6 * n;
+        ctx.drawImage(warm, Math.round(prop.x - 14), Math.round(prop.y - 43), 28, 28);
+      }
+      // postes além da base: o mapa não os cobre (ele tem o tamanho da base), então o halo no chão e o da cabeça
+      // vão direto na tela, com o mesmo sprite quente, por cima do tom de fora
+      const street = haloSprite(STREET_WARM, 64);
+      for (const prop of scene.lampsBeyond) {
+        if (!inView(prop.x, prop.y, 80)) continue;
+        ctx.globalCompositeOperation = 'lighten';
+        ctx.globalAlpha = 0.5 * n;
+        ctx.drawImage(street, Math.round(prop.x - 60), Math.round(prop.y + 6 - 42), 120, 84);
+        ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 0.6 * n;
         ctx.drawImage(warm, Math.round(prop.x - 14), Math.round(prop.y - 43), 28, 28);
       }

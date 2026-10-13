@@ -9,7 +9,7 @@ import { CORRIDOR_ID, corridorId } from './corridor';
 import { bridgesFor, existingBlocks, inRect, isCoreColumn, PRINCIPAL, slotAt } from './geometry';
 import { annexRestroomId, hubAreas, hubId, layoutHub } from './hub';
 import { layoutProjectRoom, roomVariant } from './room';
-import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, layoutExterior, slotShell, type ExteriorLayout, type SlotShell, type Street } from './exterior';
+import { ENTRANCE_DEPTH, ENTRANCE_W, ENTRANCE_X, EXTERIOR_WALL, lampsAlong, layoutExterior, slotShell, type ExteriorLayout, type SlotShell, type Street } from './exterior';
 import type { AreaLayout } from './types';
 
 const theme: RoomTheme = {
@@ -1293,6 +1293,37 @@ describe('exterior da fase 3 (D5): ruas, props por posição, cercas e pátios p
     }
     const rows = new Set(ext(49).e.props.filter((p) => p.kind === 'lamp').map((p) => p.y));
     expect(rows.has((29 + 3) * TILE + 6) && rows.has(-3 * TILE + 6)).toBe(true);
+  });
+
+  it('postes além da base: a mesma grade de 6 tiles continua para fora, sem repetir os da base', () => {
+    const { e } = ext(33);
+    const b = e.bounds;
+    const inside = e.props.filter((p) => p.kind === 'lamp');
+    // a base é lampsAlong nos seus limites menos os que `place` recusa (bloco, passarela, cruzamento)
+    const grid = lampsAlong(e.streets, e.northStreetY, b);
+    expect(inside.length).toBeGreaterThan(100);
+    for (const p of inside) expect(grid.some((g) => g.x === p.x && g.y === p.y), `poste ${p.x},${p.y} fora da grade`).toBe(true);
+    // uma janela a oeste da base: todos fora dela, em x ≡ 2 (norte) / 5 (sul) mod 6, nas mesmas linhas da base
+    const west = { x: b.x - 60, y: b.y, w: 60, h: b.h };
+    const beyond = lampsAlong(e.streets, e.northStreetY, west);
+    expect(beyond.length).toBeGreaterThan(10);
+    const rows = new Set(inside.map((p) => p.y));
+    for (const l of beyond) {
+      expect(l.x).toBeLessThan(b.x * TILE);
+      expect(rows.has(l.y), `linha ${l.y}`).toBe(true);
+      expect(inside.some((p) => p.x === l.x && p.y === l.y)).toBe(false);
+    }
+    // continuidade: o primeiro poste de fora fica a 6 tiles do primeiro de dentro, na mesma linha
+    const northY = (e.streets[0].rect.y + 3) * TILE + 6;
+    const firstIn = Math.min(...inside.filter((p) => p.y === northY).map((p) => p.x));
+    const lastOut = Math.max(...beyond.filter((p) => p.y === northY).map((p) => p.x));
+    expect(firstIn - lastOut).toBe(6 * TILE);
+    // uma janela ao sul da base, ao longo de uma rua norte–sul: postes na calçada leste dela, nenhum em cima da rua h
+    const v = e.streets.find((s) => s.axis === 'v')!;
+    const southWin = { x: v.rect.x - 2, y: b.y + b.h, w: 16, h: 60 };
+    const down = lampsAlong(e.streets, e.northStreetY, southWin);
+    expect(down.length).toBeGreaterThan(5);
+    for (const l of down) expect(l.x).toBe((v.rect.x + 8) * TILE + 8);
   });
 
   it('pátios: caminho de pedra e paving só do lado com rua (D5)', () => {
