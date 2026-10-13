@@ -43,6 +43,9 @@
     "codex:bridge": "tsx scripts/codex-bridge.ts",
     "remote:setup": "tsx scripts/remote-setup.ts",
     "remote:mdns": "tsx scripts/remote-mdns.ts",
+    "opencode:install": "tsx scripts/opencode-install.ts install",
+    "opencode:uninstall": "tsx scripts/opencode-install.ts uninstall",
+    "opencode:status": "tsx scripts/opencode-install.ts status",
     "release": "tsx scripts/release.ts"
   },
   "devDependencies": {

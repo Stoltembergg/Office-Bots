@@ -5,7 +5,7 @@
 <h1 align="center">Habblaud</h1>
 
 <p align="center">
-  <b>The virtual office for your Claude Code (and Codex) agents.</b><br />
+  <b>The virtual office for your Claude Code (and Codex and OpenCode) agents.</b><br />
   Each project becomes a room, and each agent becomes a pixel-art character that shows, in real time, what it's doing.
 </p>
 
@@ -227,6 +227,25 @@ Then **open Codex and approve the Habblaud hooks in `/hooks`**: Codex only runs 
 approve it (Habblaud never writes that approval). With Habblaud in Docker, to send messages to Codex sessions,
 also keep `npm run codex:bridge` running on the Mac (see [Codex](#codex)).
 
+### 5. OpenCode in the office (optional)
+
+If you also use **OpenCode**, its sessions show up in the same office: each project is a room and each session is a
+character on the **OpenCode** account. Habblaud finds OpenCode's database (`~/.local/share/opencode/opencode.db`) and reads
+it **read-only**, without installing anything. This needs **Node 22.13 or newer** (that's when `node:sqlite` works
+without an extra flag): on Node 22.12 the reading stays off, Habblaud says so with one line in the log and everything
+else works as usual. **In Docker this reading doesn't exist:** the container can't see OpenCode's database (`docker:up`
+deliberately mounts no SQLite file). To see OpenCode, run Habblaud without Docker (Node mode). To see OpenCode **live**,
+approve permission requests and send messages from the office, install the plugin:
+
+```bash
+npm run opencode:install   # copies the plugin to ~/.config/opencode/plugins/habblaud.js (backup before replacing a file)
+npm run opencode:status    # checks it
+```
+
+Then **reopen OpenCode**: it loads the plugin on startup. Without the plugin there's no approving from the office, no
+messages and no live status: only what reading the database shows (see [OpenCode](#opencode)). After updating
+Habblaud, run `npm run opencode:install` again (the plugin is a copy; `status` warns when it has fallen behind).
+
 ### Open on your phone (optional)
 
 By default Habblaud only accepts connections from the computer it runs on. To open it on your phone (on the same Wi-Fi), with Docker:
@@ -347,6 +366,7 @@ npm run docker:up        # tira o container codetown e copia os dados do volume 
 ```bash
 npm run mod:uninstall                       # tira o mod, os plugins de permissões e de mensagens e o marketplace
 npm run codex:uninstall                     # tira os hooks do Habblaud do Codex (os outros ficam)
+npm run opencode:uninstall                  # removes the OpenCode plugin (only the two files the installer wrote)
 npm run docker:down                         # para o container
 docker volume rm habblaud_habblaud-data     # apaga os dados do container (nomes, salas, linha do tempo e estatísticas)
 docker image rm habblaud:local              # apaga a imagem
@@ -607,6 +627,43 @@ Codex account chip is hollow and carries the **CODEX** tag.
   little while to leave after you close the terminal.
 - ChatGPT cloud conversations (with no file on the computer) don't show up. `HABBLAUD_CODEX=0` turns Codex off.
 
+### OpenCode
+
+OpenCode sessions show up like Claude Code's and Codex's: character, project room (the session's folder), activity,
+tasks and subagents. The account chip is fixed and is called "OpenCode". This part is implemented
+and covered by automated tests, and was checked end to end on OpenCode 1.18.35, on Linux, with a temporary, isolated home
+folder: the session shows up, the events arrive live, the message is delivered and a real permission request was approved
+and denied from the office. "Always allow" and interrupt are deliberately not offered.
+
+- **Without installing anything**, Habblaud reads OpenCode's database every second, read-only. A session shows up while
+  it was touched in the last 30 minutes and isn't archived; a child session (`parent_id`) becomes a subagent of the
+  main one. Working or idle comes from the assistant's last reply, and the activity comes from the last tool used
+  (bash, read, edit, write, grep, glob, webfetch, task). It needs Node 22.13 or newer; without the database, or on
+  Node 22.12, the reading simply doesn't turn on. The database isn't mounted in Docker (`docker:up` mounts no SQLite
+  file), so this reading only works with Habblaud in Node mode.
+- **With the plugin** (`npm run opencode:install` and reopening OpenCode), OpenCode tells Habblaud right away what
+  happens (status, tasks, tools, permission requests), without waiting for the next database reading. The plugin is
+  loaded when OpenCode starts, so you need to restart OpenCode after `npm run opencode:install`.
+- **Approving from the office:** with some Habblaud page open, OpenCode's permission request shows up in the **Asks for
+  permission** card (with the OpenCode tag) and waits for your answer for up to **25 seconds**
+  (`npm run opencode:install -- --espera <s>`, from 5 to 120): **Approve** or **Deny** (with the reason, which OpenCode
+  shows to the model). The request has been on OpenCode's screen from the start: if you don't answer in the office, or
+  no page is open, nothing changes and OpenCode's own answer applies. There's no "always allow" or "interrupt".
+- **Questions:** when OpenCode asks a question (the `question` tool), the agent waits and the **Needs you** card shows
+  the question with its options, even without the plugin (then, on the next database reading). Answering or declining
+  from the office (one option, several or free text; **Decline…** declines the question, with no reason asked) needs the
+  plugin, and OpenCode restarted after `npm run opencode:install`. The plugin waits for your answer for up to
+  **10 minutes** (`--espera` doesn't change that); the question stays on OpenCode's screen: if nobody answers here, or
+  you pick **Answer in the terminal**, OpenCode's prompt applies, and answering there makes the card go away. Questions
+  with more than 4 items can only be answered in the terminal. Covered by automated tests; the check against a real
+  OpenCode is done separately.
+- **Sending messages:** the **Send message** box works for the main agent of a session the plugin is serving. The plugin
+  asks Habblaud for the session's own messages every ~1.5 seconds, hands each one to OpenCode and confirms; the text
+  limit is the same as the others. Without the plugin connected, the box shows the install hint, and a message the
+  plugin doesn't confirm within 20 seconds shows up as not delivered.
+- `HABBLAUD_OPENCODE=0` turns off both layers; `HABBLAUD_OPENCODE_DIR` points to OpenCode's data folder.
+- OpenCode has no usage (quota), and the terminal and the session history don't cover OpenCode yet.
+
 ### GitHub in the office
 
 What the agents do on GitHub livens up the project's room, with no token and no internet access: Habblaud reads the
@@ -728,6 +785,8 @@ Everything works without configuring anything. If you need to adjust something, 
 | `HABBLAUD_CODEX` | on | `0` turns off Codex in the office. |
 | `HABBLAUD_CODEX_DIRS` | automatic detection | Codex folders, comma-separated (instead of `~/.codex*` and `CODEX_HOME`). |
 | `HABBLAUD_CODEX_BIN` | `codex` from PATH (on Windows, `codex.exe`) | The Codex binary that delivers the messages (`codex queue`), in Node mode or in `npm run codex:bridge`. |
+| `HABBLAUD_OPENCODE` | on | `0` turns OpenCode off in the office (the database reading and the plugin's events). |
+| `HABBLAUD_OPENCODE_DIR` | `$XDG_DATA_HOME/opencode` or `~/.local/share/opencode` | OpenCode's data folder (where `opencode.db` lives). |
 | `HABBLAUD_UPDATE_CHECK` | on | `0` turns off the new-version check (a request to the repository's releases on GitHub every 6 h). |
 | `HABBLAUD_LANG` | system language (except English), otherwise `pt-BR` | Language of the texts the server builds (activities, notices, logs): `pt-BR`, `en`, `es` or `fr`. The interface follows the browser or the choice in Settings › Language. See [Languages](#languages). |
 | `HABBLAUD_ACCOUNTS` | — | JSON to customize name, letter or color, matched by the account folder name. E.g. `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
@@ -797,6 +856,8 @@ mod/      o mod do Habblaud e os plugins de permissões e de mensagens (plugins 
 | `/api/messages…` and `/api/mod/inbox…` | Sending messages: the page puts the message in the queue and follows its delivery; the `habblaud-mensagens` plugin fetches it, delivers it to the session and confirms. Local access only. |
 | `POST /api/codex/events` | Events from the Codex hooks (session opened, tool, approval, end of turn). Local access only. |
 | `/api/codex/bridge/poll` and `/ack` | `npm run codex:bridge` fetches the messages for Codex and confirms delivery. Local access only. |
+| `POST /api/opencode/events` | Events from the OpenCode plugin (status, tasks, tools, permission requests). Local access only. |
+| `/api/opencode/bridge/poll` and `/ack` | The OpenCode plugin fetches its own session's messages, delivers them and confirms. Local access only. |
 
 More server details in [`server/README.md`](server/README.md).
 
@@ -905,6 +966,14 @@ metadata (letter, email, organization) is read on the host by `docker:up` and pa
   other apps stay where they are) and writes `~/.habblaud/codex-hook.json`; approving the hooks is always up to you, in
   `/hooks`. The hooks only talk to `127.0.0.1`. Messages to Codex carry the same warning as those to Claude Code: any
   program on this machine that talks to Habblaud can leave a message in a session's queue.
+- **OpenCode:** OpenCode only keeps its sessions in a SQLite database, so this is the only case where Habblaud opens a
+  SQLite, always read-only and only the `project`, `session`, `message`, `part` and `todo` tables. From the content
+  columns it asks only for the role, the times, the part type, the tool name and its short title: the message text, the
+  tools' output and the reasoning never reach Habblaud. It never opens `auth.json`, the configuration
+  (`opencode.jsonc`), the logs or the rest of the database (`account`, `event`). `npm run opencode:install` only writes
+  `~/.config/opencode/plugins/habblaud.js` and `~/.habblaud/opencode-hook.json` (with a backup before replacing a file)
+  and the plugin only talks to `127.0.0.1`. Messages to OpenCode carry the same warning as the others: any program on
+  this machine that talks to Habblaud can leave a message in the queue of a session that has the plugin.
 - **What shows up on screen:** activity summaries (tool, file, command or query), session titles,
   tasks and stats (and, in the terminal, the conversation). Don't expose the port on networks you don't
   trust.
@@ -1045,6 +1114,29 @@ run `npm run codex:install`, **approve the hooks in `/hooks` in Codex** and chec
 the hooks through the login shell, which may have an old Node; `codex:install` picks a Node 22+ and tells you which one (or use
 `--node <caminho>`). A freshly opened CLI session only shows up with the **first message**: before that, Codex doesn't
 say which folder it's in (it only creates the session lock), and without the folder there's no room.
+
+</details>
+
+<details>
+<summary><b>OpenCode doesn't show up in the office (or shows up without buttons)</b></summary>
+
+Check, in this order:
+
+- **Node:** reading OpenCode's database needs Node **22.13 or newer**. On 22.12 the startup log says so and only the
+  plugin works.
+- **Data folder:** Habblaud looks for OpenCode in `~/.local/share/opencode`. If yours is somewhere else, point to it with
+  `HABBLAUD_OPENCODE_DIR`. `HABBLAUD_OPENCODE=0` turns OpenCode off in the office; make sure it wasn't set by mistake.
+- **Old plugin:** the plugin is a **copy** made at install time. After updating Habblaud, run `npm run opencode:install`
+  again and **restart OpenCode**. An old copy shows questions only through the database reading, without the answer
+  buttons.
+- **Port:** `npm run opencode:status` shows the port saved in `~/.habblaud/opencode-hook.json`. It must be the port of
+  the Habblaud you're using; with another port, the plugin talks to nobody. Reinstall with
+  `npm run opencode:install -- --port <port>`.
+- **Open page:** the approval or question card only shows up with the office page open in the browser. Without it,
+  OpenCode carries on with its own prompt.
+- **To investigate:** open OpenCode with `HABBLAUD_HOOK_DEBUG=1 opencode 2>~/oc-habblaud.log` and look for the lines
+  starting with `[habblaud-opencode]`. When a card doesn't show up, the reason is there: `no-viewers` (no page open),
+  `unknown-session`, `unsupported-tool` or `too-many`.
 
 </details>
 
