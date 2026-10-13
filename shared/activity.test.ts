@@ -140,6 +140,22 @@ describe('segredos mascarados', () => {
     }
   });
 
+  it('texto longo sem branco (a.b.c…, x-y-z…) não trava: os padrões da máscara não voltam atrás a cada posição', () => {
+    // Antes da correção, cerca de 400 ms por chamada (quadrático); agora, cerca de 20 ms. O teto é folgado para CI lento.
+    for (const unit of ['a.', 'x-', 'a.b-', '_key', 'ghp_']) {
+      const command = unit.repeat(Math.ceil(16_000 / unit.length)).slice(0, 16_000);
+      const t0 = performance.now();
+      describeTool('Bash', { command });
+      expect(performance.now() - t0).toBeLessThan(200);
+    }
+  });
+
+  it('nome sensível mais longo que o teto do prefixo também tem o valor mascarado', () => {
+    const name = `${'A'.repeat(200)}_TOKEN`;
+    expect(maskSecrets(`${name}=valor123`)).toBe(`${name}=***`);
+    expect(maskSecrets(`export x.${'b'.repeat(150)}_secret: "s3nh4"`)).toBe(`export x.${'b'.repeat(150)}_secret: "***"`);
+  });
+
   it('webhooks e tokens npm_/hf_ (o segredo some, o host fica)', () => {
     // Montado em partes: o URL inteiro no fonte dispara o push protection do GitHub.
     const slack = ['https://hooks.slack.com/services', 'T00000000', 'B00000000', 'X'.repeat(24)].join('/');

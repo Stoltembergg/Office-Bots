@@ -114,8 +114,8 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|x-auth-token|private-token)(\s*:\s*)[^'"\n]+/gi, '$1$2***'],
   // Bearer/Basic/Token <valor> soltos.
   [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}/g, '$1 ***'],
-  // URL com usuário:senha.
-  [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/'"]+:)[^\s@/'"]+@/gi, '$1***@'],
+  // URL com usuário:senha. O esquema tem teto: sem ele, um texto longo como `a.b.c…` volta atrás a cada posição.
+  [/(\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)[^\s@/'"]+@/gi, '$1***@'],
   // Webhook: o host fica, o caminho com o segredo sai.
   [/(\bhttps?:\/\/hooks\.slack\.com\/services\/)T[A-Z0-9]+\/B[A-Z0-9]+\/[A-Za-z0-9]+/gi, '$1***'],
   [/(\bhttps?:\/\/(?:discordapp|discord)\.com\/api\/webhooks\/)\d+\/[A-Za-z0-9_-]+/gi, '$1***'],
@@ -124,9 +124,11 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/((?:^|\s)(?:-u|--user)\s+['"]?[^\s:'"]+:)[^\s'"]+/g, '$1***'],
   // --token X, --password=X, --api-key X...
   [/((?:^|\s)--?(?:token|password|passwd|pass|secret|api-key|apikey|access-token|auth-token)(?:\s+|=))(['"]?)[^\s'"]+\2/gi, '$1$2***$2'],
-  // NOME_SENSIVEL=valor / "password": "valor" (GITHUB_TOKEN, DB_PASSWORD, client_secret, api_key...).
+  // NOME_SENSIVEL=valor / "password": "valor" (GITHUB_TOKEN, DB_PASSWORD, client_secret, api_key...). O prefixo do
+  // nome tem teto pelo mesmo motivo do esquema da URL; sem `\b` no começo, um nome mais longo que o teto ainda casa
+  // pelo fim (o prefixo preservado é o mesmo).
   [
-    /\b([A-Za-z0-9_.-]*?(?:token|secret|passw(?:or)?d|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|credentials?))(["']?\s*[=:]\s*)(["']?)([^\s"'&;|,}]+)\3/gi,
+    /([A-Za-z0-9_.-]{0,128}?(?:token|secret|passw(?:or)?d|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|credentials?))(["']?\s*[=:]\s*)(["']?)([^\s"'&;|,}]+)\3/gi,
     '$1$2$3***$3',
   ],
   // Chaves com prefixo conhecido.
