@@ -565,9 +565,10 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
   ainda sem conversa não aparece.
 - **Enquanto está aberta:** o Habblaud confere se o Codex ainda segura a trava da sessão (sem nunca travá-la). No
   Windows e no Linux, a sessão fica no escritório pelo tempo que estiver aberta, mesmo parada há horas, e um turno
-  longo continua "trabalhando"; no macOS e no Docker, onde isso não dá para conferir, a sessão sem nenhuma linha nova
-  há 12 horas sai, e um turno sem nenhuma escrita há 30 minutos fica ocioso (e volta a trabalhar quando o arquivo volta
-  a crescer). Reiniciado no meio de um turno, o Habblaud lê a conversa de trás para frente até o começo dele.
+  longo continua "trabalhando"; no macOS, no Docker e com a pasta do Codex noutro kernel ou na rede (o `/mnt/c` do
+  WSL2, NFS, uma pasta compartilhada de VM), onde isso não dá para conferir, a sessão sem nenhuma linha nova há 12
+  horas sai, e um turno sem nenhuma escrita há 30 minutos fica ocioso (e volta a trabalhar quando o arquivo volta a
+  crescer). Reiniciado no meio de um turno, o Habblaud lê a conversa de trás para frente até o começo dele.
 - **Quando a sessão sai do escritório:** a CLI do Codex roda as sessões num servidor em segundo plano, que só
   descarrega a conversa depois de ela ficar ociosa e sem ninguém inscrito, num prazo do próprio Codex (no teste com o
   0.160.1, cerca de 1 a 2 minutos; o código do Codex prevê até 30 minutos, `thread_unload_delay_secs`); até lá a trava

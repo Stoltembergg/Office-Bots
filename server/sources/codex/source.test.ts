@@ -427,6 +427,50 @@ describe('fonte do Codex: sondagem da trava, leitura até a fronteira e mtime fo
     expect(ctx.notices.some((n) => n.text.includes('encerrou'))).toBe(true);
   });
 
+  it('trava "livre" com o rollout crescendo há pouco não vale como órfã (outra máquina ou outro kernel); 60 s sem sinal de vida, sai', () => {
+    // Arrange: sessão no escritório com a trava segura.
+    const ctx = setup();
+    const at = ctx.now() - 10_000;
+    const path = ctx.home.rollout(T, [R.meta(T, { at }), R.taskStarted('t', at), R.user(T, 't', 'u', 'rode os testes', at)]);
+    ctx.home.lock(T, at);
+    ctx.source.boot();
+    expect(ctx.agent()?.status).toBe('working');
+
+    // Act: a sondagem passa a dizer "livre", mas o rollout continua crescendo.
+    ctx.locks.set(T, 'free');
+    ctx.advance(1_000);
+    ctx.home.append(path, [R.command(T, 't', 'c1', 'npm test', { at: ctx.now() })]);
+    ctx.poll();
+    ctx.advance(59_000);
+    ctx.poll();
+
+    // Assert
+    expect(ctx.agent()?.status).toBe('working');
+    ctx.advance(1_000);
+    ctx.poll();
+    ctx.advance(5_000);
+    ctx.poll();
+    expect(ctx.agent()?.status).toBe('offline');
+  });
+
+  it('trava "livre" com um hook recente também não vale como órfã', () => {
+    // Arrange
+    const ctx = setup();
+    const at = ctx.now() - 120_000;
+    const path = ctx.home.rollout(T, [R.meta(T, { at }), R.taskStarted('t', at), R.user(T, 't', 'u', 'rode os testes', at)]);
+    ctx.home.lock(T, at);
+    ctx.source.boot();
+    ctx.locks.set(T, 'free');
+
+    // Act
+    ctx.hook({ hook_event_name: 'PreToolUse', session_id: T, transcript_path: path, tool_name: 'Bash', tool_use_id: 'call_1', tool_input: { command: 'npm test' } });
+    ctx.advance(30_000);
+    ctx.poll();
+
+    // Assert
+    expect(ctx.agent()?.status).toBe('working');
+  });
+
   it('trava segura e turno aberto: 31 min sem escrever continua trabalhando (sem o "concluiu" falso)', () => {
     const ctx = setup();
     const at = ctx.now() - 60_000;

@@ -327,16 +327,18 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 - **Sessões abertas** (`sources/codex/files.ts`, `locks.ts`, `source-presence.ts`): `thread-writer-locks/<threadId>.lock`
   existindo há 3 s (os locks rápidos de manutenção ficam de fora). A trava é só **sondada**, nunca adquirida (se o
   Habblaud a segurasse quando o Codex retoma a thread, o Codex falharia): no Windows, ler 1 byte dá `EBUSY` = segura;
-  no Linux, uma linha `FLOCK WRITE` do `/proc/locks` com o dispositivo:inode do arquivo; no macOS, no Docker e no
-  Linux sem `/proc/locks`, só a existência. Segura = aberta, sem prazo (um comando longo passa horas sem escrever);
-  solta ou sumida = principal encerrado depois de 5 s, subagente depois de 1,5 s (o que ainda não concluiu e não está
-  ocioso espera 120 s, porque volta com o mesmo id num `followup_task`). Só no modo da existência: lock e rollout
-  parados há 12 h (pela última linha), sem evento de hook = lock de crash; sem a trava segura, `working` sem escrita
-  nem hook por 30 min = `idle`, no principal e no subagente (uma linha nova do turno ainda aberto volta a `working`,
-  ou a `waiting` com pergunta aberta). Lock sem rollout = sessão aberta e vazia: o lock não diz a pasta, então o
-  principal só entra quando o rollout (criado no 1º prompt) ou um hook disser o cwd. Sem a pasta de locks: escrita no
-  rollout nos últimos 30 min. Evento de hook segura a presença por 60 s. O mtime nunca decide a presença: só escolhe o
-  que abrir.
+  no Linux, uma linha `FLOCK WRITE` do `/proc/locks` com o dispositivo:inode do arquivo (lido uma vez por ciclo); no
+  macOS, no Docker, no Linux sem `/proc/locks` e numa pasta de travas noutro kernel ou na rede (9p do WSL2, NFS,
+  CIFS/SMB, FUSE, virtiofs, vboxsf, pelo `statfs`), só a existência. Segura = aberta, sem prazo (um comando longo passa
+  horas sem escrever); solta com sinal de vida nos últimos 60 s (o rollout cresceu ou chegou um hook) vale como a da
+  existência; solta sem sinal ou sumida = principal encerrado depois de 5 s, subagente depois de 1,5 s (o que ainda
+  não concluiu e não está ocioso espera 120 s, porque volta com o mesmo id num `followup_task`). Só no modo da
+  existência (e na solta com sinal de vida): lock e rollout parados há 12 h (pela última linha), sem evento de hook =
+  lock de crash; sem a trava segura, `working` sem escrita nem hook por 30 min = `idle`, no principal e no subagente
+  (uma linha nova do turno ainda aberto volta a `working`, ou a `waiting` com pergunta aberta). Lock sem rollout =
+  sessão aberta e vazia: o lock não diz a pasta, então o principal só entra quando o rollout (criado no 1º prompt) ou
+  um hook disser o cwd. Sem a pasta de locks: escrita no rollout nos últimos 30 min. Evento de hook segura a presença
+  por 60 s. O mtime nunca decide a presença: só escolhe o que abrir.
 - **Rollout** (`sources/codex/rollout.ts` e os `rollout-*.ts`, `reader.ts`): `sessions/AAAA/MM/DD/rollout-*-<threadId>.jsonl` (a pasta é a
   data de criação; sessão retomada continua no arquivo antigo; um thread revertido tem mais de um arquivo e vale o de
   última linha mais recente, com o mtime só desempatando) e `archived_sessions/`, lidos com `FileTail`. Ao abrir:

@@ -1,8 +1,9 @@
 // Sessões abertas do Codex: <CODEX_HOME>/thread-writer-locks/<threadId>.lock fica travado enquanto um processo do
 // Codex tem a thread carregada. A trava é só SONDADA, nunca adquirida: se o Habblaud a segurasse no instante em que o
 // Codex tenta retomar a thread, o Codex falharia ("already has an active writer"). Por isso aqui só há open 'r' +
-// leitura de 1 byte, stat e a leitura do /proc/locks.
-import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
+// leitura de 1 byte, stat, statfs e a leitura do /proc/locks.
+import { closeSync, openSync, readFileSync, readSync, statfsSync, statSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 /** held = alguém segura a trava (sessão viva); free = existe e ninguém segura (órfã); unknown = não dá para saber (vale a regra de existência + 12 h). */
 export type LockState = 'held' | 'free' | 'unknown';
@@ -10,9 +11,17 @@ export interface LockProber {
   /** 'win32' (EBUSY), 'proc' (/proc/locks), 'exists' (só existência). */
   readonly mode: 'win32' | 'proc' | 'exists';
   probe(lockPath: string): LockState;
+  /** Uma sondagem para um ciclo inteiro (o /proc/locks lido uma vez só); sem ela, vale `probe`. */
+  snapshot?(): (lockPath: string) => LockState;
 }
 
 const PROC_LOCKS = '/proc/locks';
+
+/**
+ * Tipos de sistema de arquivos (statfs f_type) em que a trava pode ser de outro kernel ou não aparecer como FLOCK no
+ * /proc/locks local: 9p (o /mnt/c do WSL2), NFS, CIFS/SMB2, FUSE, virtiofs e o vboxsf das VMs do VirtualBox.
+ */
+const FOREIGN_FS = new Set([0x01021997, 0x6969, 0xff534d42, 0xfe534d42, 0x65735546, 0x6a656a63, 0x786f4256]);
 
 /** O mínimo de node:fs que a sondagem do Windows usa (injetável nos testes). Só abre com 'r'. */
 export interface ProbeFs {
@@ -87,13 +96,22 @@ export function probeProc(
   procLocksPath: string = PROC_LOCKS,
   statLock: (path: string) => { dev: bigint; ino: bigint } = (p) => statSync(p, { bigint: true }),
 ): LockState {
+  return probeProcText(lockPath, () => readText(procLocksPath), statLock);
+}
+
+/** probeProc com o texto do /proc/locks de fora (lido só se o arquivo existir; undefined = ilegível). */
+function probeProcText(
+  lockPath: string,
+  procText: () => string | undefined,
+  statLock: (path: string) => { dev: bigint; ino: bigint } = (p) => statSync(p, { bigint: true }),
+): LockState {
   let st: { dev: bigint; ino: bigint };
   try {
     st = statLock(lockPath);
   } catch (err) {
     return isMissing(err) ? 'free' : 'unknown';
   }
-  const text = readText(procLocksPath);
+  const text = procText();
   if (text === undefined) return 'unknown';
   const { major, minor } = decodeDev(st.dev);
   let anonSameInode = false;
@@ -119,15 +137,53 @@ function probeExists(lockPath: string): LockState {
   }
 }
 
-export function createLockProber(opts: { platform: NodeJS.Platform; inDocker: boolean; procLocksPath?: string }): LockProber {
+export function createLockProber(opts: {
+  platform: NodeJS.Platform;
+  inDocker: boolean;
+  procLocksPath?: string;
+  /** statfs f_type de uma pasta (injetável nos testes). */
+  fsType?: (dir: string) => number;
+}): LockProber {
   const byExistence = (): LockProber => ({ mode: 'exists', probe: probeExists });
   // No Docker as travas do host não atravessam o bind mount (e o /proc/locks é o do contêiner).
   if (opts.inDocker) return byExistence();
   if (opts.platform === 'win32') return { mode: 'win32', probe: (p) => probeWin32(p) };
   if (opts.platform === 'linux') {
     const procLocksPath = opts.procLocksPath ?? PROC_LOCKS;
-    if (readText(procLocksPath) !== undefined) return { mode: 'proc', probe: (p) => probeProc(p, procLocksPath) };
+    if (readText(procLocksPath) !== undefined) return procProber(procLocksPath, opts.fsType ?? ((dir) => Number(statfsSync(dir).type)));
   }
   // macOS e outros: não há como ver a trava sem tentar adquiri-la.
   return byExistence();
+}
+
+/**
+ * Linux com /proc/locks: a pasta de travas noutro kernel ou na rede (FOREIGN_FS) vale pela existência, porque a trava
+ * de lá não aparece no /proc/locks local e a sessão viva pareceria órfã. O tipo é lido uma vez por pasta; ilegível =
+ * local.
+ */
+function procProber(procLocksPath: string, fsType: (dir: string) => number): LockProber {
+  const foreign = new Map<string, boolean>();
+  const isForeign = (lockPath: string): boolean => {
+    const dir = dirname(lockPath);
+    let known = foreign.get(dir);
+    if (known === undefined) {
+      try {
+        known = FOREIGN_FS.has(fsType(dir));
+      } catch {
+        known = false;
+      }
+      foreign.set(dir, known);
+    }
+    return known;
+  };
+  const withText = (procText: () => string | undefined) => (lockPath: string) =>
+    isForeign(lockPath) ? probeExists(lockPath) : probeProcText(lockPath, procText);
+  return {
+    mode: 'proc',
+    probe: withText(() => readText(procLocksPath)),
+    snapshot: () => {
+      let text: string | undefined | null = null;
+      return withText(() => (text === null ? (text = readText(procLocksPath)) : text));
+    },
+  };
 }

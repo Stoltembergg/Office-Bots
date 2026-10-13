@@ -68,6 +68,7 @@ export function readLocks(home: string, prober: LockProber): Map<string, LockInf
     return null;
   }
   const out = new Map<string, LockInfo>();
+  const probe = prober.snapshot?.() ?? ((path: string) => prober.probe(path));
   for (const name of names) {
     const m = LOCK_FILE.exec(name);
     if (!m) continue;
@@ -75,7 +76,7 @@ export function readLocks(home: string, prober: LockProber): Map<string, LockInf
     try {
       const st = statSync(path);
       const born = st.birthtimeMs > 0 ? Math.min(st.birthtimeMs, st.mtimeMs) : st.mtimeMs;
-      out.set(m[1].toLowerCase(), { threadId: m[1].toLowerCase(), createdAt: born, state: prober.probe(path) });
+      out.set(m[1].toLowerCase(), { threadId: m[1].toLowerCase(), createdAt: born, state: probe(path) });
     } catch {
       // sumiu entre a listagem e o stat
     }

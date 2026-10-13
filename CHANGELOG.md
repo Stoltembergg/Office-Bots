@@ -48,8 +48,10 @@ mudou.
 - Uma sessão do Codex aberta e parada sumia do escritório depois de 12 horas, e uma que fechou à força ficava até lá.
   Agora o Habblaud confere se o Codex ainda segura a trava da sessão (sem nunca travá-la): no Windows e no Linux, a
   sessão fica enquanto estiver aberta e sai segundos depois de o processo que segura a trava fechar, mesmo à força
-  (com o `codex` do terminal no daemon, quando o daemon descarrega a conversa, num prazo do próprio Codex); no macOS e
-  no Docker, continua o prazo de 12 h.
+  (com o `codex` do terminal no daemon, quando o daemon descarrega a conversa, num prazo do próprio Codex); no macOS,
+  no Docker e com a pasta do Codex noutro kernel ou na rede (o `/mnt/c` do WSL2, NFS, pasta compartilhada de VM),
+  continua o prazo de 12 h. Uma trava que parece solta não tira a sessão enquanto o arquivo dela cresce ou chegam
+  eventos de hook.
 - Um subagente do Codex que ainda não tinha concluído saía do escritório, entregando no meio do trabalho, quando a
   trava dele sumia: o Codex a solta e a retoma com o mesmo id quando o pai manda um `followup_task`. Agora ele espera 2
   minutos antes de sair.

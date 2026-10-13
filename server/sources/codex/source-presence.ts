@@ -40,10 +40,15 @@ export class CodexPresence {
     acc.locks = readLocks(acc.dir, this.prober);
     if (acc.locks) {
       this.watchers.watchDir(`${acc.dir}${sep}${LOCKS_DIR}`);
-      for (const lock of acc.locks.values()) {
-        // Órfã (o arquivo ficou e ninguém segura a trava: o Codex morreu): conta como lock sumido.
-        if (lock.state === 'free') continue;
+      for (const lock of [...acc.locks.values()]) {
         const known = this.threads.get(`${acc.id}:${lock.threadId}`);
+        // Órfã (o arquivo ficou e ninguém segura a trava: o Codex morreu): conta como lock sumido. Com sinal de vida
+        // recente (o rollout cresceu ou chegou um hook), vale como 'unknown': a trava pode ser de outra máquina ou de
+        // outro kernel, que a sondagem local não vê.
+        if (lock.state === 'free') {
+          if (!known || !this.recentSign(known, now)) continue;
+          acc.locks.set(lock.threadId, { ...lock, state: 'unknown' });
+        }
         // Lock novo demais (manutenção?): espera (o polling de ~1 s confere de novo). O que já está no escritório
         // não precisa esperar de novo.
         if (now - lock.createdAt < LOCK_SETTLE_MS && !known?.inOffice) continue;
@@ -97,6 +102,11 @@ export class CodexPresence {
       if (!t.inOffice && t.status !== 'working' && t.status !== 'waiting' && !t.hookSpawned) return false;
     }
     return true;
+  }
+
+  /** O rollout cresceu (o tail viu, ou a última linha lida ao abrir) ou chegou um hook nos últimos HOOK_PRESENCE_MS. */
+  private recentSign(t: ThreadTracker, now: number): boolean {
+    return [t.lastHookAt, t.lastWriteAt].some((at) => at !== undefined && now - at < HOOK_PRESENCE_MS);
   }
 
   /** Lock do thread que ainda conta: a órfã ('free', ninguém segura a trava) vale como sumida. */

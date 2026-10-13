@@ -1,11 +1,14 @@
 // Sondagem das travas de escrita do Codex (thread-writer-locks/<threadId>.lock): só sonda, nunca adquire.
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { threadId } from '../../test/codex-fixtures';
 import { tempDir } from '../../test/fixtures';
-import { createLockProber, decodeDev, probeProc, probeWin32, type ProbeFs } from './locks';
+import { readLocks } from './files';
+import { createLockProber, decodeDev, probeProc, probeWin32, type LockProber, type ProbeFs } from './locks';
 
 const errno = (code: string) => Object.assign(new Error(`${code}: simulado`), { code });
 
@@ -72,6 +75,44 @@ describe('sondagem das travas do Codex', () => {
       expect(probeWin32(lockFile(1))).toBe('free');
       expect(probeWin32(missing())).toBe('free');
     });
+
+    it.runIf(process.platform === 'win32')(
+      'Windows de verdade: outro processo com a trava de faixa inteira (como o File::lock do Codex) → held; soltou → free',
+      async () => {
+        // Arrange: um PowerShell trava o arquivo vazio inteiro e espera uma linha no stdin para soltar.
+        const p = lockFile(1);
+        const script = [
+          "$f = [System.IO.File]::Open($env:HABBLAUD_LOCK, 'Open', 'ReadWrite', 'ReadWrite')",
+          '$f.Lock(0, [long]::MaxValue)',
+          "[Console]::Out.WriteLine('travado'); [Console]::Out.Flush()",
+          '[void][Console]::In.ReadLine()',
+          '$f.Unlock(0, [long]::MaxValue); $f.Close()',
+        ].join('; ');
+        const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+          env: { ...process.env, HABBLAUD_LOCK: p },
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        try {
+          let out = '';
+          await new Promise<void>((resolve, reject) => {
+            child.stdout.on('data', (d: Buffer) => {
+              out += d.toString();
+              if (out.includes('travado')) resolve();
+            });
+            child.on('exit', (code) => reject(new Error(`o PowerShell saiu antes de travar (${code})`)));
+          });
+
+          // Act + Assert
+          expect(probeWin32(p)).toBe('held');
+          child.stdin.end('\n');
+          await once(child, 'exit');
+          expect(probeWin32(p)).toBe('free');
+        } finally {
+          if (child.exitCode === null) child.kill();
+        }
+      },
+      30_000,
+    );
 
     it('EBUSY na leitura (LockFileEx do Codex) → held, abrindo só com "r", lendo 1 byte no offset 0 e fechando o handle', () => {
       const { fs, calls } = fakeFs({
@@ -243,6 +284,78 @@ describe('sondagem das travas do Codex', () => {
         expect(prober.probe(p)).toBe('unknown');
         expect(prober.probe(missing())).toBe('free');
       }
+    });
+
+    it('Linux: pasta do Codex noutro kernel ou na rede (9p do WSL, NFS, CIFS, FUSE, virtiofs) → só a existência; o tipo é lido uma vez por pasta', () => {
+      // Arrange: a trava de outro kernel não aparece no /proc/locks local.
+      writeProc('');
+      const dirs: string[] = [];
+      const fsType = (dir: string) => {
+        dirs.push(dir);
+        return 0x01021997; // V9FS_MAGIC: o /mnt/c do WSL2
+      };
+      const prober = createLockProber({ platform: 'linux', inDocker: false, procLocksPath: proc, fsType });
+
+      // Act + Assert
+      expect(prober.probe(lockFile(1))).toBe('unknown');
+      expect(prober.probe(lockFile(2))).toBe('unknown');
+      expect(prober.probe(missing())).toBe('free');
+      expect(dirs).toEqual([locks]);
+      for (const type of [0x6969, 0xff534d42, 0xfe534d42, 0x65735546, 0x6a656a63]) {
+        const other = createLockProber({ platform: 'linux', inDocker: false, procLocksPath: proc, fsType: () => type });
+        expect(other.probe(lockFile(1))).toBe('unknown');
+      }
+    });
+
+    it('Linux: pasta local (ext4) ou tipo ilegível → o /proc/locks decide', () => {
+      // Arrange
+      const p = lockFile(1);
+      writeProc('');
+      const ext4 = createLockProber({ platform: 'linux', inDocker: false, procLocksPath: proc, fsType: () => 0xef53 });
+      const unreadable = createLockProber({
+        platform: 'linux',
+        inDocker: false,
+        procLocksPath: proc,
+        fsType: () => {
+          throw errno('ENOSYS');
+        },
+      });
+
+      // Act + Assert
+      expect(ext4.probe(p)).toBe('free');
+      expect(unreadable.probe(p)).toBe('free');
+      writeProc(flockLine(p));
+      expect(ext4.probe(p)).toBe('held');
+    });
+
+    it('snapshot: o /proc/locks é lido uma vez por ciclo, e o readLocks usa uma sondagem só para todas as travas', () => {
+      // Arrange
+      const p = lockFile(1);
+      writeProc(flockLine(p));
+      const prober = createLockProber({ platform: 'linux', inDocker: false, procLocksPath: proc });
+
+      // Act: lido na primeira sondagem do ciclo; as seguintes usam o mesmo texto.
+      const probe = prober.snapshot!();
+      const first = probe(p);
+      writeFileSync(proc, '');
+
+      // Assert
+      expect(first).toBe('held');
+      expect(probe(p)).toBe('held');
+      expect(prober.snapshot!()(p)).toBe('free');
+      lockFile(2);
+      let snapshots = 0;
+      const counting: LockProber = {
+        mode: 'proc',
+        probe: () => 'unknown',
+        snapshot: () => {
+          snapshots++;
+          return () => 'held';
+        },
+      };
+      const read = readLocks(tmp.dir, counting);
+      expect([...read!.values()].map((l) => l.state)).toEqual(['held', 'held']);
+      expect(snapshots).toBe(1);
     });
 
     it('sem procLocksPath, o Linux usa o /proc/locks do sistema', () => {
