@@ -129,3 +129,20 @@ export function evaluateQuota(i: QuotaInput): QuotaResult {
   for (const k of Object.keys(state)) if (state[k].resetsAt + CYCLE_TOLERANCE_MS <= i.now) delete state[k];
   return { notices, state, last, changed: JSON.stringify(state) !== JSON.stringify(i.state) };
 }
+
+/** No máximo de entradas guardadas no armazenamento. */
+const MAX_STATE_ENTRIES = 40;
+
+/** Valida o que veio do `localStorage`: só `{resetsAt: número finito, done: lista de 80 e 95}` por chave; o resto cai. */
+export function sanitizeQuotaState(raw: unknown): QuotaState {
+  const out: QuotaState = {};
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out;
+  for (const [key, v] of Object.entries(raw)) {
+    if (Object.keys(out).length >= MAX_STATE_ENTRIES) break;
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) continue;
+    const { resetsAt, done } = v as { resetsAt?: unknown; done?: unknown };
+    if (typeof resetsAt !== 'number' || !Number.isFinite(resetsAt) || !Array.isArray(done)) continue;
+    out[key] = { resetsAt, done: QUOTA_THRESHOLDS.filter((t) => done.includes(t)) };
+  }
+  return out;
+}

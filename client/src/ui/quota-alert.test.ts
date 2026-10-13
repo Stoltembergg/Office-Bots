@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountUsage, UsageWindow } from '../../../shared/types';
-import { CYCLE_TOLERANCE_MS, decideQuota, evaluateQuota, QUOTA_KEY, QUOTA_THRESHOLDS, quotaNoticeText, type QuotaAccount, type QuotaCycle, type QuotaInput, type QuotaLast, type QuotaState } from './quota-alert';
+import { CYCLE_TOLERANCE_MS, decideQuota, evaluateQuota, QUOTA_KEY, QUOTA_THRESHOLDS, quotaNoticeText, sanitizeQuotaState, type QuotaAccount, type QuotaCycle, type QuotaInput, type QuotaLast, type QuotaState } from './quota-alert';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -289,5 +289,44 @@ describe('evaluateQuota', () => {
     const r = evaluateQuota(input([acc({ five: win(79.5) })], { last: { '.claude-c|fiveHour': 70 }, state: { '.claude-c|fiveHour': { resetsAt: FIVE, done: [] } } }));
     expect(r.notices).toHaveLength(1);
     expect(r.notices[0].text).toContain('80%');
+  });
+});
+
+describe('sanitizeQuotaState', () => {
+  it('QUOTA-21: estado válido passa igual', () => {
+    const ok: QuotaState = { 'a|fiveHour': { resetsAt: 123, done: [80] }, 'b|sevenDay': { resetsAt: 456, done: [80, 95] }, 'c|fiveHour': { resetsAt: 7, done: [] } };
+    expect(sanitizeQuotaState(JSON.parse(JSON.stringify(ok)))).toEqual(ok);
+  });
+
+  it('QUOTA-21: null, texto, número, lista e undefined viram {}', () => {
+    for (const raw of [null, undefined, 'texto', 42, true, [], [{ resetsAt: 1, done: [] }]]) expect(sanitizeQuotaState(raw)).toEqual({});
+  });
+
+  it('QUOTA-21: entrada com resetsAt não numérico (ou não finito) ou sem formato é descartada, as boas ficam', () => {
+    const raw = {
+      'a|fiveHour': { resetsAt: '123', done: [80] },
+      'b|fiveHour': { resetsAt: null, done: [80] },
+      'c|fiveHour': { resetsAt: Number.POSITIVE_INFINITY, done: [] },
+      'd|fiveHour': 'x',
+      'e|fiveHour': null,
+      'f|fiveHour': { resetsAt: 5, done: 'nao-lista' },
+      'g|fiveHour': { resetsAt: 9, done: [95] },
+    };
+    expect(sanitizeQuotaState(raw)).toEqual({ 'g|fiveHour': { resetsAt: 9, done: [95] } });
+  });
+
+  it('QUOTA-21: done com valores fora de 80 e 95 é filtrado e sem repetição', () => {
+    const raw = { 'a|fiveHour': { resetsAt: 1, done: [95, 50, '80', 80, 80, 95, null, 100] } };
+    const r = sanitizeQuotaState(raw);
+    expect([...r['a|fiveHour'].done].sort()).toEqual([80, 95]);
+    expect(r['a|fiveHour'].done).toHaveLength(2);
+  });
+
+  it('QUOTA-21: mais de 40 entradas viram 40', () => {
+    const raw: Record<string, unknown> = {};
+    for (let n = 0; n < 55; n++) raw[`conta${n}|fiveHour`] = { resetsAt: n + 1, done: [80] };
+    const r = sanitizeQuotaState(raw);
+    expect(Object.keys(r)).toHaveLength(40);
+    expect(r['conta0|fiveHour']).toEqual({ resetsAt: 1, done: [80] });
   });
 });
