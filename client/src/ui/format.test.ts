@@ -184,6 +184,15 @@ describe('reinício das janelas de uso', () => {
     expect(usageWindowView({ utilization: 10 }, now - 6 * H, now, WEEK_MS)!.pct).toBe(10);
     expect(usageWindowView(undefined, now, now, WEEK_MS)).toBeNull();
   });
+
+  it('modo tokens (sem cota): número absoluto, sem percentual nem reinício', () => {
+    const v = usageWindowView({ tokens: 1_250_000, costUSD: 1.5 }, now, now, FIVE_HOURS_MS)!;
+    expect(v).toMatchObject({ pct: null, renewed: false, reset: '', absolute: { tokens: 1_250_000, costUSD: 1.5 } });
+    expect(v.summary).toBe('1,3 M tokens · US$ 1,50');
+    const plain = usageWindowView({ tokens: 850 }, now, now, WEEK_MS)!;
+    expect(plain.summary).toBe('850 tokens');
+    expect(plain.absolute).toEqual({ tokens: 850 });
+  });
 });
 
 describe('formatElapsed', () => {

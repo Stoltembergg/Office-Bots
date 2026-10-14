@@ -14,7 +14,7 @@ export type AgentKind = 'main' | 'sub';
  * - claude: Claude Code;
  * - codex: OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME).
  */
-export type Provider = 'claude' | 'codex';
+export type Provider = 'claude' | 'codex' | 'opencode' | 'dsh';
 
 /**
  * Estado de alto nível de um agente — é o que dirige o comportamento do personagem.
@@ -265,10 +265,17 @@ export interface SourceInfo {
   error?: string;
 }
 
-/** Uma janela de limite de uso do plano (ex.: sessão de 5h, semana). */
+/** Uma janela de limite de uso do plano (ex.: sessão de 5h, semana) ou de tokens somados. */
 export interface UsageWindow {
-  /** Percentual usado, 0–100. */
-  utilization: number;
+  /**
+   * Percentual usado, 0–100 (Claude Code e Codex: cota do plano). Ausente no modo tokens
+   * (OpenCode e DeepSeek Harness: sem cota, só soma do que as sessões usaram).
+   */
+  utilization?: number;
+  /** Tokens somados na janela (modo tokens, sem percentual). */
+  tokens?: number;
+  /** Custo somado em dólares, quando conhecido (modo tokens). */
+  costUSD?: number;
   /** Quando a janela reinicia (epoch ms). */
   resetsAt?: number;
 }
@@ -285,9 +292,11 @@ export interface AccountUsage {
    * - 'statusline': capturado ao vivo e gravado em ~/.habblaud/usage/<conta>.json pelo mod do Habblaud
    *   (mod/habblaud, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
    * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage);
-   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda).
+   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda);
+   * - 'opencode': tokens e custo somados do SQLite do OpenCode (session_v2), sem cota do plano;
+   * - 'dsh': tokens somados dos eventos das sessões do DeepSeek Harness, sem cota do plano.
    */
-  source: 'cache' | 'statusline' | 'codex';
+  source: 'cache' | 'statusline' | 'codex' | 'opencode' | 'dsh';
   /** Quem gravou o arquivo ao vivo ('statusline'): o mod do Habblaud no Claude Code ou o tap de statusline. */
   via?: 'mod' | 'tap';
   /**
@@ -325,6 +334,46 @@ export interface AccountInfo {
    * - disabled: sem números (tap de statusline não instalado e nenhum cache do /usage).
    */
   usageStatus: 'ok' | 'stale' | 'disabled';
+}
+
+/** Uma skill descoberta (biblioteca do escritório, GET /api/skills). */
+export interface SkillInfo {
+  name: string;
+  description: string;
+  provider: Provider;
+  accountId: string;
+  accountName: string;
+  /** mtime do SKILL.md (epoch ms, 0 se desconhecido). */
+  updatedAt: number;
+}
+
+/** Um servidor MCP descoberto (só nome e tipo; segredos, nunca). */
+export interface McpInfo {
+  name: string;
+  /** stdio = comando local; remote = URL; unknown = só o nome deu para ler. */
+  kind: 'stdio' | 'remote' | 'unknown';
+  provider: Provider;
+  accountId: string;
+  accountName: string;
+}
+
+/** Memória visível de uma conta (só presença e caminhos; o conteúdo, nunca). */
+export interface MemoryInfo {
+  /** file = MEMORY.md; dir = pasta memory/; sqlite = banco do Codex. */
+  kind: 'file' | 'dir' | 'sqlite';
+  path: string;
+  detail: string;
+  provider: Provider;
+  accountId: string;
+  accountName: string;
+}
+
+/** Biblioteca de skills, MCPs e memória (GET /api/skills). */
+export interface SkillsInventory {
+  skills: SkillInfo[];
+  mcp: McpInfo[];
+  memory: MemoryInfo[];
+  generatedAt: number;
 }
 
 export interface OfficeSnapshot {

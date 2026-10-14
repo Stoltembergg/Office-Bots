@@ -7,7 +7,15 @@ import type { AccountInfo, OfficeSnapshot, Provider } from '../../../shared/type
 import { shortcutHint } from './model';
 
 /** Nome de cada ferramenta como aparece nos textos. */
-export const PROVIDER_NAME: Record<Provider, string> = { claude: 'Claude Code', codex: 'Codex' };
+export const PROVIDER_NAME: Record<Provider, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', dsh: 'DeepSeek Harness' };
+
+/** Logo oficial da ferramenta (client/public/assets/providers/). */
+export const PROVIDER_ICON: Record<Provider, string> = {
+  claude: '/assets/providers/claude.ico',
+  codex: '/assets/providers/codex.svg',
+  opencode: '/assets/providers/opencode.png',
+  dsh: '/assets/providers/dsh.png',
+};
 
 /** Ferramenta de um agente, conta, sessão ou pedido (ausente = Claude Code). */
 export function providerOf(x: { provider?: Provider } | null | undefined): Provider {
@@ -47,9 +55,10 @@ export function fallbackShort(id: string, provider: Provider = accountProvider(u
   return provider === 'codex' ? 'X' : '?';
 }
 
-/** O selo "Codex" ao lado do nome da conta (não repete quando o nome já diz "Codex"). */
+/** O selo da ferramenta ao lado do nome da conta (só nas que não são Claude Code, e sem repetir o nome). */
 export function showsProviderTag(provider: Provider, accountName = ''): boolean {
-  return provider === 'codex' && !/codex/i.test(accountName);
+  if (provider === 'claude') return false;
+  return !new RegExp(PROVIDER_NAME[provider].split(' ')[0], 'i').test(accountName);
 }
 
 /** Rótulo do chip da conta (dica e leitores de tela): "Conta C (dev@x.com)", "Codex · plano Team". */
@@ -66,8 +75,14 @@ export function accountChipLabel(account: Pick<AccountInfo, 'name' | 'email' | '
  */
 export function emptyOfficeHint(accounts: readonly Pick<AccountInfo, 'short' | 'provider'>[]): string {
   const keys = shortcutHint(accounts.filter((a) => !isCodex(a)));
-  if (!accounts.some(isCodex)) return `Abra o Claude Code em qualquer projeto${keys ? ` (${keys})` : ''} e veja seu agente chegar.`;
-  return `Abra o Claude Code${keys ? ` (${keys})` : ''} ou o Codex em qualquer projeto e veja seu agente chegar.`;
+  const extra = [
+    ...(accounts.some(isCodex) ? ['o Codex'] : []),
+    ...(accounts.some((a) => providerOf(a) === 'opencode') ? ['o OpenCode'] : []),
+    ...(accounts.some((a) => providerOf(a) === 'dsh') ? ['o DeepSeek Harness'] : []),
+  ];
+  const rest = extra.length > 1 ? `, ${extra.slice(0, -1).join(', ')} ou ${extra[extra.length - 1]}` : extra.length ? ` ou ${extra[0]}` : '';
+  if (!extra.length) return `Abra o Claude Code em qualquer projeto${keys ? ` (${keys})` : ''} e veja seu agente chegar.`;
+  return `Abra o Claude Code${keys ? ` (${keys})` : ''}${rest} em qualquer projeto e veja seu agente chegar.`;
 }
 
 /** Algum pedido de permissão do Codex esperando: o prazo é curto e o cartão conta os segundos (relógio de 1 s). */

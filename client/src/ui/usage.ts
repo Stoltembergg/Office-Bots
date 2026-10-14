@@ -10,7 +10,7 @@
 import type { AccountInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
-import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
+import { FIVE_HOURS_MS, formatTokens, formatUSD, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
 import { ICONS } from './icons';
 import { isCodex } from './provider';
 import { createAccountChip, createProviderTag, updateAccountChip, updateProviderTag } from './widgets';
@@ -19,6 +19,8 @@ export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], s
   cache: 'cache do /usage do Claude Code',
   statusline: 'ao vivo (statusline do Claude Code)',
   codex: 'arquivos do Codex',
+  opencode: 'banco do OpenCode (tokens somados, sem cota)',
+  dsh: 'sessões do DeepSeek Harness (tokens somados, sem cota)',
 };
 
 /** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do Habblaud ou pelo tap. */
@@ -100,6 +102,23 @@ function createMeter(long: string, short: string, title: string): Meter {
 }
 
 function updateMeter(m: Meter, view: UsageWindowView | null, windowName: string): void {
+  // Modo tokens (sem % de cota): o número absoluto no lugar do percentual, sem barra.
+  if (view?.absolute) {
+    const { tokens, costUSD } = view.absolute;
+    m.el.classList.remove('is-renewed');
+    setVariant(m.el, 'is-', 'none');
+    m.el.classList.add('is-absolute');
+    m.el.classList.remove('is-zero');
+    setStyleVar(m.bar, '--pct', '0');
+    setText(m.pct, formatTokens(tokens));
+    setText(m.resetLong, costUSD ? formatUSD(costUSD) : '');
+    setText(m.resetShort, '');
+    const text = `${windowName}: ${view.summary}`;
+    setAttr(m.el, 'aria-label', text);
+    setTitle(m.el, text);
+    return;
+  }
+  m.el.classList.remove('is-absolute');
   if (!view || view.pct === null) {
     setVariant(m.el, 'is-', 'none');
     m.el.classList.remove('is-zero');
@@ -222,7 +241,7 @@ export class UsageCards {
 
   private createCard(): HTMLElement {
     const tipId = `ui-usage-tip-${++tipSeq}`;
-    const chip = createAccountChip('lg');
+    const chip = createAccountChip('sm');
     const flag = h('span', { class: 'ui-usage-card__flag', hidden: true, attrs: { 'aria-hidden': 'true' } });
     flag.innerHTML = ICONS.clock;
     const name = h('span', { class: 'ui-usage-card__name' });
@@ -297,7 +316,7 @@ export class UsageCards {
     updateAccountChip(r.chip, a);
     setStyleVar(card, '--acc', a.color);
     setText(r.name, a.name);
-    updateProviderTag(r.prov, codex ? 'codex' : 'claude', a.name);
+    updateProviderTag(r.prov, a.provider ?? 'claude', a.name);
     setText(r.email, usageSubtitle(a));
     setAttr(card, 'aria-label', `${a.name}${codex ? ' (Codex)' : ''}: uso do plano`);
 
@@ -332,8 +351,8 @@ export class UsageCards {
       );
     }
 
-    // Sem números: "sem dados de uso" + "Como ativar" (no Codex, "Como funciona": não há o que instalar). Sem cota:
-    // a mensagem, sem botão.
+    // Sem números: "sem dados de uso" + botão de ajuda. OpenCode/DSH não têm o que "ativar"
+    // (os tokens somem das sessões sozinhos): o botão vira "Entenda". Sem cota: a mensagem, sem botão.
     const [msgLong, msgShort] = usageMessage(a);
     setText(r.msgLong, msgLong);
     setText(r.msgShort, msgShort);
@@ -341,10 +360,18 @@ export class UsageCards {
     setHidden(r.how, state === 'noquota');
     r.msg.classList.toggle('is-noquota', state === 'noquota');
     setTitle(r.msg, state === 'noquota' ? codexUsageNote(a, now) : '');
-    setText(r.howLong, codex ? 'Como funciona' : 'Como ativar');
-    setText(r.howShort, codex ? 'Saber' : 'Ativar');
+    const tokens = a.provider === 'opencode' || a.provider === 'dsh';
+    setText(r.howLong, codex ? 'Como funciona' : tokens ? 'Entenda' : 'Como ativar');
+    setText(r.howShort, codex ? 'Saber' : tokens ? 'Ver' : 'Ativar');
     r.how.dataset.help = codex ? 'codex' : 'usage';
-    setTitle(r.how, codex ? 'Como o uso do Codex chega ao Habblaud (abre a ajuda em “Codex”)' : 'Como mostrar o uso desta conta (abre a ajuda em “Contas e uso”)');
+    setTitle(
+      r.how,
+      codex
+        ? 'Como o uso do Codex chega ao Habblaud (abre a ajuda em “Codex”)'
+        : tokens
+          ? 'Como o uso somado aparece no Habblaud (abre a ajuda em “Contas e uso”)'
+          : 'Como mostrar o uso desta conta (abre a ajuda em “Contas e uso”)',
+    );
     this.updateTip(r, a, state, five, week, now);
   }
 
@@ -385,15 +412,20 @@ export class UsageCards {
     }
 
     let note = '';
-    if (state === 'empty')
+    const tokens = a.provider === 'opencode' || a.provider === 'dsh';
+    if (tokens && state !== 'empty')
+      note = 'Somado das sessões no computador (tokens, sem cota do plano como no Claude e no Codex).';
+    else if (tokens)
+      note = 'Os tokens somem das sessões sozinhos, sem instalar nada: use o OpenCode ou o DeepSeek Harness e os números aparecem.';
+    else if (state === 'empty')
       note = u ? `A última leitura (${sourceLabel(u)}, ${relativeTime(u.fetchedAt, now)}) não trouxe números de 5 h nem da semana.` : 'Ainda não há números de uso para esta conta.';
     else if (state === 'stale') note = 'Números antigos: refletem a última leitura, não o uso de agora.';
     else if (u?.source === 'cache') note = 'Cache do /usage: atualiza quando alguém roda /usage nesta conta.';
     else if (five?.renewed || week?.renewed) note = 'Uma das janelas já reiniciou depois da última leitura.';
     setText(r.tipNote, note);
     setHidden(r.tipNote, !note);
-    // O passo a passo aparece sempre que os números não são ao vivo.
+    // O passo a passo aparece sempre que os números não são ao vivo (no modo tokens não há o que instalar).
     const live = u?.source === 'statusline' && state === 'ok';
-    setHidden(r.tipSetup, live);
+    setHidden(r.tipSetup, live || tokens);
   }
 }

@@ -3,9 +3,14 @@
 //   scripts/statusline-tap.mjs (recomendado: ao vivo);
 // - 'cache': cachedUsageUtilization gravado pelo próprio Claude Code (quando alguém roda /usage);
 // - 'codex': rate_limits dos arquivos de sessão do Codex, empurrados pela fonte do Codex (AccountsService.setUsage).
+// - 'opencode' e 'dsh': TOKENS SOMADOS das sessões (sem cota do plano): as fontes empurram janelas com
+//   `tokens` (e `costUSD` quando conhecido) em vez de `utilization` (ver sumTokenSamples/tokenUsage).
 // Vale sempre a fonte com os números mais recentes (maior fetchedAt). Nenhuma delas lê credenciais
-// nem faz chamadas de rede: são só arquivos que o Claude Code já grava na máquina.
+// nem faz chamadas de rede: são só arquivos que as ferramentas já gravam na máquina.
 import type { AccountInfo, AccountUsage, UsageWindow } from '../../shared/types';
+
+export const FIVE_HOURS_MS = 5 * 3_600_000;
+export const WEEK_MS = 7 * 24 * 3_600_000;
 
 export type UsageSource = AccountUsage['source'];
 export type UsageStatus = AccountInfo['usageStatus'];
@@ -119,4 +124,57 @@ export class UsageStore {
     if (!best) return { status: 'disabled' };
     return { usage: rollover(best, now), status: now - best.fetchedAt > STALE_AFTER_MS ? 'stale' : 'ok' };
   }
+}
+
+/** Um tanto de tokens observado num instante (para somar por janela nas fontes sem cota). */
+export interface TokenSample {
+  /** Quando os tokens foram observados (epoch ms). */
+  at: number;
+  /** Tokens (entrada + saída + raciocínio, conforme a fonte). */
+  tokens: number;
+  /** Custo em dólares, quando a fonte conhece. */
+  costUSD?: number;
+}
+
+/**
+ * Acrescenta uma amostra e poda as mais velhas que a maior janela (WEEK_MS). Devolve a mesma lista
+ * (mutada) para encadear. Amostras com `tokens` zerado não entram (não mudam soma nenhuma).
+ */
+export function pushTokenSample(list: TokenSample[], sample: TokenSample, now: number): TokenSample[] {
+  if (sample.tokens > 0) list.push(sample);
+  const cutoff = now - WEEK_MS;
+  let drop = 0;
+  while (drop < list.length && list[drop].at < cutoff) drop++;
+  if (drop) list.splice(0, drop);
+  return list;
+}
+
+/** Soma tokens (e custo) das amostras a partir de `since`. */
+export function sumTokenSamples(list: readonly TokenSample[], since: number): { tokens: number; costUSD: number; knownCost: boolean } {
+  let tokens = 0;
+  let costUSD = 0;
+  let knownCost = false;
+  for (const s of list) {
+    if (s.at < since) continue;
+    tokens += s.tokens;
+    if (s.costUSD !== undefined) {
+      costUSD += s.costUSD;
+      knownCost = true;
+    }
+  }
+  return { tokens, costUSD, knownCost };
+}
+
+/**
+ * Monta o AccountUsage em modo tokens (sem percentual) a partir das amostras: janelas de 5h e 7d
+ * sempre presentes (mesmo zeradas — "0 tokens" é informação, não ausência).
+ */
+export function tokenUsage(source: 'opencode' | 'dsh', list: readonly TokenSample[], now: number): AccountUsage {
+  const five = sumTokenSamples(list, now - FIVE_HOURS_MS);
+  const week = sumTokenSamples(list, now - WEEK_MS);
+  const win = (s: { tokens: number; costUSD: number; knownCost: boolean }): UsageWindow => ({
+    tokens: Math.round(s.tokens),
+    ...(s.knownCost ? { costUSD: Math.round(s.costUSD * 100) / 100 } : {}),
+  });
+  return { source, fetchedAt: now, fiveHour: win(five), sevenDay: win(week) };
 }

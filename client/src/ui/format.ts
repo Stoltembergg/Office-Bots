@@ -116,14 +116,35 @@ export interface UsageWindowView {
   resetShort: string;
   /** Frase completa para dicas e leitores de tela. */
   summary: string;
+  /** Números absolutos (OpenCode/DSH: sem % de cota): tokens somados na janela e custo, se conhecido. */
+  absolute?: { tokens: number; costUSD?: number };
 }
 
 /**
  * `windowMs` é a duração da janela (5 h ou 7 d): sem horário de reinício, números lidos há mais que isso
  * já não valem (a janela certamente renovou).
  */
-export function usageWindowView(win: { utilization: number; resetsAt?: number } | undefined, fetchedAt: number, now: number, windowMs: number): UsageWindowView | null {
+export function usageWindowView(
+  win: { utilization?: number; tokens?: number; costUSD?: number; resetsAt?: number } | undefined,
+  fetchedAt: number,
+  now: number,
+  windowMs: number,
+): UsageWindowView | null {
   if (!win) return null;
+  // Modo tokens (sem cota do plano): soma do que as sessões usaram; não há reinício — vale o instante da leitura.
+  if (win.tokens !== undefined) {
+    const tokens = Math.max(0, Math.round(win.tokens));
+    const costUSD = win.costUSD !== undefined && Number.isFinite(win.costUSD) ? Math.round(win.costUSD * 100) / 100 : undefined;
+    const money = costUSD ? ` · ${formatUSD(costUSD)}` : '';
+    return {
+      pct: null,
+      renewed: false,
+      reset: '',
+      resetShort: '',
+      summary: `${formatTokens(tokens)} tokens${money}`,
+      absolute: { tokens, ...(costUSD ? { costUSD } : {}) },
+    };
+  }
   const resetsAt = win.resetsAt !== undefined && Number.isFinite(win.resetsAt) ? win.resetsAt : undefined;
   const renewed = resetsAt !== undefined ? resetsAt <= now : now - fetchedAt >= windowMs;
   if (renewed) {

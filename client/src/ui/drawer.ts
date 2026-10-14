@@ -643,7 +643,7 @@ class AgentView {
             : TERMINAL_UNAVAILABLE_HINT
           : !live
             ? 'O agente já saiu do escritório.'
-            : `Ver a conversa desta sessão como no ${provider === 'codex' ? 'Codex' : 'terminal do Claude Code'}, ao vivo (T)`,
+            : `Ver a conversa desta sessão como no ${provider === 'codex' ? 'Codex' : provider === 'opencode' ? 'OpenCode' : provider === 'dsh' ? 'DeepSeek Harness' : 'terminal do Claude Code'}, ao vivo (T)`,
     );
   }
 

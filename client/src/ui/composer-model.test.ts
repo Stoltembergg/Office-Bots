@@ -123,6 +123,15 @@ describe('caixa de mensagem (peças puras)', () => {
     expect(timeoutError()).toBe(TIMEOUT_ERROR);
   });
 
+  it('DeepSeek Harness: sem entregador — diz que é no aplicativo, sem dica do Claude', () => {
+    const dsh = (over: Partial<AgentInfo> = {}) => agent({ provider: 'dsh', ...over });
+    const hint = composerMode(dsh({ canMessage: undefined }), ON);
+    expect(hint.kind).toBe('hint');
+    expect(hint.kind === 'hint' ? hint.text : '').toMatch(/DeepSeek Harness ainda não recebe mensagens/);
+    expect(composerMode(dsh(), { ...ON, enabled: false })).toEqual({ kind: 'off', text: 'Para responder, use o aplicativo DeepSeek Harness' });
+    expect(composerTip('dsh')).toMatch(/DeepSeek Harness ainda não recebe mensagens/);
+  });
+
   it('consulta da entrega: rápida no começo, mais espaçada depois', () => {
     expect(pollDelay(0)).toBeLessThan(1_000);
     expect(pollDelay(20_000)).toBeGreaterThan(pollDelay(0));

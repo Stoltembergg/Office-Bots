@@ -9,6 +9,8 @@ import type { AgentInfo, OutboxStatus, Provider } from '../../../shared/types';
 export const PLUGIN_HINT = 'Para mandar mensagens daqui: npm run mod:install (plugin habblaud-mensagens)';
 /** A mesma dica para um agente do Codex sem entregador (no modo Node o próprio servidor entrega). */
 export const CODEX_BRIDGE_HINT = 'Para mandar mensagens ao Codex: com o Habblaud no Docker, deixe npm run codex:bridge rodando; no modo Node funciona sozinho';
+/** Dica do OpenCode (entrega pelo auxiliar do host). */
+export const OPENCODE_BRIDGE_HINT = 'Para mandar mensagens ao OpenCode: deixe npm run opencode:bridge rodando neste computador';
 
 /**
  * - ready: dá para mandar (principal com o plugin conectado, recurso ligado, página local);
@@ -31,17 +33,40 @@ export function composerMode(agent: AgentInfo | undefined, env: ComposerEnv): Co
   if (agent?.kind === 'sub') return { kind: 'off', text: 'Subagentes não recebem mensagens: escreva para o agente principal' };
   if (!agent || agent.status === 'offline' || agent.status === 'done') return { kind: 'off', text: 'Sessão encerrada' };
   const codex = agent.provider === 'codex';
-  if (!env.enabled) return { kind: 'off', text: codex ? 'Para responder, use o Codex' : 'Para responder, use o terminal do Claude Code' };
+  const opencode = agent.provider === 'opencode';
+  const dsh = agent.provider === 'dsh';
+  if (!env.enabled)
+    return {
+      kind: 'off',
+      text: codex
+        ? 'Para responder, use o Codex'
+        : opencode
+          ? 'Para responder, use o OpenCode'
+          : dsh
+            ? 'Para responder, use o aplicativo DeepSeek Harness'
+            : 'Para responder, use o terminal do Claude Code',
+    };
   if (!env.local) return { kind: 'off', text: 'Para mandar mensagens por aqui, abra o Habblaud por http://localhost (ou 127.0.0.1)' };
-  if (!agent.canMessage) return { kind: 'hint', text: codex ? CODEX_BRIDGE_HINT : PLUGIN_HINT };
+  if (!agent.canMessage)
+    return {
+      kind: 'hint',
+      text: codex
+        ? CODEX_BRIDGE_HINT
+        : opencode
+          ? OPENCODE_BRIDGE_HINT
+          : dsh
+            ? 'O DeepSeek Harness ainda não recebe mensagens pelo escritório: responda no próprio aplicativo'
+            : PLUGIN_HINT,
+    };
   return { kind: 'ready' };
 }
 
 /** Dica embaixo da caixa (gaveta): como a mensagem entra na sessão. */
 export function composerTip(provider: Provider = 'claude'): string {
-  return provider === 'codex'
-    ? 'Entra na fila da sessão e vira o próximo prompt quando o Codex terminar o que está fazendo. Enter manda; Shift+Enter quebra a linha.'
-    : 'Entra na sessão como se você tivesse digitado. Enter manda; Shift+Enter quebra a linha.';
+  if (provider === 'codex')
+    return 'Entra na fila da sessão e vira o próximo prompt quando o Codex terminar o que está fazendo. Enter manda; Shift+Enter quebra a linha.';
+  if (provider === 'dsh') return 'O DeepSeek Harness ainda não recebe mensagens pelo escritório. Enter manda; Shift+Enter quebra a linha.';
+  return 'Entra na sessão como se você tivesse digitado. Enter manda; Shift+Enter quebra a linha.';
 }
 
 /** O que sai da caixa: o texto como foi digitado, sem os espaços e linhas em branco do fim. */
