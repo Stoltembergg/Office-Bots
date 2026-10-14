@@ -5,7 +5,7 @@
 // Também cuida da reconexão: quando o navegador desiste do stream (EventSource fechado após erro HTTP,
 // ex.: servidor reiniciando atrás de um proxy), tenta de novo com espera crescente.
 import type { AppearanceParts } from '../../../shared/appearance';
-import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, OutboxMessage, PermissionDecision, PermissionRequestInfo, RoomInfo } from '../../../shared/types';
+import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, OutboxMessage, PermissionDecision, PermissionRequestInfo, Provider, RoomInfo, SkillsInventory } from '../../../shared/types';
 import { DemoSimulator } from '../../../shared/demo/simulator';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed' | 'mock';
@@ -191,6 +191,34 @@ export class OfficeStore {
     if (this.mock) return false;
     const res = await fetch('/api/updates/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     return res.ok;
+  }
+
+  /** Biblioteca de skills/MCPs/memória descoberta pelo servidor (Ajuda). */
+  async fetchSkills(): Promise<SkillsInventory | null> {
+    if (this.mock) return null;
+    try {
+      const res = await fetch('/api/skills');
+      if (!res.ok) return null;
+      return (await res.json()) as SkillsInventory;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Instala uma skill noutra ferramenta (cópia da pasta). Devolve ok ou a mensagem de erro. */
+  async installSkill(name: string, from: { provider: Provider; accountId: string }, toProvider: Provider): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const res = await fetch('/api/skills/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, from, toProvider }),
+      });
+      if (res.ok) return { ok: true };
+      const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+      return { ok: false, error: typeof body?.error === 'string' && body.error ? body.error : `erro ${res.status}` };
+    } catch {
+      return { ok: false, error: 'não deu para falar com o servidor' };
+    }
   }
 
   // ---------------------------------------------------------------- timelapse

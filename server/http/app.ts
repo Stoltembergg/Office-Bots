@@ -38,6 +38,11 @@ export interface ApiDeps {
    */
   permissions?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
   /**
+   * Biblioteca de skills/MCPs/memória (GET /api/skills aberto; POST /api/skills/install com a mesma
+   * trava do terminal, pois escreve nos arquivos das ferramentas; server/skills/http.ts).
+   */
+  skills?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
+  /**
    * Rotas das mensagens pelo escritório (/api/messages, a caixa de entrada do plugin em /api/mod/inbox e a do auxiliar
    * do Codex em /api/codex/bridge/*, server/messages/http.ts). Só existem com ServerConfig.messages (a trava do
    * terminal e HABBLAUD_MENSAGENS); a trava do Host local é conferida aqui antes de chamá-las.
@@ -82,7 +87,9 @@ function isMessagesPath(path: string): boolean {
     path === '/api/mod/inbox' ||
     path === '/api/mod/inbox/ack' ||
     path === '/api/codex/bridge/poll' ||
-    path === '/api/codex/bridge/ack'
+    path === '/api/codex/bridge/ack' ||
+    path === '/api/opencode/bridge/poll' ||
+    path === '/api/opencode/bridge/ack'
   );
 }
 
@@ -308,6 +315,17 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         sendJson(res, 403, { error: 'pedidos de permissão só são respondidos pelo próprio computador (http://localhost ou http://127.0.0.1)' });
       } else {
         deps.permissions(req, res, path);
+      }
+      return true;
+    }
+    if (path === '/api/skills' || path.startsWith('/api/skills/')) {
+      // Ler o inventário é como ler o snapshot; instalar escreve nos arquivos das ferramentas: trava local.
+      if (!deps.skills) {
+        sendJson(res, 404, { error: 'rota desconhecida' });
+      } else if (method !== 'GET' && !isLoopbackHost(req.headers.host)) {
+        sendJson(res, 403, { error: 'instalar skills só pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else {
+        deps.skills(req, res, path);
       }
       return true;
     }

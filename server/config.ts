@@ -50,6 +50,15 @@ export interface ServerConfig {
   updateCheck: boolean;
   /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
   codex: boolean;
+  /** Observa as sessões do DeepSeek Harness (sources/dsh/); HABBLAUD_DSH=0 desliga. */
+  dsh: boolean;
+  /** Observa as sessões do OpenCode (sources/opencode/); HABBLAUD_OPENCODE=0 desliga. */
+  opencode: boolean;
+  /**
+   * Copia sozinho as skills que faltam entre as ferramentas (server/skills/); HABBLAUD_SKILLS_SYNC=1
+   * liga (desligado por padrão: mexe nos arquivos das ferramentas). Nunca sobrescreve.
+   */
+  skillsSync: boolean;
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -169,5 +178,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    /** Observa as sessões do DeepSeek Harness (sources/dsh/); HABBLAUD_DSH=0 desliga. */
+    dsh: !env.HABBLAUD_DSH?.trim() || isTruthy(env.HABBLAUD_DSH),
+    /** Observa as sessões do OpenCode (sources/opencode/); HABBLAUD_OPENCODE=0 desliga. */
+    opencode: !env.HABBLAUD_OPENCODE?.trim() || isTruthy(env.HABBLAUD_OPENCODE),
+    skillsSync: isTruthy(env.HABBLAUD_SKILLS_SYNC),
   };
 }

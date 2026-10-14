@@ -7,9 +7,9 @@
 // O que ele faz ao subir:
 // 1. Descobre os config dirs do Claude Code no host (mesma regra do servidor: ~/.claude*,
 //    CLAUDE_CONFIG_DIR ou HABBLAUD_CLAUDE_DIRS) e lê os metadados das contas com detectAccounts.
-// 2. Gera o docker-compose.override.yml montando SOMENTE <conta>/projects e <conta>/sessions,
-//    somente leitura, em /claude/<conta>/... — nunca a pasta inteira da conta, onde ficam
-//    credenciais e configurações — e a pasta do uso capturado pelo statusline
+// 2. Gera o docker-compose.override.yml montando SOMENTE <conta>/projects, <conta>/sessions e
+//    <conta>/skills (só docs das skills), somente leitura, em /claude/<conta>/... — nunca a pasta inteira
+//    da conta, onde ficam credenciais e configurações — e a pasta do uso capturado pelo statusline
 //    (~/.habblaud/usage, criada se faltar) em /usage, também somente leitura. Passa
 //    HABBLAUD_CLAUDE_DIRS, HABBLAUD_ACCOUNTS, HABBLAUD_USAGE_DIR e o fuso do host (TZ) ao container.
 //    Contas do Codex (~/.codex*, CODEX_HOME ou HABBLAUD_CODEX_DIRS; HABBLAUD_CODEX=0 desliga): SOMENTE
@@ -34,9 +34,12 @@ import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync,
 import { homedir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { AccountInfo, SourceInfo } from '../shared/types';
+import type { AccountInfo, Provider, SourceInfo } from '../shared/types';
 import { codexDirsRefused, detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
 import { detectCodexAccounts, discoverCodexDirs } from '../server/sources/codex/accounts';
+import { detectDshAccounts, discoverDshDirs } from '../server/sources/dsh/accounts';
+import { detectOpencodeAccounts, discoverOpencodeDirs, opencodeSkillsCandidates } from '../server/sources/opencode/accounts';
+import { readClaudeMcp, readCodexMcp, readMemory, readOpencodeMcp, type HostFacts, type SkillAccount } from '../server/skills/inventory';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 
@@ -51,17 +54,21 @@ const USAGE_DIR = process.env.HABBLAUD_USAGE_DIR?.trim() ? resolve(process.env.H
 /** Onde essa pasta aparece no container. */
 const CONTAINER_USAGE_DIR = '/usage';
 const SERVICE = 'habblaud';
-/** Raiz das montagens dentro do container: /claude/<conta>/{projects,sessions}. */
+/** Raiz das montagens dentro do container: /claude/<conta>/{projects,sessions,skills}. */
 const CONTAINER_ROOT = '/claude';
-/** Somente estas subpastas de cada conta entram no container. */
-const MOUNTED_SUBDIRS = ['projects', 'sessions'] as const;
+/** Somente estas subpastas de cada conta entram no container (skills/ = só docs das skills). */
+const MOUNTED_SUBDIRS = ['projects', 'sessions', 'skills'] as const;
 /** Raiz das montagens do Codex dentro do container: /codex/<conta>/{sessions,archived_sessions,thread-writer-locks}. */
 const CODEX_CONTAINER_ROOT = '/codex';
+/** Raiz das montagens do DeepSeek Harness: /dsh/<conta>/sessions (só os logs de sessão). */
+const DSH_CONTAINER_ROOT = '/dsh';
+/** Raiz das montagens do OpenCode: /opencode/<conta> (a pasta de dados inteira, por causa do -wal/-shm do SQLite). */
+const OPENCODE_CONTAINER_ROOT = '/opencode';
 /**
- * Somente estas subpastas de cada pasta do Codex entram no container (as conversas e os locks das sessões abertas).
- * auth.json, config.toml, shell_snapshots/, history.jsonl, logs e os SQLite ficam no host.
+ * Somente estas subpastas de cada pasta do Codex entram no container (as conversas, os locks das sessões
+ * abertas e as skills). auth.json, config.toml, shell_snapshots/, history.jsonl, logs e os SQLite ficam no host.
  */
-export const CODEX_MOUNTED_SUBDIRS = ['sessions', 'archived_sessions', 'thread-writer-locks'] as const;
+export const CODEX_MOUNTED_SUBDIRS = ['sessions', 'archived_sessions', 'thread-writer-locks', 'skills'] as const;
 const DEFAULT_PORT = 4747;
 const HEALTH_TIMEOUT_MS = 120_000;
 /** Imagem e volume de dados como o Compose os nomeia (`name: habblaud` no docker-compose.yml). */
@@ -166,8 +173,8 @@ type CachedUsage = { fetchedAtMs: unknown; utilization: Partial<Record<(typeof U
 
 export interface AccountPayload {
   id: string;
-  /** Só nas contas do Codex (ausente = Claude Code). */
-  provider?: 'codex';
+  /** Só nas contas de outras ferramentas (ausente = Claude Code). */
+  provider?: 'codex' | 'opencode' | 'dsh';
   configDir: string;
   mountDir: string;
   short: string;
@@ -190,7 +197,7 @@ function realDir(p: string): string | undefined {
 }
 
 /**
- * Monta só projects/ e sessions/ de cada conta (as que existirem). `accounts` vem de
+ * Monta só projects/, sessions/ e skills/ de cada conta (as que existirem). `accounts` vem de
  * detectAccounts(dirs) e está na mesma ordem de `dirs`; o id (basename desambiguado) vira o
  * nome da pasta no container, então o servidor lá dentro deriva exatamente o mesmo id.
  */
@@ -210,7 +217,7 @@ export function planMounts(dirs: string[], accounts: DetectedAccount[], resolveD
 }
 
 /**
- * Monta só sessions/, archived_sessions/ e thread-writer-locks/ de cada pasta do Codex (as que existirem), em
+ * Monta só sessions/, archived_sessions/, thread-writer-locks/ e skills/ de cada pasta do Codex (as que existirem), em
  * /codex/<id>. `accounts` vem de detectCodexAccounts(dirs), na mesma ordem de `dirs`; o id vira o nome da pasta no
  * container, então o servidor lá dentro deriva o mesmo id.
  */
@@ -238,9 +245,103 @@ export function codexAccountsPayload(mounts: AccountMount[]): AccountPayload[] {
   });
 }
 
+/**
+ * Monta só sessions/ de cada pasta do DSH (~/.dsh/sessions/--<cwd>--/<id>/session.v4.jsonl.zstd), em
+ * /dsh/<id>/sessions. Uma conta sem sessions/ ainda não foi usada: nada a montar.
+ */
+export function planDshMounts(dirs: string[], accounts: DetectedAccount[], resolveDir: (p: string) => string | undefined = realDir): AccountMount[] {
+  const out: AccountMount[] = [];
+  dirs.forEach((hostDir, i) => {
+    const account = accounts[i];
+    const mountDir = posix.join(DSH_CONTAINER_ROOT, account.id);
+    const source = resolveDir(join(hostDir, 'sessions'));
+    if (source) out.push({ account, hostDir, mountDir, binds: [{ source, target: posix.join(mountDir, 'sessions') }] });
+  });
+  return out;
+}
+
+/** Metadados das contas do DSH para HABBLAUD_ACCOUNTS: `provider: 'dsh'` e a pasta do HOST em `configDir`. */
+export function dshAccountsPayload(mounts: AccountMount[]): AccountPayload[] {
+  return mounts.map(({ account: a, hostDir, mountDir }) => ({ id: a.id, provider: 'dsh' as const, configDir: hostDir, mountDir, short: a.short, name: a.name, color: a.color }));
+}
+
+/**
+ * Monta a pasta de dados inteira do OpenCode (opencode.db + -wal/-shm), somente leitura, em /opencode/<id>. O WAL
+ * exige os arquivos-irmãos do banco: montar só o .db quebraria a leitura.
+ */
+export function planOpencodeMounts(dirs: string[], accounts: DetectedAccount[], resolveDir: (p: string) => string | undefined = realDir): AccountMount[] {
+  const out: AccountMount[] = [];
+  dirs.forEach((hostDir, i) => {
+    const account = accounts[i];
+    const mountDir = posix.join(OPENCODE_CONTAINER_ROOT, account.id);
+    const source = resolveDir(hostDir);
+    if (source) out.push({ account, hostDir, mountDir, binds: [{ source, target: mountDir }] });
+  });
+  return out;
+}
+
+/** Metadados das contas do OpenCode para HABBLAUD_ACCOUNTS: `provider: 'opencode'` e a pasta do HOST em `configDir`. */
+export function opencodeAccountsPayload(mounts: AccountMount[]): AccountPayload[] {
+  return mounts.map(({ account: a, hostDir, mountDir }) => ({ id: a.id, provider: 'opencode' as const, configDir: hostDir, mountDir, short: a.short, name: a.name, color: a.color }));
+}
+
+/** Montagem extra de skills fora das pastas de conta (ex.: as do OpenCode ficam fora da pasta de dados). */
+export interface ExtraSkillsMount {
+  source: string;
+  target: string;
+  provider: Provider;
+  /** Entrada de HABBLAUD_SKILLS_DIRS (`ferramenta:/caminho-no-container`). */
+  root: string;
+}
+
+/**
+ * Monta pastas de skills avulsas em /skills/<ferramenta>[-N], somente leitura (a conta de onde vieram
+ * continua valendo pelo provedor). Só as que existem entram.
+ */
+export function planExtraSkillsMounts(items: Array<{ provider: Provider; dir: string }>, resolveDir: (p: string) => string | undefined = realDir): ExtraSkillsMount[] {
+  const out: ExtraSkillsMount[] = [];
+  const used = new Set<string>();
+  for (const item of items) {
+    const source = resolveDir(item.dir);
+    if (!source) continue;
+    let target = `/skills/${item.provider}`;
+    for (let n = 1; used.has(target); n++) target = `/skills/${item.provider}-${n}`;
+    used.add(target);
+    out.push({ source, target, provider: item.provider, root: `${item.provider}:${target}` });
+  }
+  return out;
+}
+
+/**
+ * Fatos do host para HABBLAUD_HOST_FACTS (só nomes de MCPs e presença de memória, nunca segredos nem
+ * conteúdos): o container não enxerga ~/.claude.json nem config.toml, então o docker:up coleta aqui.
+ */
+export function collectHostFacts(home: string, claudeAccounts: SkillAccount[], codexDirs: string[], opencodeJsonc: string[]): HostFacts {
+  const facts: HostFacts = {};
+  const mcp = [
+    ...readClaudeMcp(home, { provider: 'claude', accountId: '', accountName: '' }),
+    ...codexDirs.flatMap((d) => readCodexMcp(join(d, 'config.toml'), { provider: 'codex', accountId: '', accountName: '' })),
+    ...opencodeJsonc.flatMap((p) => readOpencodeMcp(p, { provider: 'opencode', accountId: '', accountName: '' })),
+  ].map((m) => ({ provider: m.provider, name: m.name, kind: m.kind }));
+  if (mcp.length) facts.mcp = mcp;
+  const memory = [...claudeAccounts.flatMap((a) => readMemory(a)), ...codexDirs.flatMap((d) => readMemory({ provider: 'codex', accountId: '', accountName: '', dir: d }))].map((m) => ({
+    provider: m.provider,
+    kind: m.kind,
+    detail: m.detail,
+  }));
+  if (memory.length) facts.memory = memory;
+  return facts;
+}
+
 /** HABBLAUD_CODEX desligado (0, false, off, no) no ambiente de quem roda o docker:up. */
 export function codexDisabled(env: NodeJS.ProcessEnv): boolean {
   const v = env.HABBLAUD_CODEX?.trim();
+  return !!v && !/^(1|true|yes|sim|on)$/i.test(v);
+}
+
+/** Idem, para HABBLAUD_DSH / HABBLAUD_OPENCODE. */
+export function providerDisabled(env: NodeJS.ProcessEnv, name: 'HABBLAUD_DSH' | 'HABBLAUD_OPENCODE'): boolean {
+  const v = env[name]?.trim();
   return !!v && !/^(1|true|yes|sim|on)$/i.test(v);
 }
 
@@ -306,27 +407,46 @@ export function hostTimeZone(env: NodeJS.ProcessEnv = process.env): string | und
 /**
  * `usageDir`: pasta do host com o uso capturado pelo tap de statusline (já existente; caminho real),
  * montada somente leitura em /usage. `timeZone`: fuso do host, repassado como TZ. `codex`: montagens das contas do
- * Codex (planCodexMounts).
+ * Codex (planCodexMounts). `extraSkills`: montagens avulsas de skills + HABBLAUD_SKILLS_DIRS. `hostFacts`:
+ * MCPs e memória coletados no host (HABBLAUD_HOST_FACTS, só nomes e presença).
  */
-export function renderOverride(mounts: AccountMount[], generatedAt: Date = new Date(), usageDir?: string, timeZone?: string, codex: AccountMount[] = []): string {
+export function renderOverride(
+  mounts: AccountMount[],
+  generatedAt: Date = new Date(),
+  usageDir?: string,
+  timeZone?: string,
+  codex: AccountMount[] = [],
+  dsh: AccountMount[] = [],
+  opencode: AccountMount[] = [],
+  extraSkills: ExtraSkillsMount[] = [],
+  hostFacts?: HostFacts,
+): string {
   const env: Array<[string, string]> = [
     ['HABBLAUD_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
-    ['HABBLAUD_ACCOUNTS', JSON.stringify([...accountsPayload(mounts), ...codexAccountsPayload(codex)])],
+    ['HABBLAUD_ACCOUNTS', JSON.stringify([...accountsPayload(mounts), ...codexAccountsPayload(codex), ...dshAccountsPayload(dsh), ...opencodeAccountsPayload(opencode)])],
   ];
   if (codex.length) env.push(['HABBLAUD_CODEX_DIRS', codex.map((m) => m.mountDir).join(',')]);
+  if (dsh.length) env.push(['HABBLAUD_DSH_DIRS', dsh.map((m) => m.mountDir).join(',')]);
+  if (opencode.length) env.push(['HABBLAUD_OPENCODE_DIRS', opencode.map((m) => m.mountDir).join(',')]);
+  if (extraSkills.length) env.push(['HABBLAUD_SKILLS_DIRS', extraSkills.map((m) => m.root).join(',')]);
+  if (hostFacts && (hostFacts.mcp?.length || hostFacts.memory?.length)) env.push(['HABBLAUD_HOST_FACTS', JSON.stringify(hostFacts)]);
   if (usageDir) env.push(['HABBLAUD_USAGE_DIR', CONTAINER_USAGE_DIR]);
   if (timeZone) env.push(['TZ', timeZone]);
   const lines = [
     `# Gerado por scripts/docker-up.ts em ${generatedAt.toISOString()} — não edite: é recriado a cada \`npm run docker:up\`.`,
     '# Contém caminhos do host e e-mails das contas: fica fora do git e com permissão 600.',
-    '# Montagens: SOMENTE <conta>/projects, <conta>/sessions e a pasta do uso do statusline, todas somente leitura.',
-    ...(codex.length ? ['# Codex: SOMENTE <pasta>/sessions, <pasta>/archived_sessions e <pasta>/thread-writer-locks, somente leitura.'] : []),
+    '# Montagens: SOMENTE <conta>/projects, <conta>/sessions, <conta>/skills e a pasta do uso do statusline, todas somente leitura.',
+    ...(codex.length ? ['# Codex: SOMENTE <pasta>/sessions, <pasta>/archived_sessions, <pasta>/thread-writer-locks e <pasta>/skills, somente leitura.'] : []),
+    ...(dsh.length ? ['# DSH: SOMENTE <pasta>/sessions, somente leitura.'] : []),
+    ...(opencode.length ? ['# OpenCode: a pasta de dados inteira (opencode.db + -wal/-shm), somente leitura.'] : []),
+    ...(extraSkills.length ? ['# Skills avulsas (fora das pastas de conta), somente leitura; ver HABBLAUD_SKILLS_DIRS.'] : []),
     'services:',
     `  ${SERVICE}:`,
     '    environment:',
     ...env.map(([k, v]) => `      ${k}: ${yamlString(v)}`),
   ];
-  const binds = [...mounts, ...codex].flatMap((m) => m.binds);
+  const binds = [...mounts, ...codex, ...dsh, ...opencode].flatMap((m) => m.binds);
+  for (const m of extraSkills) binds.push({ source: m.source, target: m.target });
   if (usageDir) binds.push({ source: usageDir, target: CONTAINER_USAGE_DIR });
   if (binds.length) {
     lines.push('    volumes:');
@@ -665,12 +785,35 @@ async function up(opts: Options, port: number): Promise<void> {
       warn(`${tildify(m.hostDir)} ainda não tem thread-writer-locks/: no container, sessão aberta = conversa modificada nos últimos 30 min (rode o docker:up de novo depois de usar o Codex).`);
     }
   }
+  // DeepSeek Harness (só ~/.dsh*/sessions) e OpenCode (a pasta de dados, por causa do WAL do SQLite).
+  const takenAfterCodex = { shorts: [...accounts.map((a) => a.short), ...codexAccounts.map((a) => a.short)], colors: [...accounts.map((a) => a.color), ...codexAccounts.map((a) => a.color)] };
+  const dshDirs = providerDisabled(process.env, 'HABBLAUD_DSH') ? [] : discoverDshDirs(process.env, HOME);
+  const dshAccounts = detectDshAccounts(dshDirs, { home: HOME, env: process.env, taken: takenAfterCodex });
+  const dshMounts = planDshMounts(dshDirs, dshAccounts);
+  for (const m of dshMounts) say(`DeepSeek Harness ${m.account.short} (${m.account.id}): monta sessions/ de ${tildify(m.hostDir)}, somente leitura.`);
+  const opencodeDirs = providerDisabled(process.env, 'HABBLAUD_OPENCODE') ? [] : discoverOpencodeDirs(process.env, HOME);
+  const opencodeAccounts = detectOpencodeAccounts(opencodeDirs, {
+    home: HOME,
+    env: process.env,
+    taken: { shorts: [...takenAfterCodex.shorts, ...dshAccounts.map((a) => a.short)], colors: [...takenAfterCodex.colors, ...dshAccounts.map((a) => a.color)] },
+  });
+  const opencodeMounts = planOpencodeMounts(opencodeDirs, opencodeAccounts);
+  for (const m of opencodeMounts) say(`OpenCode ${m.account.short} (${m.account.id}): monta ${tildify(m.hostDir)} (opencode.db), somente leitura.`);
+  // Skills fora das pastas de conta (ex.: as do OpenCode) + fatos do host (MCPs e memória: só nomes e presença).
+  const extraSkills = planExtraSkillsMounts(opencodeSkillsCandidates(process.env, HOME).map((dir) => ({ provider: 'opencode' as const, dir })));
+  for (const m of extraSkills) say(`Skills (${m.provider}): monta ${tildify(m.source)}, somente leitura.`);
+  const hostFacts = collectHostFacts(
+    HOME,
+    dirs.map((dir, i) => ({ provider: 'claude' as const, accountId: accounts[i]?.id ?? dir, accountName: accounts[i]?.name ?? dir, dir })),
+    codexDirs,
+    opencodeSkillsCandidates(process.env, HOME).map((dir) => join(dirname(dir), 'opencode.jsonc')),
+  );
 
   migrateStateDir();
   const usageDir = ensureUsageDir();
   if (usageDir) say(`Uso ao vivo (mod ou tap de statusline): monta ${tildify(USAGE_DIR)} em ${CONTAINER_USAGE_DIR}, somente leitura.`);
   const tmp = `${OVERRIDE_FILE}.tmp`;
-  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts), { mode: 0o600 });
+  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts, dshMounts, opencodeMounts, extraSkills, hostFacts), { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, OVERRIDE_FILE);
   say('docker-compose.override.yml gerado.');
@@ -697,6 +840,17 @@ async function up(opts: Options, port: number): Promise<void> {
     const usage = health.accounts?.find((a) => a.id === m.account.id)?.usageStatus;
     const state = src.ok ? plural(src.sessions, 'sessão aberta', 'sessões abertas') : `erro ao ler (${src.error ?? 'desconhecido'})`;
     say(`  Codex ${m.account.short} (${m.account.id}): ${state}${usage ? ` · ${USAGE_STATUS[usage]}` : ''}`);
+  }
+  for (const [label, list] of [
+    ['DeepSeek Harness', dshMounts],
+    ['OpenCode', opencodeMounts],
+  ] as const) {
+    for (const m of list) {
+      const src = health.sources?.find((s) => s.label === m.account.id);
+      if (!src) continue;
+      const state = src.ok ? plural(src.sessions, 'sessão aberta', 'sessões abertas') : `erro ao ler (${src.error ?? 'desconhecido'})`;
+      say(`  ${label} ${m.account.short} (${m.account.id}): ${state}`);
+    }
   }
   for (const line of modHint(updateMods(dirs, accounts))) say(line);
   // Com a cópia falha, os dados só existem no volume antigo: nada de sugerir apagá-lo.

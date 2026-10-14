@@ -10,6 +10,20 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Uso em tokens (OpenCode e DeepSeek Harness):** contas sem cota do plano mostram os tokens somados da sessão de 5 horas e da semana (e o custo, quando conhecido) no lugar do percentual: o OpenCode soma os deltas de `tokens_input/output/reasoning` e `cost` do `session_v2`; o DeepSeek Harness soma o `usage.totalTokens` dos eventos das sessões. Sem instalar nada; a ajuda explica que não há cota.
+- **Biblioteca de Skills, MCPs e memória (Ajuda › "Skills, MCPs e memória"):** o servidor descobre sozinho onde cada ferramenta guarda as suas e mostra tudo junto — skills com descrição e onde cada uma já está, nomes de MCPs (segredos nunca saem da ferramenta) e presença de memória (só presença, o conteúdo nunca é lido). Cada skill tem o botão **Instalar no X** (copia a pasta, nunca sobrescreve, só pelo próprio computador). Com `HABBLAUD_SKILLS_SYNC=1`, as skills que faltam são copiadas sozinhas entre as ferramentas no boot e a cada 10 min.
+- **Selos OPENCODE e DSH nas etiquetas:** os personagens do OpenCode e do DeepSeek Harness ganham o selo da ferramenta na etiqueta, como o CODEX já tinha (o Claude Code continua sem selo).
+- **Seção "Ligando cada ferramenta" na ajuda:** como cada ferramenta entra no escritório (o Habblaud observa: abra a ferramenta na pasta e a sala aparece), bridges necessárias e o que o DeepSeek Harness não faz (permissões e mensagens se resolvem no app).
+- Fechar (X) no aviso "O escritório está vazio", com a dica de como sair da demonstração (Configurações ⚙ › Modo demonstração).
+
+### Alterado
+
+- Cartões de uso da barra superior: ocupam o centro (logo + nome + botão Ativar/Saber), compactos e responsivos; detalhes completos no hover.
+- Textos por ferramenta: mensagens, terminal e escritório vazio citam OpenCode e DeepSeek Harness onde antes diziam só Claude Code/Codex.
+- `docker:up` monta `<conta>/skills` (Claude e Codex) e as skills avulsas do OpenCode, só leitura, e coleta nomes de MCPs e presença de memória do host (`HABBLAUD_HOST_FACTS`, sem segredos).
+
 ## [0.8.0] - 2026-10-09
 
 Para atualizar: `git pull` e `npm run docker:up`. Renomear salas e editar o personagem funcionam só pelo próprio

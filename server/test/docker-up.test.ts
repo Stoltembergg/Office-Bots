@@ -7,12 +7,14 @@ import {
   CODEX_MOUNTED_SUBDIRS,
   codexAccountsPayload,
   codexDisabled,
+  collectHostFacts,
   copyVolumeArgs,
   type DockerState,
   envFileKeys,
   hostTimeZone,
   parseArgs,
   planCodexMounts,
+  planExtraSkillsMounts,
   planMounts,
   planUp,
   renderOverride,
@@ -40,7 +42,7 @@ describe('docker-up', () => {
     expect(() => parseArgs(['--xyz'])).toThrow(/opção desconhecida/);
   });
 
-  it('monta só projects/ e sessions/ que existem', () => {
+  it('monta só projects/, sessions/ e skills/ que existem', () => {
     const dirs = ['/Users/fulano/.claude', '/Users/fulano/.claude-conta2'];
     const exists = new Set(['/Users/fulano/.claude/projects', '/Users/fulano/.claude/sessions', '/Users/fulano/.claude-conta2/sessions']);
     const mounts = planMounts(dirs, [acc('.claude'), acc('.claude-conta2')], (p) => (exists.has(slash(p)) ? `/real${slash(p)}` : undefined));
@@ -71,9 +73,9 @@ describe('docker-up', () => {
     expect(yml).toContain('HABBLAUD_USAGE_DIR: "/usage"');
     expect(yml).toContain('source: "/Users/fulano/.habblaud/usage"\n        target: "/usage"\n        read_only: true');
     const binds = yml.split('- type: bind').length - 1;
-    expect(binds).toBe(3);
-    expect(yml.match(/read_only: true/g)).toHaveLength(3);
-    expect(yml.match(/create_host_path: false/g)).toHaveLength(3);
+    expect(binds).toBe(4);
+    expect(yml.match(/read_only: true/g)).toHaveLength(4);
+    expect(yml.match(/create_host_path: false/g)).toHaveLength(4);
     // Payload das contas: sem cache vazio, sem campos que não existem.
     expect(accountsPayload(mounts)).toEqual([{ id: '.claude', configDir: '/Users/fulano/.claude', mountDir: '/claude/.claude', short: 'C', name: 'Conta C', color: '#000000', email: 'a@b.c' }]);
     // Sem a pasta do statusline: nada de /usage.
@@ -81,8 +83,8 @@ describe('docker-up', () => {
     expect(yamlString('a"b$c')).toBe('"a\\"b$$c"');
   });
 
-  it('Codex: monta SÓ sessions/, archived_sessions/ e thread-writer-locks/ (somente leitura) e passa as contas com a pasta do host', () => {
-    expect([...CODEX_MOUNTED_SUBDIRS]).toEqual(['sessions', 'archived_sessions', 'thread-writer-locks']);
+  it('Codex: monta SÓ sessions/, archived_sessions/, thread-writer-locks/ e skills/ (somente leitura) e passa as contas com a pasta do host', () => {
+    expect([...CODEX_MOUNTED_SUBDIRS]).toEqual(['sessions', 'archived_sessions', 'thread-writer-locks', 'skills']);
     const host = '/Users/fulano/.codex';
     // Existem no host também auth.json, config.toml, history.jsonl, shell_snapshots/, logs e SQLite: nada disso entra.
     const exists = new Set([`${host}/sessions`, `${host}/thread-writer-locks`, `${host}/auth.json`, `${host}/config.toml`, `${host}/shell_snapshots`, `${host}/history.jsonl`]);
@@ -101,7 +103,7 @@ describe('docker-up', () => {
     const yml = renderOverride(claude, new Date(0), undefined, undefined, codex);
     expect(yml).toContain('HABBLAUD_CODEX_DIRS: "/codex/.codex"');
     expect(yml).toContain(`source: "/real${host}/thread-writer-locks"\n        target: "/codex/.codex/thread-writer-locks"\n        read_only: true`);
-    expect(yml.match(/read_only: true/g)).toHaveLength(4);
+    expect(yml.match(/read_only: true/g)).toHaveLength(5);
     for (const secret of ['auth.json', 'config.toml', 'history.jsonl', 'shell_snapshots', 'sqlite', 'logs_']) expect(yml).not.toContain(secret);
     const accounts = JSON.parse(JSON.parse(/HABBLAUD_ACCOUNTS: (".*")/.exec(yml)![1]) as string) as Array<Record<string, unknown>>;
     expect(accounts.map((a) => [a.id, a.provider, a.configDir])).toEqual([
@@ -124,6 +126,32 @@ describe('docker-up', () => {
     expect(hostTimeZone({ TZ: ':Europe/Lisbon' })).toBe('Europe/Lisbon');
     expect(hostTimeZone({ TZ: 'x"; rm -rf' })).toBeUndefined();
     expect(hostTimeZone({})).toMatch(/^[A-Za-z]/);
+  });
+
+  it('skills avulsas: monta em /skills/<ferramenta> e fatos do host viram env (só nomes)', () => {
+    const extra = planExtraSkillsMounts(
+      [
+        { provider: 'opencode', dir: '/h/.config/opencode/skills' },
+        { provider: 'opencode', dir: '/h/.opencode/skills' },
+        { provider: 'opencode', dir: '/h/nao-existe' },
+      ],
+      (p) => (p === '/h/nao-existe' ? undefined : p),
+    );
+    expect(extra).toEqual([
+      { source: '/h/.config/opencode/skills', target: '/skills/opencode', provider: 'opencode', root: 'opencode:/skills/opencode' },
+      { source: '/h/.opencode/skills', target: '/skills/opencode-1', provider: 'opencode', root: 'opencode:/skills/opencode-1' },
+    ]);
+    const mounts = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
+    const facts = collectHostFacts('/Users/fulano', [], [], []);
+    expect(facts).toEqual({});
+    const yml = renderOverride(mounts, new Date(0), undefined, undefined, [], [], [], extra, {
+      mcp: [{ provider: 'codex', name: 'a', kind: 'unknown' }],
+      memory: [{ provider: 'codex', kind: 'sqlite', detail: 'x' }],
+    });
+    expect(yml).toContain('HABBLAUD_SKILLS_DIRS: "opencode:/skills/opencode,opencode:/skills/opencode-1"');
+    expect(yml).toContain('HABBLAUD_HOST_FACTS:');
+    expect(yml).toContain('target: "/skills/opencode"');
+    expect(yml.match(/read_only: true/g)).toHaveLength(5);
   });
 });
 

@@ -24,7 +24,7 @@ import { openMainAgent, SessionHistory } from './sources/history';
 import { HistorySet, SourceSet } from './sources/source';
 import { createPermissionRoutes } from './permissions/http';
 import { PermissionRegistry } from './permissions/registry';
-import { codexAccountOf } from './codex/http';
+import { codexAccountOf, opencodeAccountOf } from './codex/http';
 import { createCodexQueueRunner, findCodexBin } from './messages/codex';
 import { createMessageRoutes } from './messages/http';
 import { MessageRegistry } from './messages/registry';
@@ -33,8 +33,17 @@ import { ClaudeWatcher } from './sources/watcher';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
+import { discoverDshDirs } from './sources/dsh/accounts';
+import { DshHistory } from './sources/dsh/history';
+import { DshSource } from './sources/dsh/source';
+import { discoverOpencodeDirs } from './sources/opencode/accounts';
+import { OpencodeHistory } from './sources/opencode/history';
+import { OpencodeSource } from './sources/opencode/source';
 import { createBuildReader } from './build';
+import { createSkillsRoutes, SkillsService } from './skills/http';
+import { syncMissingSkills, writableSkillsDirs } from './skills/inventory';
 import { UpdateChecker } from './updates/checker';
+import type { Provider } from '../shared/types';
 
 const config = loadConfig();
 const startedAt = Date.now();
@@ -99,6 +108,16 @@ if (codex) agents.add(codex);
 // Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
 // (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.
 const codexLive: CodexLive | undefined = codex;
+// DeepSeek Harness (~/.dsh) e OpenCode (opencode.db): fontes de só leitura dos arquivos (sem hooks/plugins
+// próprios na v1). Desligam com HABBLAUD_DSH=0 / HABBLAUD_OPENCODE=0.
+const dshDirs = config.dsh ? discoverDshDirs(process.env, config.home) : [];
+const dshMirrorDir = join(config.dataDir, 'transcripts', 'dsh');
+const dsh = dshDirs.length ? new DshSource({ accounts, office, dirs: dshDirs, env: process.env, home: config.home, mirrorDir: dshMirrorDir }) : undefined;
+if (dsh) agents.add(dsh);
+const opencodeDirs = config.opencode ? discoverOpencodeDirs(process.env, config.home) : [];
+const opencodeMirrorDir = join(config.dataDir, 'transcripts', 'opencode');
+const opencode = opencodeDirs.length ? new OpencodeSource({ accounts, office, dirs: opencodeDirs, env: process.env, home: config.home, mirrorDir: opencodeMirrorDir }) : undefined;
+if (opencode) agents.add(opencode);
 late.office = office;
 late.agents = agents;
 const hub = new Hub(office);
@@ -115,6 +134,8 @@ const history = config.terminal
   ? new HistorySet([new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })])
   : undefined;
 if (history && codex) history.add(new CodexHistory({ accounts: () => accounts.entriesOf('codex'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) }));
+if (history && dsh) history.add(new DshHistory({ accounts: () => accounts.entriesOf('dsh'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid), mirrorDir: dshMirrorDir }));
+if (history && opencode) history.add(new OpencodeHistory({ accounts: () => accounts.entriesOf('opencode'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid), mirrorDir: opencodeMirrorDir }));
 // Linha do tempo do timelapse: grava cada snapshot novo (com throttle) em <dataDir>/timeline.
 const timelineDir = join(config.dataDir, TIMELINE_DIR);
 const timeline = config.timeline ? new TimelineRecorder({ dir: timelineDir }) : undefined;
@@ -126,8 +147,9 @@ const permissions = config.terminal
       viewers: () => hub.localSize,
       // Só o Claude Code: a busca da resposta dada no terminal lê o formato do transcript dele.
       transcriptPathOf: (id) => claude.transcriptPathOf(id),
-      // Pedidos do hook do Codex: a conta pela pasta CODEX_HOME que ele manda.
-      codexAccount: (account, codexHome) => codexAccountOf(accounts.entriesOf('codex'), account, codexHome),
+      // Pedidos das ferramentas externas (Codex, OpenCode): a conta pela pasta que a ponte/hook manda.
+      externalAccount: (provider, account, codexHome) =>
+        provider === 'codex' ? codexAccountOf(accounts.entriesOf('codex'), account, codexHome) : opencodeAccountOf(accounts.entriesOf('opencode'), account),
       demoDecide: (id, d) => office.decideDemoPermission(id, d),
       demoDetail: (id) => office.demoPermission(id),
     })
@@ -147,15 +169,40 @@ const messages = config.messages
         run: codexBin ? createCodexQueueRunner(codexBin) : undefined,
         homeOf: (account) => accounts.entriesOf('codex').find((e) => e.id === account)?.detected.configDir,
       },
+      opencode: {},
     })
   : undefined;
 late.messages = messages;
 
 if (config.demo) office.setDemo(true);
+// Biblioteca de skills/MCPs/memória (server/skills/): o inventário aparece sozinho no escritório
+// (Ajuda › "Skills, MCPs e memória"); com HABBLAUD_SKILLS_SYNC=1, as skills que faltam são copiadas
+// sozinhas entre as ferramentas (nunca sobrescreve).
+const skills = new SkillsService({ accounts, home: config.home, env: process.env });
+function runSkillsSync(reason: string): void {
+  if (!config.skillsSync) return;
+  try {
+    const inv = skills.scan();
+    const accs = accounts.allEntries().map((e) => ({ provider: e.provider, accountId: e.id, accountName: e.detected.name, dir: e.dir }));
+    const writable = new Map<Provider, string[]>();
+    for (const p of ['claude', 'codex', 'opencode', 'dsh'] as const) {
+      const dirs = writableSkillsDirs(accs, p);
+      if (dirs.length) writable.set(p, dirs);
+    }
+    const done = syncMissingSkills(inv.skills, writable);
+    const errors = done.filter((d) => d.error);
+    if (done.length - errors.length) log.info(`   Skills: ${done.length - errors.length} instalada(s) sozinha(s) (${reason}).`);
+    if (errors.length) log.warnOnce('skills-sync', `Skills: ${errors.length} falha(s) na cópia automática (pastas somente leitura no Docker, por exemplo).`);
+  } catch (err) {
+    log.warnOnce('skills-sync', `Skills: falha na sincronização automática (${errMsg(err)}).`);
+  }
+}
 // As fontes síncronas (a do Claude Code) terminam o boot aqui, antes de o hub começar a transmitir.
 void agents.start();
 accounts.start();
 hub.start();
+runSkillsSync('inicial');
+setInterval(() => runSkillsSync('rotina'), 10 * 60_000);
 if (timeline) {
   timeline.start();
   timeline.ingest(hub.current());
@@ -192,6 +239,7 @@ const api = createApiHandler({
   timeline: createTimelineHandler({ dir: timelineDir, recording: !!timeline }),
   permissions: permissions ? createPermissionRoutes(permissions) : undefined,
   messages: messages ? createMessageRoutes(messages) : undefined,
+  skills: createSkillsRoutes(skills),
   codexLive,
   stats,
   updates,
@@ -268,6 +316,21 @@ server.listen(config.port, config.host, () => {
     }
   } else {
     log.info(`   Codex: ${config.codex ? 'nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)' : 'desligado (HABBLAUD_CODEX=0)'}.`);
+  }
+  for (const [label, src, dirs, on] of [
+    ['DeepSeek Harness', dsh, dshDirs, config.dsh],
+    ['OpenCode', opencode, opencodeDirs, config.opencode],
+  ] as const) {
+    if (src) {
+      const accts = src.accountEntries();
+      const open = src.sources().reduce((n, s) => n + s.sessions, 0);
+      log.info(`   ${label}: ${accts.length} conta(s), ${open} sessão(ões) aberta(s).`);
+      for (const a of accts) {
+        log.info(`   Conta ${a.detected.short} (${label}) (${a.id}): ${a.detected.configDir}`);
+      }
+    } else {
+      log.info(`   ${label}: ${on ? 'nenhuma pasta encontrada' : 'desligado'}.`);
+    }
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   if (config.terminal) log.info('   Terminal: ligado (acesso só local).');
