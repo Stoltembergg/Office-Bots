@@ -96,7 +96,7 @@ describe('setup e anúncio', () => {
     expect(mdnsCommand('win32', 'myclaude', '192.168.1.10', 443)).toBeUndefined();
   });
   it('docker-up monta SÓ a pasta do certificado do servidor, somente leitura', () => {
-    const yaml = renderOverride([], new Date(0), undefined, undefined, [], '/h/.habblaud/remote-tls/server');
+    const yaml = renderOverride([], new Date(0), undefined, undefined, [], [], '/h/.habblaud/remote-tls/server');
     expect(yaml).toContain('source: "/h/.habblaud/remote-tls/server"');
     expect(yaml).toContain('target: "/remote-tls"');
     expect(yaml).not.toContain('remote-tls/ca');
@@ -109,7 +109,7 @@ describe('setup e anúncio', () => {
       '0.0.0.0:80:4748',
     ]);
     expect(remotePortsFrom('HABBLAUD_REMOTE_USER=ana\n')).toEqual(['127.0.0.1:4748:4748']);
-    const yaml = renderOverride([], new Date(0), undefined, undefined, [], undefined, ['0.0.0.0:80:4748']);
+    const yaml = renderOverride([], new Date(0), undefined, undefined, [], [], undefined, ['0.0.0.0:80:4748']);
     expect(yaml).toMatch(/    ports:\n      - "0\.0\.0\.0:80:4748"/);
   });
 });

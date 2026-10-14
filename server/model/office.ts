@@ -708,7 +708,11 @@ export class Office {
     info.recent = [...info.recent, activity].slice(-RECENT_LIMIT);
     rec.history.push(activity);
     if (rec.history.length > HISTORY_LIMIT) rec.history.splice(0, rec.history.length - HISTORY_LIMIT);
-    if (current || !info.activity) info.activity = activity;
+    // Chegada atrasada: o transcript só é lido no próximo poll (até 1s depois), então "Pensando…"/
+    // "Escrevendo" de um turno que já terminou pode chegar DEPOIS do "Concluiu" que sintetizamos no Stop.
+    // O balão mostra a atividade mais nova; a antiga continua entrando em recent/history/feed acima.
+    const stale = info.activity !== undefined && activity.at < info.activity.at;
+    if (!stale && (current || !info.activity)) info.activity = activity;
     if (activity.at > info.lastEventAt) info.lastEventAt = activity.at;
     // Uma instrução nova começa um turno (base do "Concluiu em X").
     if (activity.kind === 'prompt') rec.turnStart = activity.at;

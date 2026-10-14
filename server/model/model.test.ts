@@ -344,6 +344,26 @@ describe('Office', () => {
     expect(a.recent.filter((x) => x.kind === 'done')).toHaveLength(1);
   });
 
+  it('chegada atrasada do transcript não reabre o balão depois do "Concluiu"', () => {
+    // O transcript só é lido no poll seguinte (até 1s depois), então "Pensando…"/"Escrevendo" gravados
+    // durante o turno chegam DEPOIS do "Concluiu" que o Stop sintetizou. O balão fica no fim do turno,
+    // mas a atividade atrasada ainda entra no histórico e no feed.
+    const { office, advance, now } = makeOffice();
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: now(), status: 'working' });
+    const t0 = now();
+    office.addActivity('acc:1', act('think', t0 + 1_000), true);
+    advance(10_000);
+    office.setStatus('acc:1', 'idle'); // Stop chega antes de o arquivo ser relido
+    const synth = office.get('acc:1')!.activity!;
+    expect(synth.kind).toBe('done');
+    office.addActivity('acc:1', act('resp', t0 + 3_000), true); // linha antiga, lida tardiamente
+    const a = office.get('acc:1')!;
+    expect(a.activity!.id).toBe(synth.id);
+    expect(a.recent.map((x) => x.id)).toContain('resp');
+    // O feed do servidor guarda ordem de chegada; a ordenação cronológica é do cliente.
+    expect(office.recentFeed(10).map((f) => f.id)).toContain('resp');
+  });
+
   it('ocupado com o balão ainda em "Concluiu" antigo: mostra que acompanha os subagentes (fora do feed)', () => {
     const { office, advance, now } = makeOffice();
     office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: now(), status: 'working' });

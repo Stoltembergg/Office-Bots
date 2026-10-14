@@ -12,9 +12,10 @@ export type AgentKind = 'main' | 'sub';
  * De qual ferramenta vem o agente (ou a conta, a fonte, a sessão, o pedido). Nos tipos do protocolo o campo
  * `provider` é opcional e AUSENTE quer dizer 'claude' (tudo o que existia antes do Codex continua igual).
  * - claude: Claude Code;
- * - codex: OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME).
+ * - codex: OpenAI Codex (CLI `codex` e o app desktop, que gravam no mesmo CODEX_HOME);
+ * - opencode: OpenCode (app desktop e CLI; a fonte le os arquivos que o plugin escreve, nunca o SQLite).
  */
-export type Provider = 'claude' | 'codex';
+export type Provider = 'claude' | 'codex' | 'opencode';
 
 /**
  * Estado de alto nível de um agente — é o que dirige o comportamento do personagem.
