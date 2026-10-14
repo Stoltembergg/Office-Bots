@@ -5,7 +5,7 @@
 <h1 align="center">Habblaud</h1>
 
 <p align="center">
-  <b>La oficina virtual de tus agentes de Claude Code (y de Codex).</b><br />
+  <b>La oficina virtual de tus agentes de Claude Code (y de Codex y de OpenCode).</b><br />
   Cada proyecto se convierte en una sala, y cada agente, en un personaje en pixel art que muestra en tiempo real lo que está haciendo.
 </p>
 
@@ -228,6 +228,29 @@ npm run codex:status       # confere
 Después, **abre Codex y aprueba los hooks de Habblaud en `/hooks`**: Codex solo ejecuta un hook nuevo después de que
 lo apruebas (Habblaud nunca guarda esa aprobación). Con Habblaud en Docker, para enviar mensajes a las sesiones de
 Codex deja también `npm run codex:bridge` en ejecución en el Mac (consulta [Codex](#codex)).
+
+### 5. OpenCode en la oficina (opcional)
+
+Si también usas **OpenCode** (la terminal, la app o una extensión de IDE), sus sesiones entran en la misma oficina
+con el sello **OPENCODE**. Habblaud encuentra solo la carpeta de datos de OpenCode (`OPENCODE_DATA_DIR` o
+`~/.local/share/opencode`) — pero, a diferencia de Codex, nada aparece **hasta que instales el plugin de
+Habblaud**, porque Habblaud no lee la base de datos de OpenCode desde el contenedor:
+
+```bash
+npm run opencode:install    # copia el plugin de Habblaud a OpenCode (con copia de seguridad antes)
+npm run opencode:status     # comprueba
+```
+
+Después abre OpenCode: cada sesión abierta se vuelve un personaje en la sala del proyecto, con actividad en vivo,
+terminal, permisos, mensajes y preguntas de opción múltiple respondidas desde la oficina. Una diferencia importante
+con los otros: OpenCode permite comandos shell **por defecto**, así que la oficina solo ve los comandos si tu
+`opencode.json` pregunta antes:
+
+```json
+{ "$schema": "https://opencode.ai/config.json", "permissions": [{ "action": "shell", "resource": "*", "effect": "ask" }] }
+```
+
+Consulta [OpenCode](#opencode).
 
 ### Abrir en el celular (opcional)
 
@@ -638,6 +661,26 @@ chip de la cuenta de Codex es hueco y lleva el sello **CODEX**.
   puede tardar un poco en irse después de que cierras la terminal.
 - Las conversaciones en la nube de ChatGPT (sin archivo en la computadora) no aparecen. `HABBLAUD_CODEX=0` desactiva
   Codex.
+
+### OpenCode
+
+Las sesiones de OpenCode (terminal, app o extensión de IDE) aparecen como las demás: personaje, sala del proyecto,
+actividad, terminal e historial, con el sello **OPENCODE**. No hay uso del plan (OpenCode no lo informa).
+
+- **El plugin es obligatorio** (`npm run opencode:install`): OpenCode guarda la conversación en una base SQLite
+  (`opencode.db`) que Habblaud no lee desde el contenedor, así que el plugin de Habblaud — corriendo nativo dentro
+  de OpenCode — escribe un espejo que la oficina lee (conversación en formato de Claude Code, marcadores de
+  presencia). Sin él, ninguna sesión de OpenCode aparece.
+- **Aprobar desde la oficina:** con alguna página de Habblaud abierta, la solicitud espera tu respuesta en la
+  tarjeta **Pide permiso** hasta **5 minutos**: **Aprobar**, **Rechazar** (con motivo opcional, que llega al modelo)
+  o **Rechazar + interrumpir** (también detiene el turno). OpenCode permite comandos shell por defecto, así que pon
+  una regla `ask` en `opencode.json` o la oficina nunca ve los comandos.
+- **Preguntas de opción múltiple** muestran las opciones en la tarjeta **Te necesita**; responder ahí desbloquea al
+  agente, **Rechazar** descarta la pregunta. Sin página abierta, la pregunta sale en el propio OpenCode.
+- **Enviar mensajes:** el cuadro **Enviar mensaje** entrega el texto en la sesión como si lo hubieras escrito ahí,
+  incluso a mitad del turno.
+- **Cuándo sale la sesión de la oficina:** ciérrala en OpenCode; el personaje sale cuando vence la presencia.
+  `HABBLAUD_OPENCODE=0` desactiva OpenCode.
 
 ### GitHub en la oficina
 
