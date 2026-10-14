@@ -28,6 +28,8 @@ do meio (0.**3**.0).
 - Terminal aberto por um intermediário (um `.bat`, um wrapper): o escritório não o reconhecia como o terminal do
   agente, porque o Claude Code é um processo filho. Agora o terminal passa a ser do Claude Code que aparece no
   registro de sessões descendendo do processo aberto.
+- Agente que ficava "trabalhando" depois de terminar: duas gravações do registro de sessões no mesmo tique do relógio
+  e do mesmo tamanho ("busy" -> "idle") não eram relidas. Acontecia mais no Windows (mtime avança a cada ~16 ms).
 - Testes que passavam do prazo ou dependiam de `/` e de permissões POSIX agora passam no Windows.
 
 ## [0.11.0] - 2026-10-13
