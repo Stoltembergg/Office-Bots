@@ -169,7 +169,8 @@ export class FeedPanel implements UiComponent {
     for (const f of this.pending) if (!known.has(f.id)) this.items.push(f);
     this.pending = [];
     this.pendingCounts.clear();
-    this.items = this.items.slice(-VISIBLE);
+    // Cronologico, nao por chegada: itens novos podem ter hora antiga (ver store.applyFeed).
+    this.items = this.items.sort((a, b) => a.activity.at - b.activity.at).slice(-VISIBLE);
     this.pruneMeta();
     this.rows.sync(this.ctx.prefs.hiddenAccounts.length ? this.items.filter((f) => this.visible(f)) : this.items);
     const scroller = this.list.parentElement!;

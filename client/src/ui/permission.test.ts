@@ -61,6 +61,14 @@ describe('responder pelo escritório (peças puras)', () => {
       note: CODEX_PERMISSION_NOTE,
     });
     expect(CODEX_PERMISSION_NOTE).toBe('No Codex, a aprovação só aparece no terminal depois que você responder aqui ou o prazo acabar.');
+    // OpenCode: sem "sempre permitir", com "interromper", recusa sem motivo e janela de minutos.
+    expect(permissionOptions({ provider: 'opencode', suggestions }, { kind: 'main' })).toEqual({
+      always: false,
+      interrupt: true,
+      reasonRequired: false,
+      seconds: false,
+      note: '',
+    });
     // Claude Code: como antes.
     expect(permissionOptions({ suggestions }, { kind: 'main' })).toEqual({ always: true, interrupt: true, reasonRequired: false, seconds: false, note: '' });
     expect(permissionOptions({}, { kind: 'main' }).always).toBe(false);
@@ -104,6 +112,10 @@ describe('cartão de pergunta (AskUserQuestion)', () => {
     expect(isQuestionRequest(undefined)).toBe(false);
     // O Codex não pergunta pelo escritório: nunca vira cartão de pergunta.
     expect(isQuestionRequest({ tool: 'AskUserQuestion', questions: [single], provider: 'codex' })).toBe(false);
+    // Question do OpenCode vira cartão de pergunta; sem provider, não (é o nome de outro contexto).
+    expect(isQuestionRequest({ tool: 'Question', questions: [single], provider: 'opencode' })).toBe(true);
+    expect(isQuestionRequest({ tool: 'Question', questions: [single] })).toBe(false);
+    expect(isQuestionRequest({ tool: 'AskUserQuestion', questions: [single], provider: 'opencode' })).toBe(false);
   });
 
   it('answerFor: escolha única = a opção OU o "Outro"; várias = tudo junto; "Outro" sem texto = sem resposta', () => {

@@ -10,6 +10,8 @@ import {
   enterSends,
   isSettled,
   messageText,
+  OPENCODE_PLUGIN_HINT,
+  OPENCODE_TIMEOUT_ERROR,
   PLUGIN_HINT,
   pollDelay,
   sendStatusText,
@@ -121,6 +123,19 @@ describe('caixa de mensagem (peças puras)', () => {
     expect(composerTip()).toBe('Entra na sessão como se você tivesse digitado. Enter manda; Shift+Enter quebra a linha.');
     expect(timeoutError('codex')).toBe(CODEX_TIMEOUT_ERROR);
     expect(timeoutError()).toBe(TIMEOUT_ERROR);
+  });
+
+  it('OpenCode: como o Claude Code, mas a dica de instalação e os textos falam do OpenCode', () => {
+    const oc = (over: Partial<AgentInfo> = {}) => agent({ provider: 'opencode', ...over });
+    expect(composerMode(oc(), ON)).toEqual({ kind: 'ready' });
+    expect(composerMode(oc({ canMessage: undefined }), ON)).toEqual({ kind: 'hint', text: OPENCODE_PLUGIN_HINT });
+    expect(OPENCODE_PLUGIN_HINT).toBe('Para mandar mensagens daqui: npm run opencode:install (plugin habblaud do OpenCode)');
+    expect(composerMode(oc(), { ...ON, enabled: false })).toEqual({ kind: 'off', text: 'Para responder, use o OpenCode' });
+    expect(timeoutError('opencode')).toBe(OPENCODE_TIMEOUT_ERROR);
+    expect(OPENCODE_TIMEOUT_ERROR).toBe('sem notícia da entrega: confira no OpenCode');
+    // Dica e "Entregue" são os mesmos do Claude Code (o prompt entra na sessão do mesmo jeito).
+    expect(composerTip('opencode')).toBe(composerTip());
+    expect(sendStatusText({ phase: 'delivered', at: 0 }, 1_000, 'opencode')).toBe(sendStatusText({ phase: 'delivered', at: 0 }, 1_000));
   });
 
   it('consulta da entrega: rápida no começo, mais espaçada depois', () => {

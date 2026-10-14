@@ -7,7 +7,7 @@
 // depois que você responder aqui ou o prazo acabar; não há "sempre permitir" nem "interromper", e recusar pede um
 // motivo. O Codex nunca pergunta pelo escritório (sem cartão de pergunta).
 import { access, isLoopbackHostname } from '../net/access';
-import { ANSWER_OTHER_MAX, ASK_TOOL, checkAnswers } from '../../../shared/answers';
+import { ANSWER_OTHER_MAX, checkAnswers, isAskTool } from '../../../shared/answers';
 import type { AgentInfo, AskQuestion, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setText, setTitle } from './dom';
@@ -63,6 +63,9 @@ export interface PermissionOptions {
 
 export function permissionOptions(p: Pick<PermissionRequestInfo, 'provider' | 'suggestions'>, agent: Pick<AgentInfo, 'kind' | 'background'>): PermissionOptions {
   if (p.provider === 'codex') return { always: false, interrupt: false, reasonRequired: true, seconds: true, note: CODEX_PERMISSION_NOTE };
+  // OpenCode: sem "sempre permitir" (o `always` dele aprova os padrões do próprio pedido e não é montado aqui),
+  // com interrupt (o reply dele aceita) e janela de minutos (não segundos).
+  if (p.provider === 'opencode') return { always: false, interrupt: true, reasonRequired: false, seconds: false, note: '' };
   // Subagente em segundo plano: o Claude Code só mostra o diálogo depois que o hook responde.
   const blocking = agent.kind === 'sub' && !!agent.background;
   return {
@@ -96,9 +99,9 @@ export function focusPermission(ctx: UiContext, agentId: string): void {
 /** A página foi aberta pelo próprio computador? (a regra antiga; quem decide agora é o servidor, ver net/access.ts) */
 export const isLocalHostname = isLoopbackHostname;
 
-/** Pedido que se responde escolhendo (as perguntas do AskUserQuestion), não aprovando. O Codex nunca pergunta. */
+/** Pedido que se responde escolhendo (AskUserQuestion do Claude, Question do OpenCode), não aprovando. O Codex nunca pergunta. */
 export function isQuestionRequest(p: Pick<PermissionRequestInfo, 'tool' | 'questions' | 'provider'> | undefined): boolean {
-  return !!p && p.provider !== 'codex' && p.tool === ASK_TOOL && !!p.questions?.length;
+  return !!p && !!p.questions?.length && isAskTool(p.tool, p.provider);
 }
 
 /** O que está marcado numa pergunta do cartão: as opções (posições do original) e o "Outro" (marcado, e o texto). */

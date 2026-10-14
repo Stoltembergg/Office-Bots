@@ -227,6 +227,7 @@ describe('terminalFooter', () => {
       'Esperando você: aprovar uma permissão · responda no Claude Code: este pedido não chegou ao Habblaud ou passou do tempo de espera',
     );
     expect(terminalFooter(agent({ status: 'waiting', provider: 'codex' }), [], now).text).toMatch(/^Esperando você · responda no Codex:/);
+    expect(terminalFooter(agent({ status: 'waiting', provider: 'opencode' }), [], now).text).toMatch(/^Esperando você · responda no OpenCode:/);
     expect(terminalFooter(agent({ status: 'idle' }), [], now)).toEqual({ kind: 'idle', text: 'Aguardando o próximo prompt' });
     expect(terminalFooter(agent({ status: 'offline' }), [], now).kind).toBe('ended');
     expect(terminalFooter(agent({ kind: 'sub', status: 'done' }), [], now).kind).toBe('ended');
