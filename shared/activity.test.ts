@@ -233,3 +233,39 @@ describe('AskUserQuestion no escritório', () => {
     expect(describeTool('AskUserQuestion', {}).questions).toBeUndefined();
   });
 });
+
+describe('Question do OpenCode no escritório', () => {
+  it('mesmo formato do AskUserQuestion, mas com `multiple` em vez de `multiSelect`', () => {
+    const d = describeTool('Question', {
+      questions: [
+        {
+          question: 'Qual linguagem prefere?',
+          header: 'Linguagem',
+          multiple: false,
+          options: [
+            { label: 'Python (Recomendado)', description: 'Versátil' },
+            { label: 'Rust' },
+          ],
+        },
+        { question: 'Quais áreas?', multiple: true, options: [{ label: 'Front' }, { label: 'Back' }] },
+      ],
+    });
+    expect(d).toMatchObject({ kind: 'ask', text: 'Fazendo uma pergunta a você', detail: 'Qual linguagem prefere?' });
+    expect(d.questions).toEqual([
+      {
+        index: 0,
+        question: 'Qual linguagem prefere?',
+        header: 'Linguagem',
+        options: [
+          { index: 0, label: 'Python (Recomendado)', description: 'Versátil' },
+          { index: 1, label: 'Rust' },
+        ],
+      },
+      { index: 1, question: 'Quais áreas?', multiSelect: true, options: [{ index: 0, label: 'Front' }, { index: 1, label: 'Back' }] },
+    ]);
+  });
+
+  it('sem perguntas válidas, não cria o campo', () => {
+    expect(describeTool('Question', {}).questions).toBeUndefined();
+  });
+});

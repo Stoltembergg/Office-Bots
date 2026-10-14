@@ -10,6 +10,16 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **OpenCode no escritório (opcional, desligado sem o plugin):** sessões do OpenCode (terminal, app ou extensão de IDE)
+  viram personagens com o selo **OPENCODE**, com conversa, presença, terminal e histórico ao vivo. O plugin do Habblaud
+  (`npm run opencode:install`) roda nativo dentro do OpenCode e escreve um espelho que o escritório lê, porque o
+  SQLite do OpenCode não abre no container. Permissões aprovadas/recusadas pelo escritório (janela de 5 min, com motivo
+  e interrupt), perguntas de múltipla escolha respondidas pelo cartão **Precisa de você** e mensagens entregues na
+  sessão como se digitadas. Sem regra `ask` no `opencode.json`, o escritório não vê os comandos (o OpenCode libera
+  `shell` por padrão). Sem uso do plano (o OpenCode não informa). `HABBLAUD_OPENCODE=0` desliga.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo

@@ -432,6 +432,15 @@ class LineParser {
     s.ended = m.stop_reason === 'end_turn' && s.pendingTools.size === 0;
 
     const blocks = Array.isArray(m.content) ? (m.content as Array<Record<string, unknown>>) : [];
+    // Falha definitiva da API: mensagem sintética do assistant marcada com `isApiErrorMessage` — o mesmo
+    // campo que terminal.ts já lê (ver o comentário no topo dele). Sem este ramo o texto do erro cairia no
+    // bloco comum abaixo e viraria "Escrevendo a resposta", e o escritório não mostrava falha nenhuma.
+    if (j.isApiErrorMessage === true) {
+      const block = blocks.find((b) => b?.type === 'text');
+      const why = (block && str(block.text)) || '';
+      this.push(SPECIAL.error(undefined, firstLine(why)), { suffix: ':api', msgId });
+      return;
+    }
     blocks.forEach((b, i) => {
       if (!b || typeof b !== 'object') return;
       const suffix = `:${i}`;

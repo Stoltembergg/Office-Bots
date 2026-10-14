@@ -48,6 +48,24 @@ describe('parseLine — atividades', () => {
     expect(s.stats.toolCalls).toBe(1);
   });
 
+  it('falha definitiva da API vira atividade de erro, não "Escrevendo a resposta"', () => {
+    const s = createTranscriptState();
+    // É a linha que o plugin do OpenCode grava quando session.execution.failed traz `error`
+    // (modelo sem API key, saldo zerado, modelo fora). Sem o ramo isApiErrorMessage o bloco de texto
+    // comum seria descrito como resposta em andamento.
+    const linha = JSON.stringify({
+      ...JSON.parse(L.assistant([L.text('Model is unavailable.')], { at: T0 + 4000, msgId: 'm3', stop: 'end_turn' })),
+      isApiErrorMessage: true,
+      error: 'server_error',
+    });
+    const a = acts(feed(s, [L.prompt('oi', { at: T0 }), linha]));
+    expect(a.map((x) => x.activity.kind)).toEqual(['prompt', 'error']);
+    expect(a[1].activity).toMatchObject({ text: 'Algo deu errado', detail: 'Model is unavailable.' });
+    // O stop_reason end_turn é o que devolve o personagem a 'idle' (markTicks/settleStatus).
+    expect(s.ended).toBe(true);
+    expect(s.lastStopReason).toBe('end_turn');
+  });
+
   it('ignora meta, comandos locais, lembretes e tipos desconhecidos', () => {
     const s = createTranscriptState();
     const r = feed(s, [

@@ -10,6 +10,8 @@ import {
   ERR_GONE,
   ERR_NOT_CONFIRMED,
   ERR_NOT_FETCHED,
+  ERR_OPENCODE_NOT_FETCHED,
+  ERR_OPENCODE_UNAVAILABLE,
   ERR_REFUSED,
   ERR_SESSION_CHANGED,
   INBOX_BATCH,
@@ -211,6 +213,42 @@ describe('MessageRegistry: entrega pelo plugin', () => {
     registry.ack({ session: 'sess-2', results: [{ id: m.id, ok: true }] });
     expect(registry.get(m.id)?.status).toBe('sent');
     for (const bad of [null, {}, { session: SESSION }, { session: SESSION, results: 'x' }]) expect(() => registry.ack(bad)).toThrow(/results/);
+  });
+});
+
+describe('MessageRegistry: OpenCode', () => {
+  const OC = '.opencode:ses-oc1';
+  const OC_SESSION = 'ses-oc1';
+
+  function setupOC() {
+    const s = setup();
+    s.office.addMain({ id: OC, provider: 'opencode', account: 'acc', sessionId: OC_SESSION, cwd: '/p/oc', role: 'Agente principal', startedAt: 0, status: 'idle' });
+    return s;
+  }
+
+  it('sem presença: unavailable com o motivo do plugin do OpenCode (não o do Claude Code)', () => {
+    const { registry } = setupOC();
+    expect(registry.send({ agentId: OC, text: 'oi' })).toEqual({ error: 'unavailable', reason: ERR_OPENCODE_UNAVAILABLE });
+  });
+
+  it('ida e volta pela caixa de entrada: presença, sent e delivered com confirmação', () => {
+    const { registry } = setupOC();
+    expect(registry.inbox({ session: OC_SESSION })).toEqual([]);
+    expect(registry.canMessage(OC)).toBe(true);
+    const id = sent(registry.send({ agentId: OC, text: 'olá pelo escritório' }));
+    expect(registry.inbox({ session: OC_SESSION })).toEqual([{ id, text: 'olá pelo escritório' }]);
+    expect(registry.get(id)?.status).toBe('sent');
+    registry.ack({ session: OC_SESSION, results: [{ id, ok: true }] });
+    expect(registry.get(id)).toMatchObject({ status: 'delivered' });
+  });
+
+  it('na fila sem ser buscada: falha com o motivo do OpenCode (não o do Claude Code)', () => {
+    const { registry, clock } = setupOC();
+    registry.inbox({ session: OC_SESSION });
+    const id = sent(registry.send({ agentId: OC, text: 'ninguém busca' }));
+    clock.advance(QUEUED_TIMEOUT_MS);
+    registry.tick();
+    expect(registry.get(id)).toMatchObject({ status: 'failed', error: ERR_OPENCODE_NOT_FETCHED });
   });
 });
 

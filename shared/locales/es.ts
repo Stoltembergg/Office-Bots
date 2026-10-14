@@ -86,11 +86,13 @@ export const ES: Readonly<Record<string, string>> = {
 
   // client/src/ui/composer-model.ts
   "Para mandar mensagens daqui: npm run mod:install (plugin habblaud-mensagens)": "Para enviar mensajes desde aquí: npm run mod:install (plugin habblaud-mensagens)",
+  "Para mandar mensagens daqui: npm run opencode:install (plugin habblaud do OpenCode)": "Para enviar mensajes desde aquí: npm run opencode:install (plugin habblaud de OpenCode)",
   "Para mandar mensagens ao Codex: com o Habblaud no Docker, deixe npm run codex:bridge rodando; no modo Node funciona sozinho": "Para enviar mensajes a Codex: con Habblaud en Docker, deja npm run codex:bridge en ejecución; en modo Node funciona solo",
   "Sem mensagens no timelapse: o escritório mostrado é o de outro momento": "Sin mensajes en el timelapse: la oficina que ves es de otro momento",
   "Subagentes não recebem mensagens: escreva para o agente principal": "Los subagentes no reciben mensajes: escríbele al agente principal",
   "Sessão encerrada": "Sesión cerrada",
   "Para responder, use o Codex": "Para responder, usa Codex",
+  "Para responder, use o OpenCode": "Para responder, usa OpenCode",
   "Para responder, use o terminal do Claude Code": "Para responder, usa la terminal de Claude Code",
   "Para mandar mensagens por aqui, abra o Habblaud por http://localhost (ou 127.0.0.1)": "Para enviar mensajes desde aquí, abre Habblaud en http://localhost (o 127.0.0.1)",
   "Entra na fila da sessão e vira o próximo prompt quando o Codex terminar o que está fazendo. Enter manda; Shift+Enter quebra a linha.": "Entra en la cola de la sesión y se vuelve el próximo prompt cuando Codex termine lo que está haciendo. Enter envía; Shift+Enter hace un salto de línea.",
@@ -107,6 +109,7 @@ export const ES: Readonly<Record<string, string>> = {
   "o Habblaud não conhece mais esta mensagem (ele reiniciou?)": "Habblaud ya no conoce este mensaje (¿se reinició?)",
   "sem notícia da entrega: confira no terminal do Claude Code": "sin noticias de la entrega: revisa la terminal de Claude Code",
   "sem notícia da entrega: confira no Codex": "sin noticias de la entrega: revisa Codex",
+  "sem notícia da entrega: confira no OpenCode": "sin noticias de la entrega: revisa OpenCode",
   "não foi possível falar com o Habblaud": "no se pudo contactar con Habblaud",
 
   // client/src/ui/composer.ts
@@ -937,6 +940,7 @@ export const ES: Readonly<Record<string, string>> = {
 
   // client/src/ui/widgets.ts
   "Agente do Codex (OpenAI)": "Agente de Codex (OpenAI)",
+  "Agente do OpenCode": "Agente de OpenCode",
   "Principal": "Principal",
   "Subagente: {0}{1}": "Subagente: {0}{1}",
   " (em segundo plano)": " (en segundo plano)",
@@ -1771,6 +1775,8 @@ export const ES: Readonly<Record<string, string>> = {
   "o auxiliar do Codex não confirmou a entrega": "el auxiliar de Codex no confirmó la entrega",
   "a pasta da conta do Codex deste agente é desconhecida": "la carpeta de la cuenta de Codex de este agente es desconocida",
   "o codex queue não aceitou a mensagem": "codex queue no aceptó el mensaje",
+  "a sessão não está com o plugin habblaud do OpenCode conectado": "la sesión no tiene el plugin habblaud de OpenCode conectado",
+  "a sessão do OpenCode não buscou a mensagem: o OpenCode está aberto?": "la sesión de OpenCode no recogió el mensaje: ¿está OpenCode abierto?",
   "subagentes não recebem mensagens: mande para o agente principal": "los subagentes no reciben mensajes: envíalo al agente principal",
   "o agente já saiu do escritório": "el agente ya salió de la oficina",
   "a sessão não está com o plugin habblaud-mensagens conectado (npm run mod:install)": "la sesión no tiene el plugin habblaud-mensagens conectado (npm run mod:install)",
@@ -1976,6 +1982,25 @@ export const ES: Readonly<Record<string, string>> = {
   "conectado: os agentes do Codex já recebem mensagens pelo escritório.": "conectado: los agentes de Codex ya reciben mensajes desde la oficina.",
   "[codex-bridge] Erro: {0}": "[codex-bridge] Error: {0}",
   "[codex-bridge] Erro inesperado: {0}": "[codex-bridge] Error inesperado: {0}",
+
+  // scripts/opencode-install.ts
+  "Uso: npm run opencode:<install|uninstall|status> [-- opções]\n\n  install     copia o plugin do Habblaud para a pasta de plugins do OpenCode (faz backup antes)\n  uninstall   tira o plugin do Habblaud (só se for o nosso; os outros plugins ficam)\n  status      mostra se o plugin está lá, se está atualizado e se o Habblaud está respondendo\n\nOpções:\n  --dry-run        mostra o que mudaria, sem gravar nada\n  --force          instala mesmo se já existir um habblaud.js que não é o nosso (com backup antes)\n  --config <pasta> pasta de configuração do OpenCode (padrão: OPENCODE_CONFIG_DIR ou a da plataforma)\n  -h, --help       mostra esta ajuda\n\nSem OPENCODE_CONFIG_DIR, a pasta é ~/.config/opencode (%USERPROFILE%\\.config\\opencode no Windows; no WSL, a do Windows, porque é lá que o OpenCode roda).": "Uso: npm run opencode:<install|uninstall|status> [-- opciones]\n\n  install     copia el plugin de Habblaud a la carpeta de plugins de OpenCode (con copia de seguridad antes)\n  uninstall   quita el plugin de Habblaud (solo si es el nuestro; los otros plugins se quedan)\n  status      muestra si el plugin está ahí, si está actualizado y si Habblaud está respondiendo\n\nOpciones:\n  --dry-run        muestra lo que cambiaría, sin escribir nada\n  --force          instala aunque ya exista un habblaud.js que no es el nuestro (con copia de seguridad antes)\n  --config <carpeta> carpeta de configuración de OpenCode (por defecto: OPENCODE_CONFIG_DIR o la de la plataforma)\n  -h, --help       muestra esta ayuda\n\nSin OPENCODE_CONFIG_DIR, la carpeta es ~/.config/opencode (%USERPROFILE%\\.config\\opencode en Windows; en WSL, la de Windows, porque ahí es donde se ejecuta OpenCode).",
+  "não achei a pasta de configuração do OpenCode (defina OPENCODE_CONFIG_DIR ou use --config <pasta>).": "no encontré la carpeta de configuración de OpenCode (define OPENCODE_CONFIG_DIR o usa --config <carpeta>).",
+  "pasta de configuração inválida: {0}": "carpeta de configuración inválida: {0}",
+  "não achei o plugin em {0} (repositório incompleto?).": "no encontré el plugin en {0} (¿repositorio incompleto?).",
+  "já instalado e atualizado em {0}.": "ya instalado y actualizado en {0}.",
+  "já existe um habblaud.js que não é o nosso em {0}: nada feito (use --force para trocar, com backup).": "ya existe un habblaud.js que no es el nuestro en {0}: nada hecho (usa --force para cambiarlo, con copia de seguridad).",
+  "instalado em {0}. Abra o OpenCode: a sessão aparece no escritório.": "instalado en {0}. Abre OpenCode: la sesión aparece en la oficina.",
+  "nada para tirar em {0}.": "nada que quitar en {0}.",
+  "o habblaud.js em {0} não é o nosso: nada feito.": "el habblaud.js en {0} no es el nuestro: nada hecho.",
+  "tiraria {0} (com backup).": "quitaría {0} (con copia de seguridad).",
+  "tirado de {0} (backup em {1}).": "quitado de {0} (copia de seguridad en {1}).",
+  "plugin: ausente em {0} (`npm run opencode:install` instala).": "plugin: ausente en {0} (`npm run opencode:install` lo instala).",
+  "plugin: instalado e atualizado em {0}.": "plugin: instalado y actualizado en {0}.",
+  "plugin: nosso, mas desatualizado em {0} (`npm run opencode:install` atualiza).": "plugin: nuestro, pero desactualizado en {0} (`npm run opencode:install` lo actualiza).",
+  "plugin: um habblaud.js de outro em {0} (não encosto).": "plugin: un habblaud.js de otro en {0} (no lo toco).",
+  "Habblaud: respondendo em {0}.": "Habblaud: respondiendo en {0}.",
+  "Habblaud: fora do ar em {0}.": "Habblaud: caído en {0}.",
 
   // scripts/codex-install.ts
   "Aguardando resposta no Habblaud…": "Esperando respuesta en Habblaud…",
@@ -2352,6 +2377,7 @@ export const ES: Readonly<Record<string, string>> = {
 
   // client/src/ui/terminal.ts
   "{0} · responda no Codex: este pedido não chegou ao Habblaud ou passou do tempo de espera": "{0} · responde en Codex: esta solicitud no llegó a Habblaud o superó el tiempo de espera",
+  "{0} · responda no OpenCode: este pedido não chegou ao Habblaud ou passou do tempo de espera": "{0} · responde en OpenCode: esta solicitud no llegó a Habblaud o superó el tiempo de espera",
   "{0} · responda no Claude Code: este pedido não chegou ao Habblaud ou passou do tempo de espera": "{0} · responde en Claude Code: esta solicitud no llegó a Habblaud o superó el tiempo de espera",
 
   // client/src/ui/topbar.ts

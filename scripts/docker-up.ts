@@ -37,6 +37,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AccountInfo, SourceInfo } from '../shared/types';
 import { codexDirsRefused, detectAccounts, discoverClaudeDirs, type DetectedAccount } from '../server/accounts/detect';
 import { detectCodexAccounts, discoverCodexDirs } from '../server/sources/codex/accounts';
+import { defaultOpenCodeHome, detectOpenCodeAccounts, discoverOpenCodeDirs } from '../server/sources/opencode/accounts';
 import { describeStateMigration, LEGACY_NAME, legacyEnvWarning, migrateLegacyStateDir } from '../server/legacy';
 import { makeClaudeRunner, MIN_CLAUDE_VERSION, readPackageVersion, updateInstalledMods, type ModUpdateResult } from './mod-install';
 import { tr } from '../shared/i18n';
@@ -62,6 +63,8 @@ const CONTAINER_ROOT = '/claude';
 const MOUNTED_SUBDIRS = ['projects', 'sessions'] as const;
 /** Raiz das montagens do Codex dentro do container: /codex/<conta>/{sessions,archived_sessions,thread-writer-locks}. */
 const CODEX_CONTAINER_ROOT = '/codex';
+/** Raiz das montagens do OpenCode dentro do container: /opencode/<conta> (a pasta que o plugin escreve). */
+const OPENCODE_CONTAINER_ROOT = '/opencode';
 /**
  * Somente estas subpastas de cada pasta do Codex entram no container (as conversas e os locks das sessões abertas).
  * auth.json, config.toml, shell_snapshots/, history.jsonl, logs e os SQLite ficam no host.
@@ -163,7 +166,7 @@ type CachedUsage = { fetchedAtMs: unknown; utilization: Partial<Record<(typeof U
 export interface AccountPayload {
   id: string;
   /** Só nas contas do Codex (ausente = Claude Code). */
-  provider?: 'codex';
+  provider?: 'codex' | 'opencode';
   configDir: string;
   mountDir: string;
   short: string;
@@ -223,6 +226,40 @@ export function planCodexMounts(dirs: string[], accounts: DetectedAccount[], res
     if (binds.length) out.push({ account, hostDir, mountDir, binds });
   });
   return out;
+}
+
+/**
+ * Pastas do OpenCode montadas: a de HABBLAUD_OPENCODE_DIR do host (a que o plugin escreve). Só o subdiretório
+ * `habblaud/` do plugin entra — nunca a pasta de dados inteira, que tem o opencode.db com credenciais.
+ */
+export function openCodeMounts(
+  hostDirs: string[],
+  resolveDir: (p: string) => string | undefined = realDir,
+  env: NodeJS.ProcessEnv = process.env,
+): AccountMount[] {
+  const out: AccountMount[] = [];
+  const accounts = detectOpenCodeAccounts(hostDirs, { env, home: env.HOME });
+  hostDirs.forEach((hostDir, i) => {
+    const account = accounts[i];
+    if (!account) return;
+    const target = posix.join(OPENCODE_CONTAINER_ROOT, account.id);
+    const binds: BindMount[] = [];
+    // A pasta do plugin pode ainda não existir (OpenCode nunca rodou): monta só o que existe.
+    for (const sub of ['sessions', 'open-sessions']) {
+      const source = resolveDir(join(hostDir, sub));
+      if (source) binds.push({ source, target: posix.join(target, sub) });
+    }
+    if (binds.length) out.push({ account, hostDir, mountDir: target, binds });
+  });
+  return out;
+}
+
+/** Metadados das contas do OpenCode para HABBLAUD_ACCOUNTS. */
+export function openCodeAccountsPayload(mounts: AccountMount[]): AccountPayload[] {
+  return mounts.map(({ account: a, hostDir, mountDir }) => {
+    const p: AccountPayload = { id: a.id, provider: 'opencode', configDir: hostDir, mountDir, short: a.short, name: a.name, color: a.color };
+    return p;
+  });
 }
 
 /** Metadados das contas do Codex para HABBLAUD_ACCOUNTS: `provider: 'codex'` e a pasta do HOST em `configDir`. */
@@ -310,14 +347,16 @@ export function renderOverride(
   usageDir?: string,
   timeZone?: string,
   codex: AccountMount[] = [],
+  opencode: AccountMount[] = [],
   remoteTlsDir?: string,
   extraPorts: string[] = [],
 ): string {
   const env: Array<[string, string]> = [
     ['HABBLAUD_CLAUDE_DIRS', mounts.map((m) => m.mountDir).join(',')],
-    ['HABBLAUD_ACCOUNTS', JSON.stringify([...accountsPayload(mounts), ...codexAccountsPayload(codex)])],
+    ['HABBLAUD_ACCOUNTS', JSON.stringify([...accountsPayload(mounts), ...codexAccountsPayload(codex), ...openCodeAccountsPayload(opencode)])],
   ];
   if (codex.length) env.push(['HABBLAUD_CODEX_DIRS', codex.map((m) => m.mountDir).join(',')]);
+  if (opencode.length) env.push(['HABBLAUD_OPENCODE_DIRS', opencode.map((m) => m.mountDir).join(',')]);
   if (usageDir) env.push(['HABBLAUD_USAGE_DIR', CONTAINER_USAGE_DIR]);
   if (timeZone) env.push(['TZ', timeZone]);
   const lines = [
@@ -325,6 +364,7 @@ export function renderOverride(
     '# Contém caminhos do host e e-mails das contas: fica fora do git e com permissão 600.',
     '# Montagens: SOMENTE <conta>/projects, <conta>/sessions e a pasta do uso do statusline, todas somente leitura.',
     ...(codex.length ? ['# Codex: SOMENTE <pasta>/sessions, <pasta>/archived_sessions e <pasta>/thread-writer-locks, somente leitura.'] : []),
+    ...(opencode.length ? ['# OpenCode: SOMENTE a pasta que o plugin escreve (sessions/, open-sessions/ e *.meta.json), somente leitura.'] : []),
     'services:',
     `  ${SERVICE}:`,
     '    environment:',
@@ -332,7 +372,7 @@ export function renderOverride(
   ];
   // O Compose junta estas portas às do docker-compose.yml.
   if (extraPorts.length) lines.push('    ports:', ...extraPorts.map((p) => `      - ${yamlString(p)}`));
-  const binds = [...mounts, ...codex].flatMap((m) => m.binds);
+  const binds = [...mounts, ...codex, ...opencode].flatMap((m) => m.binds);
   if (usageDir) binds.push({ source: usageDir, target: CONTAINER_USAGE_DIR });
   // Acesso remoto: SÓ a pasta do certificado do servidor (a chave da CA fica no host).
   if (remoteTlsDir) binds.push({ source: remoteTlsDir, target: CONTAINER_REMOTE_TLS_DIR });
@@ -666,6 +706,10 @@ async function up(opts: Options, port: number): Promise<void> {
     taken: { shorts: accounts.map((a) => a.short), colors: accounts.map((a) => a.color) },
   });
   const codexMounts = planCodexMounts(codexDirs, codexAccounts);
+  // OpenCode: a pasta que o plugin escreve no host. Sem ela (OpenCode nunca rodou), nada é montado.
+  const opencodeHostDirs = discoverOpenCodeDirs(process.env, HOME);
+  const opencodeMounts = openCodeMounts(opencodeHostDirs, realDir, process.env);
+
   for (const m of codexMounts) {
     const subdirs = m.binds.map((b) => posix.basename(b.target)).join(', ');
     say(tr('Codex {0} ({1}): monta {2} de {3}, somente leitura.', [m.account.short, m.account.id, subdirs, tildify(m.hostDir)]));
@@ -674,13 +718,21 @@ async function up(opts: Options, port: number): Promise<void> {
     }
   }
 
+  for (const m of opencodeMounts) {
+    const subdirs = m.binds.map((b) => posix.basename(b.target)).join(', ');
+    say(`OpenCode ${m.account.short} (${m.account.id}): monta ${subdirs} de ${tildify(m.hostDir)}, somente leitura.`);
+  }
+  if (!opencodeMounts.length) {
+    warn(`Nenhuma pasta do OpenCode com sessions/ em ${tildify(defaultOpenCodeHome(process.env, HOME))}: o escritorio não mostra agentes do OpenCode ainda. Rode o OpenCode uma vez (o plugin cria a pasta) e o docker:up de novo.`);
+  }
+
   migrateStateDir();
   const usageDir = ensureUsageDir();
   if (usageDir) say(tr('Uso ao vivo (mod ou tap de statusline): monta {0} em {1}, somente leitura.', [tildify(USAGE_DIR), CONTAINER_USAGE_DIR]));
   const remoteTlsDir = prepareRemoteTls();
   const remotePorts = remoteTlsDir || remoteInsecure() ? remotePortsToPublish() : [];
   const tmp = `${OVERRIDE_FILE}.tmp`;
-  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts, remoteTlsDir, remotePorts), { mode: 0o600 });
+  writeFileSync(tmp, renderOverride(mounts, new Date(), usageDir, hostTimeZone(), codexMounts, opencodeMounts, remoteTlsDir, remotePorts), { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, OVERRIDE_FILE);
   say(tr('docker-compose.override.yml gerado.'));

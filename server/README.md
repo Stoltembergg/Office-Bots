@@ -354,6 +354,35 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   `/ack` (mesma trava das mensagens). `canMessage` = há entregador (binário achado, ou auxiliar visto há até 10 s).
   Retorno 0 = entrou na fila da sessão (`delivered`); o Codex consome a fila a cada ~10 s, quando a sessão fica ociosa.
 
+## OpenCode
+
+Fonte de agentes (`sources/opencode/`): o OpenCode guarda a conversa num SQLite (`opencode.db`) que o WSL não
+consegue abrir (lock de arquivo na montagem), então quem escreve é o **plugin do Habblaud** (`mod/habblaud-opencode/`,
+instalado com `npm run opencode:install`), rodando nativo dentro do OpenCode: a conversa em JSONL no formato do
+Claude Code (`sessions/<id>.jsonl`), os metadados (`sessions/<id>.meta.json`) e o marcador de presença
+(`open-sessions/<id>.lock`). O servidor nunca abre o `opencode.db` e o Docker só monta `sessions/` e
+`open-sessions/`, somente leitura. Agentes, contas e sessões do histórico levam `provider: 'opencode'`.
+`HABBLAUD_OPENCODE=0` desliga a fonte.
+
+- **Contas** (`sources/opencode/accounts.ts`): `HABBLAUD_OPENCODE_DIRS` (substitui) ou `HABBLAUD_OPENCODE_DIR` e
+  depois todas as pastas de dados (`OPENCODE_DATA_DIR`, `~/.local/share/opencode`) com o subdiretório `habblaud/`
+  que o plugin escreve.
+- **Presença e conversa**: o lock existe = sessão aberta (com batimento a cada 30 s e graça de 150 s); o plugin
+  reescreve o transcript por inteiro a cada mudança (idempotente) e recarrega o histórico do disco quando ele
+  mesmo recarrega.
+- **Aprovar pelo escritório** (`permissions/*`, `permissions/opencode.ts`): o plugin registra em
+  `POST /api/permissions` com `provider: 'opencode'` e espera em `GET /api/permissions/:id/wait`; a resposta volta
+  por `ctx.permission.reply` (`decision`, não `reply`) e o `interrupt` por `ctx.session.interrupt`. Janela de
+  5 min. Só a instância do projeto dono responde (o plugin roda uma vez por projeto aberto). Sem página aberta,
+  volta `{skip}` e o prompt do próprio app decide. **Pré-requisito**: o OpenCode libera `shell` por padrão
+  (`allow`); sem regra `ask` no `opencode.json`, o escritório nunca vê os comandos.
+- **Mensagens** (mesmas rotas do Claude Code, `/api/mod/inbox` + `/ack`): o plugin pergunta a cada 2 s pelas
+  sessões dele e entrega com `ctx.session.prompt`. Sem o plugin, `canMessage` fica falso.
+- **Perguntas** (canal de permissão, `tool_name: 'Question'`): a API do plugin não expõe `form.reply`, então o
+  plugin envolve o `execute` da ferramenta `question` e devolve a resposta do escritório como `tool_result` no
+  formato nativo; sem escritório, expiração ou resposta inválida, chama o original e vale o prompt nativo.
+- **Uso do plano**: o OpenCode não informa (conta com `usageStatus: 'disabled'`).
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Uso |
@@ -363,6 +392,9 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | `HABBLAUD_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal |
 | `HABBLAUD_TERMINAL` | — | `0` desliga o terminal, as permissões e as mensagens pelo escritório (não liga com a porta exposta) |
 | `HABBLAUD_CODEX` | ligado | `0` desliga a fonte do Codex |
+| `HABBLAUD_OPENCODE` | ligado | `0` desliga a fonte do OpenCode |
+| `HABBLAUD_OPENCODE_DIRS` | — | pastas de dados do OpenCode separadas por vírgula; substitui a detecção (`OPENCODE_DATA_DIR`, `~/.local/share/opencode`) |
+| `HABBLAUD_OPENCODE_DIR` | subdirs `habblaud/` de todas as pastas de dados | pasta que o plugin do OpenCode escreve (e o servidor observa) |
 | `HABBLAUD_CODEX_DIRS` | — | pastas do Codex separadas por vírgula; substitui a detecção (`CODEX_HOME` e `~/.codex*`) |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0`, `false`, `off` ou `no` desligam só as mensagens pelo escritório |

@@ -408,7 +408,11 @@ export class OfficeStore {
     const known = new Set(this.feed.map((f) => f.id));
     const fresh = items.filter((f) => !known.has(f.id));
     if (!fresh.length) return;
-    this.feed = [...this.feed, ...fresh].slice(-FEED_LIMIT);
+    // Dois relogios: o transcript marca a hora do evento, o escritorio marca a hora em que notou. Quem chega
+    // tarde pode ter hora antiga, entao ordenar por `at` e o que garante o relogio crescente na tela.
+    const byAt = (a: FeedItem, b: FeedItem) => a.activity.at - b.activity.at;
+    fresh.sort(byAt);
+    this.feed = [...this.feed, ...fresh].sort(byAt).slice(-FEED_LIMIT);
     this.emit('feed', fresh);
   }
 

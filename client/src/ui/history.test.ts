@@ -25,6 +25,14 @@ describe('sessões do Codex no histórico', () => {
     ]);
     expect(filterSessions(list, 'codex').map((s) => s.sessionId)).toEqual(['x']);
   });
+
+  it('sessões do OpenCode guardam o provider; a busca acha "opencode"', () => {
+    const list = parseRecentSessions({
+      sessions: [{ account: '.opencode', provider: 'opencode', sessionId: 'y', projectDir: '/p', lastAt: 3, size: 1, open: false }],
+    });
+    expect(list.map((s) => [s.sessionId, s.provider])).toEqual([['y', 'opencode']]);
+    expect(filterSessions(list, 'opencode').map((s) => s.sessionId)).toEqual(['y']);
+  });
 });
 
 describe('groupSessionsByDay', () => {

@@ -4,6 +4,7 @@ import { NAME_MAX, parseAppearanceParts, parseCharacterName, parseSeed } from '.
 import type { AccessInfo, AgentInfo, ModSummary, OfficeSnapshot, SourceInfo, UpdateStatus } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import { handleCodexEvent } from '../codex/http';
+import { handleOpenCodeEvent, type OpenCodeLiveEvent } from '../opencode/http';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import type { CodexLive } from '../sources/codex/live';
@@ -63,6 +64,11 @@ export interface ApiDeps {
    * não dependem da trava do terminal).
    */
   codexLive?: CodexLive;
+  /**
+   * Fonte do OpenCode ao vivo: recebe os eventos do plugin (POST /api/opencode/events, server/opencode/http.ts).
+   * Mesma trava do Codex: só do próprio computador (o plugin só observa).
+   */
+  opencodeLive?: (account: string | undefined, ev: OpenCodeLiveEvent) => boolean;
   /** Novo agente pelo escritório (/api/spawn e, para o auxiliar do host, /api/host/spawn/*; server/spawn/spawn.ts). */
   spawn?: SpawnService;
   /** Pastas sugeridas no "Novo agente" (GET /api/spawn/folders; spawn/folders.ts): projetos recentes. */
@@ -459,6 +465,14 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         }
         handleCharacter(req, res, id, method).catch((err) => fail(res, err));
       }
+      return true;
+    }
+    if (path === '/api/opencode/events') {
+      // Eventos do plugin do OpenCode: só observam, e só valem vindos do próprio computador (mesma trava do Codex).
+      if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else if (!isLoopbackHost(req.headers.host) || (!deps.inDocker && !isLoopbackAddress(req.socket.remoteAddress))) {
+        sendJson(res, 403, { error: 'eventos do OpenCode só são aceitos pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else handleOpenCodeEvent(req, res, { apply: deps.opencodeLive, entries: () => accounts.entriesOf('opencode') }).catch((err) => fail(res, err));
       return true;
     }
     if (path === '/api/codex/events') {

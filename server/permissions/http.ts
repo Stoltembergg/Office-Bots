@@ -2,7 +2,10 @@
 // conferida em http/app.ts; o guard (http/guard.ts) já exigiu JSON e Origin local nos POST (contra CSRF).
 //
 //   POST /api/permissions                 (hook)    registra o pedido: 201 {id, expiresAt} ou 200 {skip}
-//                                                   (o hook do Codex manda também provider: "codex", account e codexHome)
+//                                                   (o hook do Codex manda também provider: "codex", account e
+//                                                   codexHome; o plugin do OpenCode, provider: "opencode" com a ação
+//                                                   em tool_name e os recursos em tool_input.resources — mesma rota
+//                                                   para os três, o resumo de cada um fica em permissions/*.ts)
 //   GET  /api/permissions/:id/wait        (hook)    long-poll: {status: pending | decided | released}
 //   GET  /api/permissions/:id             (página)  detalhe com os argumentos (comando, diff...)
 //   POST /api/permissions/:id/decision    (página)  {behavior: allow | deny | terminal | answer, message?, answers?, ...}

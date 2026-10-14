@@ -53,12 +53,21 @@ describe('ferramenta (Claude Code ou Codex)', () => {
     expect(showsProviderTag('claude', 'Conta C')).toBe(false);
   });
 
+  it('selo "OpenCode": só no OpenCode, e sem repetir o nome da conta', () => {
+    expect(showsProviderTag('opencode', 'Conta X')).toBe(true);
+    expect(showsProviderTag('opencode', 'OpenCode')).toBe(false);
+    expect(showsProviderTag('opencode', 'meu OpenCode')).toBe(false);
+    expect(showsProviderTag('claude', 'Conta C')).toBe(false);
+  });
+
   it('rótulo do chip: e-mail no Claude Code; ferramenta e plano no Codex', () => {
     expect(accountChipLabel({ name: 'Conta C', email: 'a@b.c' }, '.claude', 'claude')).toBe('Conta C (a@b.c)');
     expect(accountChipLabel({ name: 'Conta X', plan: 'Team', provider: 'codex' }, '.codex', 'codex')).toBe('Conta X · Codex · plano Team');
     expect(accountChipLabel({ name: 'Codex', plan: 'Team', provider: 'codex' }, '.codex', 'codex')).toBe('Codex · plano Team');
     expect(accountChipLabel(undefined, '.codex', 'codex')).toBe('.codex · Codex');
     expect(accountChipLabel(undefined, '', 'claude')).toBe('Conta desconhecida');
+    expect(accountChipLabel(undefined, '.opencode', 'opencode')).toBe('.opencode · OpenCode');
+    expect(accountChipLabel({ name: 'Conta O' }, '.opencode', 'opencode')).toBe('Conta O');
   });
 
   it('escritório vazio: atalhos só das contas do Claude Code; o Codex entra quando há conta dele', () => {

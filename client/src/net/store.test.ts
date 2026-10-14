@@ -206,6 +206,27 @@ describe('OfficeStore: reconexão', () => {
     expect(() => (last() as unknown as { handlers: Map<string, ((e: Event) => void)[]> }).handlers.get('snapshot')![0](bad)).not.toThrow();
     expect(store.snapshot?.rev).toBe(1);
   });
+
+  // Dois relogios: o transcript marca a hora do evento, o escritorio marca a hora em que notou (o "Concluiu"
+  // nasce do relogio do servidor). O plugin grava os arquivos e manda o evento Stop juntos, entao o "Concluiu"
+  // CHEGA antes do "Pensando" — mas com hora DEPOIS. Sem ordenar por `at`, o relogio da tela deixa de ser crescente.
+  it('ordena o feed por hora do evento, não por ordem de chegada', () => {
+    store.connect();
+    last().open();
+    const ev = (id: string, at: number) => ({
+      id,
+      agentId: 'a',
+      roomId: 'r',
+      agentName: 'Ana',
+      roomName: 'x',
+      activity: { id, at, kind: 'done', icon: '✅', text: id },
+    });
+    last().fire('feed', [ev('pensando', 25), ev('concluiu', 26), ev('escrevendo', 26)]);
+    expect(store.feed.map((f) => f.id)).toEqual(['pensando', 'concluiu', 'escrevendo']);
+    // Quem chega tarde com hora antiga volta para o lugar certo em vez de encostar no fim da lista.
+    last().fire('feed', [ev('prompt', 21)]);
+    expect(store.feed.map((f) => f.id)).toEqual(['prompt', 'pensando', 'concluiu', 'escrevendo']);
+  });
 });
 
 const snap = (rev: number, build?: string): OfficeSnapshot => ({

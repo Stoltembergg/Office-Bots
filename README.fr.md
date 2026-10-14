@@ -5,7 +5,7 @@
 <h1 align="center">Habblaud</h1>
 
 <p align="center">
-  <b>Le bureau virtuel de vos agents Claude Code (et Codex).</b><br />
+  <b>Le bureau virtuel de vos agents Claude Code (et Codex et OpenCode).</b><br />
   Chaque projet devient une salle, chaque agent un personnage en pixel art qui montre, en temps réel, ce qu'il est en train de faire.
 </p>
 
@@ -231,6 +231,29 @@ npm run codex:status       # confere
 Ensuite, **ouvrez Codex et validez les hooks de Habblaud dans `/hooks`** : Codex n'exécute un nouveau hook qu'après
 votre validation (Habblaud n'enregistre jamais cette validation à votre place). Avec Habblaud dans Docker, pour envoyer
 des messages aux sessions Codex, laissez aussi tourner `npm run codex:bridge` sur le Mac (voir [Codex](#codex)).
+
+### 5. OpenCode dans le bureau (facultatif)
+
+Si vous utilisez aussi **OpenCode** (le terminal, l'app ou une extension d'IDE), ses sessions entrent dans le même
+bureau avec le badge **OPENCODE**. Habblaud trouve tout seul le dossier de données d'OpenCode (`OPENCODE_DATA_DIR` ou
+`~/.local/share/opencode`) — mais, contrairement à Codex, rien n'apparaît **tant que vous n'installez pas le plugin
+de Habblaud**, car Habblaud ne lit pas la base de données d'OpenCode depuis le conteneur :
+
+```bash
+npm run opencode:install    # copie le plugin de Habblaud dans OpenCode (avec sauvegarde avant)
+npm run opencode:status     # vérifie
+```
+
+Ensuite ouvrez OpenCode : chaque session ouverte devient un personnage dans la salle du projet, avec activité en
+direct, terminal, permissions, messages et questions à choix multiples répondues depuis le bureau. Une différence
+importante avec les autres : OpenCode autorise les commandes shell **par défaut**, donc le bureau ne voit les
+commandes que si votre `opencode.json` demande avant :
+
+```json
+{ "$schema": "https://opencode.ai/config.json", "permissions": [{ "action": "shell", "resource": "*", "effect": "ask" }] }
+```
+
+Voir [OpenCode](#opencode).
 
 ### Ouvrir sur le téléphone (facultatif)
 
@@ -637,6 +660,26 @@ seulement : Codex n'indique pas le coût). La pastille du compte Codex est évid
   les garde chargées jusqu'à une minute après qu'elles sont devenues inactives et que plus personne ne les regarde ; le
   personnage peut donc mettre un peu de temps à partir après la fermeture du terminal.
 - Les conversations du cloud de ChatGPT (sans fichier sur l'ordinateur) n'apparaissent pas. `HABBLAUD_CODEX=0` désactive Codex.
+
+### OpenCode
+
+Les sessions OpenCode (terminal, app ou extension d'IDE) apparaissent comme les autres : personnage, salle du projet,
+activité, terminal et historique, avec le badge **OPENCODE**. Pas de suivi d'utilisation (OpenCode ne l'indique pas).
+
+- **Le plugin est obligatoire** (`npm run opencode:install`) : OpenCode garde la conversation dans une base SQLite
+  (`opencode.db`) que Habblaud ne lit pas depuis le conteneur, donc le plugin de Habblaud — tournant en natif dans
+  OpenCode — écrit un miroir que le bureau lit (conversation au format de Claude Code, marqueurs de présence).
+  Sans lui, aucune session OpenCode n'apparaît.
+- **Valider depuis le bureau :** avec une page de Habblaud ouverte, la demande attend votre réponse dans la carte
+  **Demande la permission** jusqu'à **5 minutes** : **Valider**, **Refuser** (avec un motif optionnel, qui parvient
+  au modèle) ou **Refuser + interrompre** (arrête aussi le tour). OpenCode autorise les commandes shell par défaut,
+  donc ajoutez une règle `ask` dans `opencode.json`, sinon le bureau ne voit jamais les commandes.
+- **Questions à choix multiples** affichent les options dans la carte **Besoin de vous** ; y répondre débloque
+  l'agent, **Refuser** écarte la question. Sans page ouverte, la question sort dans OpenCode lui-même.
+- **Envoyer des messages :** la zone **Envoyer un message** remet le texte dans la session comme si vous l'aviez
+  tapé là-bas, même au milieu du tour.
+- **Quand la session quitte le bureau :** fermez-la dans OpenCode ; le personnage part quand la présence expire.
+  `HABBLAUD_OPENCODE=0` désactive OpenCode.
 
 ### GitHub dans le bureau
 
