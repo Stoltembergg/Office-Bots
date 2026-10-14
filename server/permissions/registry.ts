@@ -15,13 +15,22 @@
 // conta no corpo). Diferenças: o agente casa pelo thread (agent_id ?? session_id) entre os agentes do Codex; sem
 // sugestões nem perguntas; recusar só com motivo (sem interromper); sem a busca da resposta no transcript (no Codex o
 // terminal só pede a aprovação depois que o hook termina, então ela nunca é respondida lá enquanto ele espera).
+//
+// O OpenCode entra igual, pelo plugin ~/.config/opencode/plugins/habblaud.js com `provider: "opencode"`: a ação e os
+// recursos do Permission.Request dele chegam como tool_name/tool_input (permissions/opencode.ts faz o resumo). Sem
+// sugestões (o `always` dele aprova os padrões do próprio pedido e ainda não é montado aqui). As perguntas dele
+// (`Question`) passam por AQUI, não pelo canal de formulário: o plugin envolve o execute da ferramenta e devolve
+// a resposta do escritório como tool_result, porque a API do plugin (2.0.27/2.0.28) não expõe form.reply — ver a
+// Fase 4.7. E sem a busca da resposta no transcript: quem responde é o app, pela API, então o arquivo não tem
+// o que procurar.
 import { randomBytes } from 'node:crypto';
 import { describeTool, maskSecrets, truncate } from '../../shared/activity';
-import { ANSWER_OTHER_MAX, answerSummary, ASK_TOOL, checkAnswers } from '../../shared/answers';
+import { ANSWER_OTHER_MAX, answerSummary, checkAnswers, isAskTool } from '../../shared/answers';
 import type { Activity, AgentInfo, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../shared/types';
 import { errMsg, log } from '../log';
 import { toolView } from '../sources/terminal';
 import { codexToolView } from './codex';
+import { openCodeToolView } from './opencode';
 import { callSignature, scanToolCall } from './transcript';
 import { tr } from '../../shared/i18n';
 
@@ -130,8 +139,6 @@ interface AskFormat {
 interface Pending {
   /** Versão completa (com `input`): GET /api/permissions/:id. */
   info: PermissionRequestInfo;
-  /** Pedido do Codex (sem a busca da resposta no transcript). */
-  codex?: boolean;
   /** Pergunta (AskUserQuestion): o formato de `tool_input.questions`, por posição (undefined = entrada inválida). */
   askFormat?: Array<AskFormat | undefined>;
   agentId: string;
@@ -166,9 +173,14 @@ function isIndex(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0;
 }
 
-/** Pedido que se responde com `answer` (as perguntas do AskUserQuestion; o Codex não as manda pelo hook). */
+/**
+ * Pedido que se responde com `answer` (as perguntas do AskUserQuestion). Só o Claude: o Codex não as manda pelo hook
+ * e a do OpenCode anda pelo CANAL DE FORMULÁRIO (form.created/form.replied), que ainda não tem adaptador — enquanto
+ * não tiver, uma pergunta que chegar por aqui não teria como ser respondida pelo escritório, então não se passa por
+ * uma. É o gate da Fase 4: o transporte da resposta é que decide, não o formato do pedido.
+ */
 function isQuestion(info: { tool: string; provider?: string }): boolean {
-  return info.tool === ASK_TOOL && info.provider !== 'codex';
+  return isAskTool(info.tool, info.provider);
 }
 
 /** O Codex não aceita interromper nem "sempre permitir" (o hook dele só aprova ou recusa com motivo). */
@@ -184,12 +196,13 @@ function wrongKind(info: PermissionRequestInfo, d: PermissionDecision): boolean 
   return d.behavior === 'answer' ? !isQuestion(info) || !info.questions?.length : d.behavior === 'allow' && isQuestion(info);
 }
 
-/** Formato original das perguntas do AskUserQuestion, por posição. */
+/** Formato original das perguntas do AskUserQuestion (e Question), por posição. */
 function askFormat(raw: unknown): Array<AskFormat | undefined> {
   if (!Array.isArray(raw)) return [];
   return raw.map((q) => {
     const r = rec(q);
-    return r ? { multiSelect: r.multiSelect === true, options: Array.isArray(r.options) ? r.options.length : 0 } : undefined;
+    // O Claude Code chama de `multiSelect`; o OpenCode, de `multiple`. Mesmo sentido.
+    return r ? { multiSelect: r.multiSelect === true || r.multiple === true, options: Array.isArray(r.options) ? r.options.length : 0 } : undefined;
   });
 }
 
@@ -213,6 +226,14 @@ function fitsFormat(f: AskFormat | undefined, a: PermissionAnswer): boolean {
 /** Agente que ainda pode receber um pedido (não saiu nem concluiu). */
 function present(a: AgentInfo | undefined): a is AgentInfo {
   return !!a && a.status !== 'offline' && a.status !== 'done';
+}
+
+/**
+ * Agente de OUTRO provedor: Codex e OpenCode têm resolvedor próprio, então o caminho do Claude (resolveAgent) não
+ * pode encostar neles — um payload de um provedor nunca deve publicar o pedido no agente de outro.
+ */
+function otherProvider(a: AgentInfo): boolean {
+  return a.provider === 'codex' || a.provider === 'opencode';
 }
 
 /** "Bash(npm test:*)" a partir de {toolName, ruleContent}. */
@@ -261,10 +282,13 @@ export function applyPermission(a: AgentInfo, p: PermissionRequestInfo | undefin
 /**
  * Valida o JSON do hook (o mesmo que o Claude Code entrega no stdin, com `timeout_ms` do hook). O hook do Codex manda
  * também `provider: "codex"`, a conta (`account`, o basename do CODEX_HOME) e o caminho dela (`codexHome`); nele,
- * `agent_id` é o thread do subagente (e `session_id`, o thread raiz).
+ * `agent_id` é o thread do subagente (e `session_id`, o thread raiz). O plugin do OpenCode manda só
+ * `provider: "opencode"`: `tool_name` é a ação dele (shell, edit, read...) e `tool_input.resources` os recursos
+ * pedidos (caminhos, comandos, URLs) — é o Permission.Request do OpenCode repartido pelo corpo do hook do Claude,
+ * então o formato em si não muda.
  */
 export function parseHookInput(raw: unknown): {
-  provider?: 'codex';
+  provider?: 'codex' | 'opencode';
   account?: string;
   codexHome?: string;
   sessionId: string;
@@ -282,15 +306,20 @@ export function parseHookInput(raw: unknown): {
   if (!r || !sessionId || !tool) throw new InvalidRequest(tr('esperado o JSON do hook PermissionRequest (session_id e tool_name)'));
   const t = typeof r.timeout_ms === 'number' && Number.isFinite(r.timeout_ms) ? r.timeout_ms : DEFAULT_TIMEOUT_MS;
   const codex = r.provider === 'codex';
+  const openCode = r.provider === 'opencode';
   return {
-    ...(codex ? { provider: 'codex' as const, account: shortStr(r.account, 200), codexHome: shortStr(r.codexHome, 4_096) } : {}),
+    ...(codex
+      ? { provider: 'codex' as const, account: shortStr(r.account, 200), codexHome: shortStr(r.codexHome, 4_096) }
+      : openCode
+        ? { provider: 'opencode' as const }
+        : {}),
     sessionId,
     agentId: shortStr(r.agent_id, 200),
     agentType: shortStr(r.agent_type, 120),
     cwd: shortStr(r.cwd, 4_096),
     tool,
     input: rec(r.tool_input) ?? {},
-    suggestions: codex ? undefined : r.permission_suggestions,
+    suggestions: codex || openCode ? undefined : r.permission_suggestions,
     timeoutMs: Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, t)),
   };
 }
@@ -394,7 +423,12 @@ export class PermissionRegistry {
   register(raw: unknown): RegisterResult {
     const req = parseHookInput(raw);
     const codex = req.provider === 'codex';
-    const desc = codex ? codexToolView(req.tool, req.input, req.cwd) : describeTool(req.tool, req.input);
+    const openCode = req.provider === 'opencode';
+    const desc = codex
+      ? codexToolView(req.tool, req.input, req.cwd)
+      : openCode
+        ? openCodeToolView(req.tool, req.input, req.cwd)
+        : describeTool(req.tool, req.input);
     const questions = 'questions' in desc ? desc.questions : undefined;
     const ask = isQuestion(req);
     // Pergunta: todas precisam aparecer no escritório (o hook só responde se cada uma tiver resposta).
@@ -402,7 +436,9 @@ export class PermissionRegistry {
     if (this.opts.viewers() <= 0) return { skip: 'no-viewers' };
     const target = codex
       ? this.resolveCodexAgent(req.sessionId, req.agentId, req.agentType, this.opts.codexAccount?.(req.account, req.codexHome) ?? req.account)
-      : this.resolveAgent(req.sessionId, req.agentId, req.agentType);
+      : openCode
+        ? this.resolveOpenCodeAgent(req.sessionId)
+        : this.resolveAgent(req.sessionId, req.agentId, req.agentType);
     if (!target) return { skip: 'unknown-session' };
     if (this.size >= this.maxPending) return { skip: 'too-many' };
 
@@ -412,6 +448,7 @@ export class PermissionRegistry {
     const view = 'title' in desc ? desc : toolView(req.tool, req.input, req.cwd);
     const info: PermissionRequestInfo = { id, tool: req.tool, title: view.title, text: desc.text, icon: desc.icon, createdAt: now, expiresAt: now + req.timeoutMs };
     if (codex) info.provider = 'codex';
+    if (openCode) info.provider = 'opencode';
     if (view.input) info.input = view.input;
     if (view.inputKind) info.inputKind = view.inputKind;
     if (target.subagent) info.subagent = target.subagent;
@@ -423,12 +460,13 @@ export class PermissionRegistry {
       info,
       agentId: target.id,
       sessionId: req.sessionId,
-      signature: codex ? '' : callSignature(req.tool, req.input),
+      // Codex e OpenCode: sem a busca da resposta no transcript (um só pede aprovação depois que o hook termina,
+      // o outro é respondido pelo app, pela API) — sem chamada de ferramenta a assinar.
+      signature: codex || openCode ? '' : callSignature(req.tool, req.input),
       lastScanAt: 0,
       waiters: new Set(),
       idleSince: now,
     };
-    if (codex) p.codex = true;
     if (req.agentId) p.hookAgentId = req.agentId;
     if (ask) p.askFormat = askFormat(req.input.questions);
     this.pending.set(id, p);
@@ -558,8 +596,9 @@ export class PermissionRegistry {
       else if (!p.waiters.size && now - p.idleSince >= this.orphanMs) this.release(p, 'orphan');
       else if (!present(this.opts.office.get(p.agentId))) this.release(p, 'gone');
       else if (unwatched && p.info.expiresAt - p.info.createdAt > DEFAULT_TIMEOUT_MS) this.release(p, 'unwatched');
-      // No Codex o terminal só pede a aprovação depois que o hook termina: não há resposta dada lá para procurar.
-      else if (p.codex) continue;
+      // Nem o Codex nem o OpenCode respondem no transcript: no Codex o terminal só pede a aprovação depois que o hook
+      // termina, e no OpenCode quem responde é o app (a resposta volta pela API, não pelo arquivo).
+      else if (p.info.provider === 'codex' || p.info.provider === 'opencode') continue;
       else if (now - p.lastScanAt >= SCAN_EVERY_MS && this.answeredInTerminal(p, now)) this.release(p, 'answered');
       else if (this.leftWaiting(p, now)) this.release(p, 'answered');
     }
@@ -572,9 +611,9 @@ export class PermissionRegistry {
     if (agentId) {
       const subId = `${sessionId}:${agentId}`;
       const sub = office.get(subId);
-      if (present(sub) && sub.provider !== 'codex') return { id: subId };
+      if (present(sub) && !otherProvider(sub)) return { id: subId };
     }
-    const main = office.list().find((a) => a.kind === 'main' && a.provider !== 'codex' && a.sessionId === sessionId && a.status !== 'offline');
+    const main = office.list().find((a) => a.kind === 'main' && !otherProvider(a) && a.sessionId === sessionId && a.status !== 'offline');
     if (!main) return undefined;
     return agentId ? { id: main.id, subagent: agentType ?? tr('subagente') } : { id: main.id };
   }
@@ -595,6 +634,18 @@ export class PermissionRegistry {
     const main = find(sessionId);
     if (!main) return undefined;
     return sub ? { id: main.id, subagent: agentType ?? tr('subagente') } : { id: main.id };
+  }
+
+  /**
+   * Agente do OpenCode de um pedido: o da sessão que pediu. A chave do escritório é "<conta>:<sessionId>" e o
+   * subagente herda a conta e o provider do principal (office.addSub), então `provider` já separa dos outros e a
+   * sessão identifica — id de sessão não se repete entre contas, ao contrário dos UUIDs do Codex, que precisam da
+   * conta para desempatar. Sessão fora do escritório: o pedido não é desviado e o próprio app do OpenCode mostra o
+   * prompt dele (skip "unknown-session").
+   */
+  private resolveOpenCodeAgent(sessionId: string): { id: string; subagent?: string } | undefined {
+    const own = this.opts.office.list().find((a) => a.provider === 'opencode' && a.sessionId === sessionId && present(a));
+    return own ? { id: own.id } : undefined;
   }
 
   private queueOf(p: Pending): { queued?: number } {

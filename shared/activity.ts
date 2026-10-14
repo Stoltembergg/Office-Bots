@@ -14,7 +14,7 @@ export interface ActivityDescription {
 const MAX_QUESTIONS = 4;
 const MAX_OPTIONS = 6;
 
-/** Perguntas de um AskUserQuestion para exibir no escritório (mascaradas e cortadas, como o resto). */
+/** Perguntas de um AskUserQuestion (Claude Code) ou Question (OpenCode) para exibir no escritório (mascaradas e cortadas, como o resto). */
 function askQuestions(raw: unknown): AskQuestion[] {
   const clean = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? truncate(maskSecrets(v.slice(0, n * 4)), n) : '');
   const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
@@ -33,7 +33,9 @@ function askQuestions(raw: unknown): AskQuestion[] {
       return [{ index, label, ...(description ? { description } : {}) }];
     });
     const header = clean(q.header, 30);
-    return [{ index, question, ...(header ? { header } : {}), ...(q.multiSelect === true ? { multiSelect: true } : {}), options }];
+    // O Claude Code chama de `multiSelect`; o OpenCode, de `multiple`. Mesmo sentido.
+    const multi = q.multiSelect === true || q.multiple === true;
+    return [{ index, question, ...(header ? { header } : {}), ...(multi ? { multiSelect: true } : {}), options }];
   });
 }
 
@@ -732,7 +734,8 @@ export function describeTool(name: string, rawInput: unknown): ActivityDescripti
       return make('communicate', '👥', tr('Conferindo a equipe'));
     case 'SendMessage':
       return make('communicate', '💬', tr('Mensagem para {0}', [str(input.to) || tr('outro agente')]), str(input.message));
-    case 'AskUserQuestion': {
+    case 'AskUserQuestion':
+    case 'Question': {
       const qs = Array.isArray(input.questions) ? (input.questions as Array<Record<string, unknown>>) : [];
       const questions = askQuestions(qs);
       return { ...make('ask', '❓', tr('Fazendo uma pergunta a você'), qs[0] ? str(qs[0].question) : undefined), ...(questions.length ? { questions } : {}) };

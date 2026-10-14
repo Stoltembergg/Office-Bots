@@ -9,6 +9,18 @@ import { tr } from './i18n';
 export const ANSWER_OTHER_MAX = 2_000;
 /** Ferramenta das perguntas ao usuário. */
 export const ASK_TOOL = 'AskUserQuestion';
+/** Ferramenta das perguntas ao usuário no OpenCode (mesmo formato, `multiple` em vez de `multiSelect`). */
+export const OPENCODE_ASK_TOOL = 'Question';
+
+/**
+ * Ferramenta de pergunta que o escritório responde por posição: AskUserQuestion (Claude Code) e Question
+ * (OpenCode). O Codex não pergunta por aqui.
+ */
+export function isAskTool(tool: string, provider?: string): boolean {
+  if (provider === 'codex') return false;
+  if (provider === 'opencode') return tool === OPENCODE_ASK_TOOL;
+  return tool === ASK_TOOL;
+}
 
 const SUMMARY_MAX = 300;
 
