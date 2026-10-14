@@ -473,6 +473,8 @@ interactive: the drawer's **Open terminal** button, the shortcut next to each ag
 open the same window, with tabs for the other agents in the same project.
 
 - Session opened here: it's the real Claude Code (type, answer; Esc interrupts the agent, as in the terminal).
+- `F6` moves the focus between the terminal and the window bar (inside the terminal, Tab and Esc belong to Claude Code).
+  With the focus outside the terminal, `Esc` closes the window, and the focus goes back to whatever opened it.
 - Session opened in another terminal: **Take over here** (at the top of the window) ends the session there and continues the **same
   conversation** here (`claude --resume <sessão>`, in the same folder and account). The character keeps its name. On Windows, the
   terminal the session came from goes back to normal (Habblaud turns off the mouse/keyboard modes that Claude turned on).

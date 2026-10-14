@@ -10,6 +10,28 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Terminal interativo pelo teclado: **F6** alterna o foco entre o terminal e a barra da janela (lá dentro, Tab e Esc
+  são do Claude Code). Com o foco fora do terminal, **Esc** fecha a janela, e o foco volta para quem a abriu.
+
+### Corrigido
+
+- "Assumir daqui" numa sessão que ainda não tinha recebido nenhuma mensagem encerrava a sessão no outro terminal e o
+  terminal novo saía na hora (`claude --resume` não acha conversa sem mensagens). Sem conversa gravada, o Habblaud abre
+  uma sessão nova na mesma pasta (não há nada a retomar).
+- Janela do terminal interativo depois de reiniciar o servidor: ela ficava aberta como se a sessão continuasse. Agora
+  mostra "reconectando…" enquanto a ligação tenta voltar e "encerrado" quando o servidor não tem mais aquele terminal.
+  Tecla que não chega ao servidor vira um aviso na tela, em vez de sumir sem aviso.
+- Colar um texto de mais de 64 K caracteres no terminal interativo: o servidor recusava e o texto sumia. Agora vai em
+  pedaços, na ordem.
+- Cada terminal interativo tem a sua fila de teclas: trocar de aba no meio de um envio não manda teclas ao terminal
+  errado, e um terminal que não responde não segura o outro.
+- O terminal de leitura (T num subagente, Histórico) abria atrás da janela do terminal interativo. As duas agora se
+  revezam no mesmo lugar, como já acontecia ao abrir o interativo.
+- Título da janela do terminal interativo sem título da conversa: mostrava o caminho inteiro da pasta e espremia o
+  nome do agente. Agora mostra o nome da sala.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo

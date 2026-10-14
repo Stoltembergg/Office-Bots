@@ -9,7 +9,7 @@
 //
 // Segurança: quem controla um terminal destes executa comandos na máquina. O recurso é opt-in (HABBLAUD_PTY=1),
 // as rotas só aceitam conexões do próprio computador (ver http/pty.ts) e ele fica desligado no Docker.
-import { chmodSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -87,6 +87,11 @@ export interface PtyManagerOptions {
   procInfo?: (pid: number) => Promise<ProcInfo | undefined>;
   /** Lê `<conta>/sessions/<pid>.json` (testes). */
   readSession?: (accountDir: string, pid: number) => unknown;
+  /**
+   * A sessão já tem conversa gravada (`<conta>/projects/<pasta>/<sessão>.jsonl`)? Sem ela, `claude --resume` sai com
+   * "No conversation found": assumir uma sessão que ainda não recebeu nenhuma mensagem abre uma nova (testes).
+   */
+  hasConversation?: (accountDir: string, sessionId: string) => boolean;
   /** Tela de cada terminal, reproduzida para quem conecta (padrão: só a saída bruta; ver pty/screen.ts). */
   createScreen?: ScreenFactory;
   isAlive?: (pid: number) => boolean;
@@ -190,6 +195,7 @@ export class PtyManager {
   private readonly forceKill: (pid: number) => void;
   private readonly procInfo: (pid: number) => Promise<ProcInfo | undefined>;
   private readonly readSession: (accountDir: string, pid: number) => unknown;
+  private readonly hasConversation: (accountDir: string, sessionId: string) => boolean;
   private readonly createScreen: ScreenFactory;
   private readonly isAlive: (pid: number) => boolean;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -204,6 +210,7 @@ export class PtyManager {
         : (pid) => void process.kill(pid, 'SIGTERM'));
     this.forceKill = opts.forceKill ?? ((pid) => void process.kill(pid, 'SIGKILL'));
     this.readSession = opts.readSession ?? ((dir, pid) => JSON.parse(readFileSync(join(dir, 'sessions', `${pid}.json`), 'utf8')));
+    this.hasConversation = opts.hasConversation ?? conversationExists;
     this.createScreen = opts.createScreen ?? (() => rawScreen());
     this.isAlive = opts.isAlive ?? pidAlive;
     this.sleep = opts.sleep ?? ((ms) => new Promise((ok) => setTimeout(ok, ms)));
@@ -290,7 +297,10 @@ export class PtyManager {
     }
     let info: PtyInfo;
     try {
-      info = this.spawn(plan, { resume: agent.sessionId, from: agentId });
+      // Sessão que ainda não recebeu nenhuma mensagem: não há o que retomar (nada se perde abrindo uma nova).
+      const resume = this.hasConversation(plan.account.dir, agent.sessionId) ? agent.sessionId : undefined;
+      if (!resume) log.info(tr('Agente {0} ainda não tinha conversa: abrindo uma sessão nova na mesma pasta.', [agentId]));
+      info = this.spawn(plan, { resume, from: agentId });
     } catch (err) {
       // A sessão de lá já foi encerrada: dizer como continuar a conversa.
       throw new PtyError(500, tr('a sessão foi encerrada no outro terminal, mas não abriu aqui ({0}); para continuar: claude --resume {1}', [errMsg(err), agent.sessionId]));
@@ -524,6 +534,24 @@ export class PtyManager {
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : fallback;
   return Math.min(max, Math.max(min, n));
+}
+
+/** Alguma pasta de projeto da conta tem a conversa `<sessão>.jsonl`? (Não depende de como o Claude Code nomeia a pasta.) */
+export function conversationExists(accountDir: string, sessionId: string): boolean {
+  const projects = join(accountDir, 'projects');
+  let dirs: string[];
+  try {
+    dirs = readdirSync(projects);
+  } catch {
+    return false;
+  }
+  return dirs.some((d) => {
+    try {
+      return statSync(join(projects, d, `${sessionId}.jsonl`)).size > 0;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**

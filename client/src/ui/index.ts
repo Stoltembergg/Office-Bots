@@ -162,6 +162,8 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   // Terminal do agente: o interativo se a sessão roda aqui; senão o de leitura, com "Assumir daqui" para
   // continuar nesta janela (sem o de leitura, o interativo mostra o aviso de "em outro terminal").
   pty.onShow = () => terminal.close();
+  // E o contrário: o de leitura aberto por fora do roteador (subagente, Histórico) não fica atrás do interativo.
+  terminal.onShow = () => pty.close();
   const router: TerminalRouter = {
     get openAgentId() {
       return pty.isOpen ? pty.agentId : terminal.agentId;

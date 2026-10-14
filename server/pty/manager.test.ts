@@ -74,6 +74,7 @@ function setup(over: Partial<Omit<PtyManagerOptions, 'agent'>> & { agent?: Parti
     agent: (id) => (id === agent.id ? agent : undefined),
     onChange: () => {},
     readSession: () => session ?? { sessionId: SESSION, startedAt: STARTED },
+    hasConversation: () => true,
     procInfo: async (pid) => (alive.has(pid) ? proc : undefined),
     isAlive: (pid) => alive.has(pid),
     sleep: async () => {},
@@ -171,6 +172,15 @@ describe('PtyManager: assumir', () => {
     expect(() => s.manager.create({ cwd: tmpdir() })).toThrow(/limite/);
     await run;
     expect(s.spawned).toHaveLength(MAX_PTYS);
+  });
+
+  it('sessão sem nenhuma mensagem ainda: encerra lá e abre uma nova (o --resume falharia)', async () => {
+    const s = setup({ hasConversation: () => false });
+    const info = await s.manager.takeover(`acc:${PID}`);
+    expect(s.killPid).toHaveBeenCalledOnce();
+    expect(s.spawned).toEqual([{ args: [], cwd: tmpdir() }]);
+    expect(info.resumed).toBeUndefined();
+    expect(info.fromAgent).toBe(`acc:${PID}`);
   });
 
   it('pedidos simultâneos do mesmo agente abrem um terminal só', async () => {

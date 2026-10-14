@@ -471,6 +471,8 @@ interativa: o botão **Abrir terminal** da gaveta, o atalho ao lado de cada agen
 abrem a mesma janela, com abas para os outros agentes do mesmo projeto.
 
 - Sessão aberta aqui: é o Claude Code de verdade (digitar, responder; Esc interrompe o agente, como no terminal).
+- `F6` alterna o foco entre o terminal e a barra da janela (dentro do terminal, Tab e Esc são do Claude Code). Com o
+  foco fora do terminal, `Esc` fecha a janela, e o foco volta para quem a abriu.
 - Sessão aberta noutro terminal: **Assumir daqui** (no topo da janela) encerra a sessão lá e continua a **mesma
   conversa** aqui (`claude --resume <sessão>`, na mesma pasta e conta). O personagem mantém o nome. No Windows, o
   terminal de onde a sessão saiu volta ao normal (o Habblaud desliga os modos de mouse/teclado que o Claude ligou).

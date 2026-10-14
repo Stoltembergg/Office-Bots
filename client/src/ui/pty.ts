@@ -4,6 +4,8 @@
 // esta janela só mostra o aviso de "em outro terminal" quando o terminal ao vivo está desligado. As abas trocam
 // entre os agentes do mesmo projeto; as duas janelas se revezam no mesmo lugar.
 // As teclas não vazam para os atalhos do escritório (T, P, M, Esc...): Esc, por exemplo, interrompe o Claude.
+// F6 alterna o foco entre o terminal e a barra da janela; com o foco fora do terminal, Esc fecha a janela, e o foco
+// volta para quem a abriu.
 // Fechar a janela não encerra a sessão; "Encerrar" encerra.
 import type { AgentInfo, PtyInfo } from '../../../shared/types';
 import type { UiComponent, UiContext } from './context';
@@ -11,7 +13,7 @@ import { h, iconButton, setHidden, setText } from './dom';
 import { ICONS } from './icons';
 import { maximizeButton, Movable } from './movable';
 import { closePty, createPty, stopAgent, takeoverAgent } from './ptyapi';
-import type { PtyPane } from './ptypane';
+import type { PaneLink, PtyPane } from './ptypane';
 import { TermActions } from './termactions';
 import { TermTabs } from './termtabs';
 import { createAccountChip, updateAccountChip } from './widgets';
@@ -57,6 +59,12 @@ export class PtyPanel implements UiComponent, PtyControl {
   onShow: (() => void) | null = null;
   /** Agente a selecionar quando aparecer no snapshot (sessão recém-aberta ou assumida). */
   private pendingSelect: string | null = null;
+  /** O pty aberto já apareceu no snapshot (se sumir de lá depois, o servidor não o tem mais: ex., reiniciou). */
+  private seen = false;
+  private link: PaneLink = 'live';
+  /** Quem abriu a janela: recebe o foco de volta ao fechar. */
+  private opener: HTMLElement | null = null;
+  private closeBtn: HTMLElement;
 
   constructor(private ctx: UiContext) {
     const icon = h('span', { class: 'ui-term__icon', attrs: { 'aria-hidden': 'true' } });
@@ -69,7 +77,7 @@ export class PtyPanel implements UiComponent, PtyControl {
       if (this.info) await closePty(this.info.id);
     });
     this.tabs = new TermTabs(ctx);
-    const close = iconButton(ICONS.close, tr('Fechar a janela (a sessão continua rodando)'), () => this.close(), 'ui-icon-btn--sm ui-term__close');
+    const close = (this.closeBtn = iconButton(ICONS.close, tr('Fechar a janela (a sessão continua rodando)'), () => this.close(), 'ui-icon-btn--sm ui-term__close'));
     const bar = h(
       'div',
       { class: 'ui-term__bar' },
@@ -93,7 +101,18 @@ export class PtyPanel implements UiComponent, PtyControl {
     );
     this.el = h('section', { class: 'ui-term ui-pty', role: 'dialog', hidden: true, attrs: { 'aria-label': tr('Terminal') } }, bar, this.tabs.el, this.screen, this.away);
     // Teclas digitadas no terminal são do Claude Code, não dos atalhos do escritório.
-    this.el.addEventListener('keydown', (e) => e.stopPropagation());
+    this.el.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      // Fora do terminal (na barra, nas abas): Esc fecha a janela; F6 volta ao terminal.
+      if (e.ctrlKey || e.metaKey || e.altKey || this.pane?.el.contains(e.target as Node)) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.close();
+      } else if (e.key === 'F6' && this.info && !this.screen.hidden) {
+        e.preventDefault();
+        this.pane?.focus();
+      }
+    });
     this.movable = new Movable(this.el, bar, { key: 'habblaud.move.term', enabled: () => !ctx.isNarrow(), onMove: () => this.pane?.refit(true) });
     this.el.addEventListener('keyup', (e) => e.stopPropagation());
   }
@@ -132,10 +151,14 @@ export class PtyPanel implements UiComponent, PtyControl {
 
   close(): void {
     if (!this.isOpen) return;
+    const hadFocus = this.el.contains(document.activeElement) || document.activeElement === document.body;
     this.pane?.detach();
     this.info = null;
     this.external = null;
     this.el.hidden = true;
+    const opener = this.opener;
+    this.opener = null;
+    if (hadFocus && opener?.isConnected) opener.focus({ preventScroll: true });
     this.ctx.invalidate();
   }
 
@@ -159,9 +182,13 @@ export class PtyPanel implements UiComponent, PtyControl {
     const info = this.info;
     if (!info) return;
     // A lista do snapshot traz o estado mais novo (encerrado, código de saída).
-    const fresh = this.ctx.store.snapshot?.ptys?.find((p) => p.id === info.id);
+    const snap = this.ctx.store.snapshot;
+    const fresh = snap?.ptys?.find((p) => p.id === info.id);
     if (fresh) this.info = fresh;
+    if (fresh) this.seen = true;
     const cur = this.info ?? info;
+    // Sumiu do servidor (reiniciou sem retomar, ou a ligação não volta): conta como encerrado.
+    const gone = (this.seen && !!snap && !fresh) || this.link === 'lost';
     const agent: AgentInfo | undefined = this.ctx.agent(cur.agentId);
     if (agent && this.pendingSelect === cur.agentId) {
       this.pendingSelect = null;
@@ -169,9 +196,14 @@ export class PtyPanel implements UiComponent, PtyControl {
     }
     setText(this.nameEl, agent?.name ?? 'Claude Code');
     updateAccountChip(this.accEl, this.ctx.account(cur.account), cur.account);
-    setText(this.roomEl, agent?.title ?? cur.cwd);
-    const ended = cur.exitedAt !== undefined;
-    setText(this.stateEl, ended ? tr('encerrado') : agent ? '' : cur.resumed ? tr('retomando…') : tr('iniciando…'));
+    // Sem título da conversa: o nome da sala (o caminho inteiro espremia o nome do agente).
+    const room = agent ? this.ctx.store.room(agent.roomId) : undefined;
+    setText(this.roomEl, agent?.title ?? room?.name ?? folderName(cur.cwd));
+    const ended = cur.exitedAt !== undefined || gone;
+    setText(
+      this.stateEl,
+      ended ? tr('encerrado') : this.link === 'reconnecting' ? tr('reconectando…') : agent ? '' : cur.resumed ? tr('retomando…') : tr('iniciando…'),
+    );
     this.actions.withTakeover = false;
     this.actions.render(ended ? null : (agent ?? null));
     this.tabs.render(agent ? agent.id : null);
@@ -204,12 +236,20 @@ export class PtyPanel implements UiComponent, PtyControl {
   }
 
   private reveal(): void {
-    if (this.el.hidden) this.movable.restore();
+    if (this.el.hidden) {
+      this.movable.restore();
+      const active = document.activeElement;
+      this.opener = active instanceof HTMLElement && active !== document.body && !this.el.contains(active) ? active : null;
+    }
     this.el.hidden = false;
     this.onShow?.();
   }
 
   private show(p: PtyInfo, fresh = false): void {
+    if (this.info?.id !== p.id) {
+      this.seen = false;
+      this.link = 'live';
+    }
     this.info = p;
     this.external = null;
     if (fresh) this.pendingSelect = p.agentId;
@@ -229,10 +269,22 @@ export class PtyPanel implements UiComponent, PtyControl {
   private ensurePane(): Promise<PtyPane> {
     if (this.pane) return Promise.resolve(this.pane);
     this.loading ??= import('./ptypane').then(({ PtyPane }) => {
-      this.pane = new PtyPane(() => this.ctx.invalidate());
+      this.pane = new PtyPane(
+        () => this.ctx.invalidate(),
+        (link) => {
+          this.link = link;
+          this.render();
+        },
+        () => this.closeBtn.focus(),
+      );
       this.screen.append(this.pane.el);
       return this.pane;
     });
     return this.loading;
   }
+}
+
+/** Último pedaço do caminho (Windows ou POSIX). */
+function folderName(cwd: string): string {
+  return cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
 }

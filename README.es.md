@@ -494,6 +494,8 @@ abren la misma ventana, con pestañas para los demás agentes del mismo proyecto
 
 - Sesión abierta aquí: es el Claude Code de verdad (escribir, responder; Esc interrumpe al agente, como en la
   terminal).
+- `F6` alterna el foco entre la terminal y la barra de la ventana (dentro de la terminal, Tab y Esc son de Claude Code).
+  Con el foco fuera de la terminal, `Esc` cierra la ventana, y el foco vuelve a quien la abrió.
 - Sesión abierta en otra terminal: **Tomar el control aquí** (en la parte superior de la ventana) cierra la sesión allá
   y continúa la **misma conversación** aquí (`claude --resume <sessão>`, en la misma carpeta y cuenta). El personaje
   conserva su nombre. En Windows, la terminal de donde salió la sesión vuelve a la normalidad (Habblaud desactiva los

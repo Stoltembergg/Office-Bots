@@ -45,3 +45,56 @@ export async function stopAgent(agentId: string): Promise<void> {
 export async function closePty(id: string): Promise<void> {
   await postPty(`/api/pty/${encodeURIComponent(id)}/close`, {});
 }
+
+/** Tamanho de cada envio de entrada: o servidor recusa mais de 64 K caracteres por POST (server/pty/manager.ts, input). */
+export const INPUT_CHUNK = 16 * 1024;
+
+/** Corta a entrada em pedaços de até `max` caracteres sem separar um par substituto (emoji). */
+export function splitInput(data: string, max = INPUT_CHUNK): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < data.length; ) {
+    let end = Math.min(i + max, data.length);
+    const c = data.charCodeAt(end - 1);
+    if (end < data.length && c >= 0xd800 && c <= 0xdbff) end--;
+    out.push(data.slice(i, end));
+    i = end;
+  }
+  return out;
+}
+
+type SendInput = (id: string, data: string) => Promise<unknown>;
+
+const postInput: SendInput = (id, data) => postPty(`/api/pty/${encodeURIComponent(id)}/input`, { data });
+
+/**
+ * Filas de entrada, uma por pty: as teclas de um pty saem na ordem, juntas enquanto o envio anterior não volta, e
+ * uma colagem grande vai em pedaços. Um pty lento (ou que sumiu) não segura as teclas de outro.
+ */
+export class InputQueues {
+  private queues = new Map<string, { pending: string; sending: Promise<void> }>();
+
+  constructor(
+    private onError: (id: string, err: Error) => void,
+    private post: SendInput = postInput,
+  ) {}
+
+  send(id: string, data: string): Promise<void> {
+    let q = this.queues.get(id);
+    if (!q) this.queues.set(id, (q = { pending: '', sending: Promise.resolve() }));
+    const queue = q;
+    queue.pending += data;
+    queue.sending = queue.sending.then(async () => {
+      if (!queue.pending) return;
+      const all = queue.pending;
+      queue.pending = '';
+      try {
+        for (const chunk of splitInput(all)) await this.post(id, chunk);
+      } catch (err) {
+        this.onError(id, err instanceof Error ? err : new Error(String(err)));
+      } finally {
+        if (!queue.pending && this.queues.get(id) === queue) this.queues.delete(id);
+      }
+    });
+    return queue.sending;
+  }
+}

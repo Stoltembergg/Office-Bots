@@ -2583,4 +2583,10 @@ export const EN: Readonly<Record<string, string>> = {
   "Acesso pelo celular": "Phone access",
   "Sair deste aparelho": "Sign out of this device",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Ends the login here (a copy of the cookie stops working too). To come back, sign in with your username and password.",
+
+  // server/pty/manager.ts (assumir sessão sem conversa)
+  "Agente {0} ainda não tinha conversa: abrindo uma sessão nova na mesma pasta.": "Agent {0} had no conversation yet: opening a new session in the same folder.",
+
+  // client/src/ui/pty.ts, ptypane.ts (conexão, envio)
+  "não foi possível enviar: {0}": "couldn't send: {0}",
 };

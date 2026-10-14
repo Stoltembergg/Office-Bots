@@ -2599,4 +2599,10 @@ export const FR: Readonly<Record<string, string>> = {
   "Acesso pelo celular": "Accès depuis le téléphone",
   "Sair deste aparelho": "Se déconnecter de cet appareil",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Met fin à la connexion ici (une copie du cookie cesse aussi de fonctionner). Pour revenir, connectez-vous avec votre nom d'utilisateur et votre mot de passe.",
+
+  // server/pty/manager.ts (assumir sessão sem conversa)
+  "Agente {0} ainda não tinha conversa: abrindo uma sessão nova na mesma pasta.": "L'agent {0} n'avait pas encore de conversation : ouverture d'une nouvelle session dans le même dossier.",
+
+  // client/src/ui/pty.ts, ptypane.ts (conexão, envio)
+  "não foi possível enviar: {0}": "envoi impossible : {0}",
 };

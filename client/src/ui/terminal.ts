@@ -595,6 +595,8 @@ export class TerminalPanel implements UiComponent, TerminalControl {
   private last: AgentInfo | null = null;
   private source: EventSource | null = null;
   private opener: HTMLElement | null = null;
+  /** Avisado quando o painel aparece (a janela do terminal interativo fecha: as duas se revezam no mesmo lugar). */
+  onShow: (() => void) | null = null;
   private conn: ConnState = 'connecting';
   /** Já recebeu um `init` desta conexão (ou de uma anterior, no mesmo agente). */
   private loaded = false;
@@ -846,6 +848,7 @@ export class TerminalPanel implements UiComponent, TerminalControl {
     this.lastEntryAt = 0;
     if (this.el.hidden) this.movable.restore();
     this.el.hidden = false;
+    this.onShow?.();
     this.el.classList.toggle('is-session', !!session);
     this.connect();
     this.render();

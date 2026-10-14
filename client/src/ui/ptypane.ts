@@ -4,10 +4,12 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { postPty } from './ptyapi';
+import { InputQueues, postPty } from './ptyapi';
 import { tr } from '../../../shared/i18n';
 
 const RESIZE_DEBOUNCE_MS = 120;
+/** Estado da ligação com o pty, para a barra da janela. */
+export type PaneLink = 'live' | 'reconnecting' | 'lost';
 
 export class PtyPane {
   readonly el: HTMLElement;
@@ -16,13 +18,25 @@ export class PtyPane {
   private es: EventSource | null = null;
   private id: string | null = null;
   private exited = false;
-  /** Entrada ainda não enviada e a fila de envio (mantém a ordem das teclas). */
-  private pending = '';
-  private sending: Promise<void> = Promise.resolve();
+  /** O servidor não conhece mais este pty: não adianta mandar teclas. */
+  private lost = false;
+  private lastNotice = { text: '', at: 0 };
+  /** Entrada ainda não enviada, por pty: trocar de aba no meio de um envio não manda teclas ao pty errado. */
+  private input = new InputQueues((id, err) => {
+    if (this.id === id) this.notice(tr('não foi possível enviar: {0}', [err.message]));
+  });
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private ro: ResizeObserver;
 
-  constructor(private onExit: () => void) {
+  /**
+   * `onExit`: o pty terminou. `onLink`: a ligação caiu ou voltou ('lost' = o servidor não conhece mais o pty, por
+   * exemplo depois de reiniciar). `onLeave`: F6 (sair do terminal sem fechar a janela).
+   */
+  constructor(
+    private onExit: () => void,
+    private onLink: (state: PaneLink) => void = () => undefined,
+    private onLeave: () => void = () => undefined,
+  ) {
     this.el = document.createElement('div');
     this.el.className = 'ui-pty__screen';
     this.term = new Terminal({
@@ -35,6 +49,15 @@ export class PtyPane {
     this.fit = new FitAddon();
     this.term.loadAddon(this.fit);
     this.term.open(this.el);
+    // F6 tira o foco do terminal (todas as outras teclas, Tab e Esc inclusive, são do Claude Code).
+    this.term.attachCustomKeyEventHandler((e) => {
+      if (e.key !== 'F6' || e.ctrlKey || e.metaKey || e.altKey) return true;
+      if (e.type === 'keydown') {
+        e.preventDefault();
+        this.onLeave();
+      }
+      return false;
+    });
     this.term.onData((d) => this.send(d));
     this.term.onResize(({ cols, rows }) => this.scheduleResize(cols, rows));
     this.ro = new ResizeObserver(() => this.refit());
@@ -51,10 +74,12 @@ export class PtyPane {
     this.detach();
     this.id = id;
     this.exited = false;
+    this.lost = false;
     this.term.reset();
     const es = new EventSource(`/api/pty/${encodeURIComponent(id)}/stream`);
     this.es = es;
     es.addEventListener('reset', (e) => {
+      this.onLink('live');
       this.term.reset();
       this.term.write(parse(e));
       this.refit(true);
@@ -71,6 +96,16 @@ export class PtyPane {
       this.term.write(`\r\n\x1b[2m[${code ? tr('Claude Code encerrado (código {0})', [code]) : tr('Claude Code encerrado')}]\x1b[0m\r\n`);
       es.close();
       this.onExit();
+    });
+    // Caiu: o EventSource tenta de novo sozinho; fechado (o servidor respondeu erro, ex.: 404 depois de reiniciar)
+    // não volta mais.
+    es.addEventListener('error', () => {
+      if (this.es !== es || this.exited) return;
+      if (es.readyState === EventSource.CLOSED) {
+        this.es = null;
+        this.lost = true;
+        this.onLink('lost');
+      } else this.onLink('reconnecting');
     });
   }
 
@@ -97,15 +132,16 @@ export class PtyPane {
   }
 
   private send(data: string): void {
-    if (!this.id || this.exited) return;
-    this.pending += data;
-    const id = this.id;
-    this.sending = this.sending.then(async () => {
-      if (!this.pending) return;
-      const chunk = this.pending;
-      this.pending = '';
-      await postPty(`/api/pty/${encodeURIComponent(id)}/input`, { data: chunk }).catch(() => undefined);
-    });
+    if (this.id && !this.exited && !this.lost) this.input.send(this.id, data);
+  }
+
+  /** Linha de aviso na tela (fora do que o Claude Code desenha). */
+  private notice(text: string): void {
+    // Tecla a tecla com o servidor fora do ar: um aviso só.
+    const now = Date.now();
+    if (text === this.lastNotice.text && now - this.lastNotice.at < 3000) return;
+    this.lastNotice = { text, at: now };
+    this.term.write(`\r\n\x1b[33m[${text}]\x1b[0m\r\n`);
   }
 
   private scheduleResize(cols: number, rows: number): void {

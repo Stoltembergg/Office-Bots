@@ -495,6 +495,8 @@ est interactive : le bouton **Ouvrir le terminal** du panneau de détails, le ra
 liste latérale ou la touche `T` ouvrent la même fenêtre, avec des onglets pour les autres agents du même projet.
 
 - Session ouverte ici : c'est le vrai Claude Code (taper, répondre ; Esc interrompt l'agent, comme dans le terminal).
+- `F6` fait passer le focus du terminal à la barre de la fenêtre et inversement (dans le terminal, Tab et Esc sont à
+  Claude Code). Avec le focus hors du terminal, `Esc` ferme la fenêtre, et le focus revient à ce qui l'a ouverte.
 - Session ouverte dans un autre terminal : **Prendre le contrôle ici** (en haut de la fenêtre) ferme la session là-bas
   et poursuit la **même conversation** ici (`claude --resume <sessão>`, dans le même dossier et avec le même compte).
   Le personnage garde son nom. Sous Windows, le terminal d'où la session est partie revient à la normale (Habblaud
