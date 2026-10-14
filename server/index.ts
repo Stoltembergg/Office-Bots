@@ -36,6 +36,8 @@ import type { CodexLive } from './sources/codex/live';
 import { ClaudeWatcher } from './sources/watcher';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
+import { discoverOpenCodeDirs } from './sources/opencode/accounts';
+import { OpenCodeSource } from './sources/opencode/source';
 import { CodexSource } from './sources/codex/source';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
@@ -114,6 +116,11 @@ if (codex) agents.add(codex);
 // Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
 // (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.
 const codexLive: CodexLive | undefined = codex;
+// OpenCode (sources/opencode/): quando há pasta de dados do OpenCode (HABBLAUD_OPENCODE=0 desliga). A pasta
+// precisa de sessions/, escrita pelo plugin do OpenCode (o servidor nunca abre o opencode.db: ver sources/opencode).
+const opencodeDirs = config.opencode ? discoverOpenCodeDirs(process.env, config.home) : [];
+const opencode = opencodeDirs.length ? new OpenCodeSource({ accounts, office, dirs: opencodeDirs, env: process.env, home: config.home }) : undefined;
+if (opencode) agents.add(opencode);
 late.office = office;
 late.agents = agents;
 // Página que pode responder pelo escritório: Host local na porta local; na remota, só com permissions liberado.
@@ -308,6 +315,8 @@ const api = createApiHandler({
     return recentFolders(history ? await history.list().catch(() => []) : [], rooms);
   },
   codexLive,
+  // Eventos do plugin do OpenCode (POST /api/opencode/events): a fonte do OpenCode é a receptora.
+  opencodeLive: opencode ? (account, ev) => opencode.applyLiveEvent(account, ev) : undefined,
   stats,
   updates,
   remote: config.remote ? { is: isRemoteRequest, allows: (f) => config.remote!.allow.has(f) } : undefined,
