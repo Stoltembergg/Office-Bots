@@ -10,6 +10,10 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Suporte ao Kiro CLI:** o Habblaud agora detecta e acompanha sessões ativas do Kiro (`~/.kiro/sessions/cli/` ou `KIRO_HOME`), exibindo o agente no escritório com seu papel, status em tempo real, atividades transmitidas via `.jsonl` e sala do projeto correspondente. Inclui exibição do plano da conta (`HABBLAUD_KIRO_PLAN`, `KIRO_PLAN` ou `~/.kiro/plan`), cartão de uso orientando consulta com `/usage`, seção dedicada na ajuda e desligamento opcional via `HABBLAUD_KIRO=0`.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
