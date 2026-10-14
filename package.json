@@ -40,6 +40,7 @@
     "codex:uninstall": "tsx scripts/codex-install.ts uninstall",
     "codex:status": "tsx scripts/codex-install.ts status",
     "codex:bridge": "tsx scripts/codex-bridge.ts",
+    "opencode:bridge": "tsx scripts/opencode-bridge.ts",
     "release": "tsx scripts/release.ts"
   },
   "devDependencies": {
@@ -51,5 +52,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.3",
     "vitest": "^5.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }
