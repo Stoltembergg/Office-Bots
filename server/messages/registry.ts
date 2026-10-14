@@ -1,8 +1,8 @@
 // Mensagens pelo escritório: a fila do que a página manda aos agentes.
 //
 // A página manda em POST /api/messages; o plugin habblaud-mensagens (mod/habblaud-mensagens, uma rodada a cada 2 s
-// em cada sessão aberta) busca as da própria sessão em POST /api/mod/inbox, entrega cada uma como se o usuário a
-// tivesse digitado e confirma em POST /api/mod/inbox/ack. O registro:
+// em cada sessão aberta) e o plugin do OpenCode buscam as mensagens da própria sessão em POST /api/mod/inbox,
+// entregam cada uma como se o usuário a tivesse digitado e confirmam em POST /api/mod/inbox/ack. O registro:
 // - marca a PRESENÇA de cada sessão que pergunta pela caixa de entrada (AgentInfo.canMessage, via Office);
 // - guarda as mensagens de cada agente na ordem e acompanha a situação delas (queued → sent → delivered/failed);
 // - falha as que ninguém buscou, as que a sessão não confirmou, as do agente que saiu e as de uma conversa que já
@@ -53,6 +53,8 @@ export const ERR_CODEX_SLOW = tr('o Codex demorou demais com as mensagens anteri
 export const ERR_CODEX_NOT_CONFIRMED = tr('o auxiliar do Codex não confirmou a entrega');
 export const ERR_CODEX_HOME = tr('a pasta da conta do Codex deste agente é desconhecida');
 export const ERR_CODEX_REFUSED = tr('o codex queue não aceitou a mensagem');
+export const ERR_OPENCODE_UNAVAILABLE = tr('a sessão não está com o plugin habblaud do OpenCode conectado');
+export const ERR_OPENCODE_NOT_FETCHED = tr('a sessão do OpenCode não buscou a mensagem: o OpenCode está aberto?');
 
 const ERROR_MAX = 300;
 const ID_MAX = 300;
@@ -123,6 +125,8 @@ interface Entry {
   demo?: boolean;
   /** Mensagem a um agente do Codex: sai pelo entregador do Codex ('node' = o servidor rodou; 'bridge' = o auxiliar). */
   codex?: true;
+  /** Mensagem a um agente do OpenCode: sai pela caixa de entrada, como a do Claude Code (o plugin do OpenCode pergunta e confirma). */
+  opencode?: true;
   via?: 'node' | 'bridge';
   /** Falhou por falta de confirmação: uma confirmação atrasada ainda corrige a situação. */
   late?: boolean;
@@ -152,7 +156,11 @@ const isFinal = (e: Entry) => e.msg.status === 'delivered' || e.msg.status === '
 function unavailableReason(a: AgentInfo, reachable: boolean): string | undefined {
   if (a.kind !== 'main') return tr('subagentes não recebem mensagens: mande para o agente principal');
   if (!present(a)) return tr('o agente já saiu do escritório');
-  if (!reachable) return a.provider === 'codex' ? ERR_CODEX_UNAVAILABLE : tr('a sessão não está com o plugin habblaud-mensagens conectado (npm run mod:install)');
+  if (!reachable) {
+    if (a.provider === 'codex') return ERR_CODEX_UNAVAILABLE;
+    if (a.provider === 'opencode') return ERR_OPENCODE_UNAVAILABLE;
+    return tr('a sessão não está com o plugin habblaud-mensagens conectado (npm run mod:install)');
+  }
   return undefined;
 }
 
@@ -273,6 +281,7 @@ export class MessageRegistry {
     const entry: Entry = { msg: { id, agentId, status: 'queued', createdAt: now, updatedAt: now }, text, activity: describeMessage(text), target: agent.sessionId };
     if (demo) entry.demo = true;
     else if (real?.provider === 'codex') entry.codex = true;
+    else if (real?.provider === 'opencode') entry.opencode = true;
     this.messages.set(id, entry);
     const out = { ...entry.msg };
     if (entry.codex) this.pumpCodex();
@@ -294,7 +303,7 @@ export class MessageRegistry {
     const session = shortStr(r?.session, ID_MAX);
     if (!r || !session) throw new InvalidRequest('esperado {session, account?}');
     const account = shortStr(r.account, ID_MAX);
-    // O plugin é do Claude Code: agentes do Codex nunca recebem por aqui.
+    // Caixa de entrada do Claude Code e do OpenCode: agentes do Codex nunca recebem por aqui.
     const agent = this.opts.office
       .list()
       .find((a) => a.kind === 'main' && a.provider !== 'codex' && a.sessionId === session && (!account || a.account === account) && present(a));
@@ -407,7 +416,7 @@ export class MessageRegistry {
       if (!present(a)) this.fail(e, now, ERR_GONE);
       else if (e.msg.status === 'queued' && a.sessionId !== e.target) this.fail(e, now, ERR_SESSION_CHANGED);
       else if (e.msg.status === 'queued' && now - e.msg.createdAt >= this.queuedTimeoutMs) {
-        this.fail(e, now, !e.codex ? ERR_NOT_FETCHED : this.opts.codex?.run ? ERR_CODEX_SLOW : ERR_CODEX_NOT_FETCHED);
+        this.fail(e, now, e.opencode ? ERR_OPENCODE_NOT_FETCHED : !e.codex ? ERR_NOT_FETCHED : this.opts.codex?.run ? ERR_CODEX_SLOW : ERR_CODEX_NOT_FETCHED);
       } else if (e.msg.status === 'sent' && now - (e.sentAt ?? now) >= this.sentTimeoutMs) {
         this.fail(e, now, e.codex ? ERR_CODEX_NOT_CONFIRMED : ERR_NOT_CONFIRMED);
         e.late = true;
