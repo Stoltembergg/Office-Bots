@@ -1,7 +1,7 @@
 // Camadas de estado: splash de carregamento, escritório vazio e aviso de conexão perdida.
 import type { UiComponent, UiContext } from './context';
-import { h, prefersReducedMotion, setHidden, setText } from './dom';
-import { FALLBACK_MARK } from './icons';
+import { h, iconButton, prefersReducedMotion, setHidden, setText } from './dom';
+import { FALLBACK_MARK, ICONS } from './icons';
 import { emptyOfficeHint } from './provider';
 import { wordmark } from './widgets';
 
@@ -71,7 +71,10 @@ export class EmptyState implements UiComponent {
   readonly el: HTMLElement;
   private hint: HTMLElement;
   private demoBtn: HTMLButtonElement;
+  private demoHint: HTMLElement;
   private busy = false;
+  /** Fechado no X: some até o escritório ganhar gente (aí volta a aparecer se esvaziar de novo). */
+  private dismissed = false;
 
   constructor(private ctx: UiContext) {
     const art = h('div', { class: 'ui-empty__art', attrs: { 'aria-hidden': 'true' } });
@@ -91,13 +94,20 @@ export class EmptyState implements UiComponent {
     art.append(img);
     this.hint = h('p', { class: 'ui-empty__text' });
     this.demoBtn = h('button', { class: 'ui-btn ui-btn--primary', type: 'button', text: 'Ver demonstração', on: { click: () => void this.startDemo() } });
+    this.demoHint = h('p', { class: 'ui-empty__demo-hint', text: 'Com a demonstração ligada, desligue em Configurações (⚙ na barra superior) › Modo demonstração.' });
+    const close = iconButton(ICONS.close, 'Fechar este aviso', () => {
+      this.dismissed = true;
+      this.ctx.invalidate();
+    }, 'ui-icon-btn--sm ui-empty__close');
     this.el = h(
       'section',
       { class: 'ui-empty', hidden: true, attrs: { 'aria-labelledby': 'ui-empty-title' } },
+      close,
       art,
       h('h2', { class: 'ui-empty__title', text: 'O escritório está vazio', attrs: { id: 'ui-empty-title' } }),
       this.hint,
       this.demoBtn,
+      this.demoHint,
     );
   }
 
@@ -105,7 +115,8 @@ export class EmptyState implements UiComponent {
     const { store } = this.ctx;
     const snap = store.snapshot;
     const show = officeIsEmpty(this.ctx);
-    setHidden(this.el, !show);
+    if (!show) this.dismissed = false;
+    setHidden(this.el, !show || this.dismissed);
     if (!show || !snap) return;
     setText(this.hint, emptyOfficeHint(snap.accounts));
     this.demoBtn.disabled = this.busy;

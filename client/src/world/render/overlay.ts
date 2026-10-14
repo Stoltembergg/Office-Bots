@@ -105,8 +105,13 @@ type Item = Bubble | Label;
 /** Luminância relativa de uma cor hex (0..1). */
 /** Fundo do chip vazado das contas do Codex (o mesmo dos painéis). */
 const CODEX_CHIP_BG = '#161b26';
-/** Selo "CODEX" das etiquetas: discreto (vidro claro), sem a cor de ninguém. */
-const CODEX_BADGE = 'CODEX';
+/** Selo da ferramenta nas etiquetas: discreto (vidro claro), sem a cor de ninguém. */
+const PROVIDER_BADGE: Record<string, string> = { codex: 'CODEX', opencode: 'OPENCODE', dsh: 'DSH' };
+
+/** Selo da ferramenta para a etiqueta do personagem (Claude Code não leva selo); undefined = sem selo. */
+export function providerBadge(provider?: string): string | undefined {
+  return provider ? PROVIDER_BADGE[provider] : undefined;
+}
 
 /** Octógono "em degrau" (um quadrado de cantos cortados, como um pixel arredondado). */
 function steppedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, s: number): void {
@@ -863,21 +868,22 @@ export class Overlay {
 
   // =================================================================== etiquetas
 
-  /** Larguras das partes da etiqueta. O selo "CODEX" (como o "SUB") só aparece fora do modo compacto. */
-  private labelWidth(l: Label): { nameW: number; chipW: number; badgeW: number; codexW: number } {
+  /** Larguras das partes da etiqueta. O selo da ferramenta (como o "SUB") só aparece fora do modo compacto. */
+  private labelWidth(l: Label): { nameW: number; chipW: number; badgeW: number; provW: number } {
     const ch = l.ch;
     const acc = this.sim.accounts.get(ch.info.account);
     const nameW = this.measure(LABEL_FONT, ch.info.name);
     const chipW = acc ? 13 : 0;
     const badgeW = ch.info.kind === 'sub' && !l.compact ? this.measure(BADGE_FONT, 'SUB') + 7 : 0;
-    const codexW = ch.info.provider === 'codex' && !l.compact ? this.measure(BADGE_FONT, CODEX_BADGE) + 7 : 0;
-    return { nameW, chipW, badgeW, codexW };
+    const badge = !l.compact ? providerBadge(ch.info.provider ?? acc?.provider) : undefined;
+    const provW = badge ? this.measure(BADGE_FONT, badge) + 7 : 0;
+    return { nameW, chipW, badgeW, provW };
   }
 
   /** Posiciona a etiqueta: nos pés (ou acima da cabeça); se colidir, tenta o outro lado. */
   private placeLabel(l: Label): boolean {
-    const { nameW, chipW, badgeW, codexW } = this.labelWidth(l);
-    const w = Math.round(nameW + 10 + chipW + (badgeW ? badgeW + 3 : 0) + (codexW ? codexW + 3 : 0));
+    const { nameW, chipW, badgeW, provW } = this.labelWidth(l);
+    const w = Math.round(nameW + 10 + chipW + (badgeW ? badgeW + 3 : 0) + (provW ? provW + 3 : 0));
     const h = LABEL_H;
     const x = Math.round(this.sx(l.head.x) - w / 2);
     const below = Math.round(this.sy(l.head.feetY) + 3);
@@ -902,7 +908,8 @@ export class Overlay {
     const acc = this.sim.accounts.get(ch.info.account);
     const sub = ch.info.kind === 'sub';
     const codex = ch.info.provider === 'codex' || acc?.provider === 'codex';
-    const { nameW, chipW, badgeW, codexW } = this.labelWidth(l);
+    const badge = providerBadge(ch.info.provider ?? acc?.provider);
+    const { nameW, chipW, badgeW, provW } = this.labelWidth(l);
     const { x, y, w, h } = l;
     const selected = sel.agent === ch.id;
     ctx.fillStyle = selected ? 'rgba(18,96,140,0.95)' : ch.mode === 'wait' ? 'rgba(120,78,0,0.92)' : 'rgba(22,26,38,0.82)';
@@ -957,14 +964,14 @@ export class Overlay {
       ctx.arc(x + w - 3, y + 3, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (codexW) {
+    if (provW && badge) {
       ctx.fillStyle = 'rgba(255,255,255,0.16)';
       ctx.beginPath();
-      ctx.roundRect(cx, y + 3, codexW, h - 6, 3);
+      ctx.roundRect(cx, y + 3, provW, h - 6, 3);
       ctx.fill();
       ctx.font = BADGE_FONT;
       ctx.fillStyle = '#e8ecf5';
-      ctx.fillText(CODEX_BADGE, cx + 3.5, y + h / 2 + 0.5);
+      ctx.fillText(badge, cx + 3.5, y + h / 2 + 0.5);
     }
   }
 }

@@ -158,7 +158,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi)
   const toasts = new Toasts(ctx);
   const updateToaster = new UpdateToaster(ctx, (n) => toasts.push(n));
   settings = new SettingsPopover(ctx, notifier, sound);
-  help = new HelpDialog();
+  help = new HelpDialog(ctx);
   const day = new DayLauncher(ctx, (el) => root.append(el));
   topbar.addPanelButton(day.button);
   // Botão direito numa sala (lista lateral ou escritório): renomear.

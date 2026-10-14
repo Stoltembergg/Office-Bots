@@ -311,15 +311,20 @@
   flex: none;
   width: 16px;
   height: 16px;
-  border-radius: 4px;
-  background: var(--acc);
+  /* Só a logo oficial da ferramenta, sem fundo nem sombra. */
+  background: transparent;
   color: #12151d;
   /* Fonte do sistema: a letra da conta precisa ser lida sem ambiguidade ("C" vs "O"). */
   font: 800 10.5px/1 var(--font-ui);
   letter-spacing: 0;
-  box-shadow:
-    inset 0 -2px 0 rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Logo oficial da ferramenta preenchendo o chip inteiro, na proporção original. */
+.ui-acc-chip__icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 22%;
 }
 
 .ui-acc-chip--md {
@@ -339,31 +344,8 @@
     inset 0 2px 0 rgba(255, 255, 255, 0.35);
 }
 
-/* Conta do Codex: chip "vazado" (fundo escuro, borda e letra na cor da conta) com cantos em degrau, como um pixel
-   arredondado. Lê-se de longe como "outra ferramenta" sem precisar de logotipo. */
-.ui-acc-chip[data-provider='codex'] {
-  --step: 2px;
-  border-radius: 0;
-  background: #161b26;
-  color: var(--acc);
-  box-shadow:
-    inset 0 0 0 var(--step) var(--acc),
-    inset 0 calc(var(--step) * -2) 0 rgba(0, 0, 0, 0.3);
-  clip-path: polygon(
-    var(--step) 0,
-    calc(100% - var(--step)) 0,
-    100% var(--step),
-    100% calc(100% - var(--step)),
-    calc(100% - var(--step)) 100%,
-    var(--step) 100%,
-    0 calc(100% - var(--step)),
-    0 var(--step)
-  );
-}
+/* Contas externas: o chip é só a logo oficial (sem fundo). O selo ao lado do nome (`.ui-prov`) faz o papel. */
 
-.ui-acc-chip--lg[data-provider='codex'] {
-  --step: 3px;
-}
 
 /* Selo de texto "Codex" ao lado do nome da conta (fonte do sistema: na Pixelify o "C" parece "O"). */
 .ui-prov {
@@ -390,6 +372,24 @@
   height: 13px;
   padding: 0 4px;
   font-size: 8.5px;
+}
+
+/* Logo oficial da ferramenta dentro do selo. */
+.ui-prov__icon {
+  width: 11px;
+  height: 11px;
+  margin-right: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.ui-prov--xs .ui-prov__icon {
+  width: 9px;
+  height: 9px;
+}
+
+.ui-prov:has(.ui-prov__text:empty) {
+  padding-right: 4px;
 }
 
 .ui-status-dot {
@@ -590,18 +590,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ------------------------------------------------------------------ barra superior */
+/* ------------------------------------------------------------------ barra superior - com fundo escuro e blur sutil */
 
 .ui-topbar {
   position: fixed;
   inset: 0 0 auto 0;
-  /* Acima dos avisos: a dica de uso por conta abre sobre eles. */
   z-index: 55;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   height: var(--top-h);
-  padding: 0 10px 0 8px;
+  padding: 0 12px 0 8px;
   background: var(--ui-bg);
   -webkit-backdrop-filter: blur(14px) saturate(1.25);
   backdrop-filter: blur(14px) saturate(1.25);
@@ -645,7 +644,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 2px;
 }
 
 /* Logotipo em pixels: 47×8 px da placa da marca, em escala inteira (3×) para ficar nítido. */
@@ -826,7 +825,7 @@
 /* Contadores */
 .ui-counters {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   flex: none;
   padding: 3px;
   border-radius: 10px;
@@ -839,8 +838,9 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  min-width: 48px;
-  padding: 3px 8px;
+  min-width: 46px;
+  max-height: 48px;
+  padding: 4px 8px;
   border-radius: 7px;
 }
 
@@ -859,7 +859,7 @@
 }
 
 .ui-counter__value {
-  font: 750 18px/1 var(--font-ui);
+  font: 750 16px/1.1 var(--font-ui);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   color: #f3f6fc;
@@ -916,116 +916,166 @@
 .ui-usage {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-left: auto;
+  flex: 1 1 auto;
   min-width: 0;
+  margin-left: auto;
 }
+
+.ui-usage.is-empty {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ contas na topbar: preenchem o centro */
 
 .ui-usage-card {
   --acc: #8b98b3;
   position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 9px;
-  width: 310px;
-  flex: 0 1 auto;
-  /* Abaixo disso o cartão perderia o reinício; o e-mail some antes (consulta de contêiner abaixo). */
-  min-width: 188px;
-  padding: 5px 10px 5px 6px;
-  border-radius: 9px;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--acc) 14%, transparent), transparent 46%),
-    var(--ui-bg-soft);
-  border: 1px solid var(--ui-line);
-  outline-offset: 2px;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 140px;
+  max-width: 280px;
+  width: auto;
+  padding: 5px 10px 5px 8px;
+  border-radius: 10px;
+  background: var(--ui-bg-soft);
+  border: 1px solid transparent;
   cursor: default;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+  outline-offset: 2px;
+  font-size: 12px;
 }
 
-.ui-usage-card:hover,
+.ui-usage-card:hover {
+  background: var(--ui-bg-hover);
+}
+
 .ui-usage-card:focus-visible,
 .ui-usage-card:focus-within {
-  border-color: var(--ui-line-strong);
+  outline: none;
+  border-color: rgba(124, 200, 255, 0.55);
+  box-shadow: 0 0 0 2px rgba(124, 200, 255, 0.25);
 }
 
+/* Chip da conta: só a logo, sem moldura. */
 .ui-usage-card > .ui-acc-chip {
-  align-self: stretch;
-  width: 30px;
-  height: auto;
-  min-height: 30px;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  flex-shrink: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-/* Selo de "números antigos" sobre o chip: só no celular, onde o cabeçalho do cartão some. */
+.ui-usage-card > .ui-acc-chip .ui-acc-chip__icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Flag de "números antigos" — discreta */
 .ui-usage-card__flag {
   position: absolute;
-  left: 1px;
-  top: 1px;
-  display: none;
+  left: 4px;
+  top: 4px;
+  display: flex;
   place-items: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 4px;
-  background: #1a1f2b;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(135deg, rgba(255,181,71,0.2), rgba(255,181,71,0.05));
+  box-shadow: 0 0 0 1px rgba(255,181,71,0.2), inset 0 0 0 1px rgba(255,255,255,0.05);
   color: #ffcf8a;
+  font-size: 8px;
+  font-weight: 700;
+  border-radius: 3px;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.ui-usage-card[data-stale="true"] .ui-usage-card__flag {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .ui-usage-card__flag .ui-px-icon {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border: 0;
   background: none;
 }
 
 .ui-usage-card__body {
-  /* Contêiner: o conteúdo se adapta à largura do cartão (3 contas, telas médias). */
   container: usage-card / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .ui-usage-card__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 11.5px;
-  line-height: 14px;
+  font-size: 12px;
+  line-height: 15px;
 }
 
 .ui-usage-card__name {
-  flex: none;
-  font-weight: 650;
-}
-
-.ui-usage-card__email {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1 1 auto;
+  font-weight: 600;
+  color: var(--ui-text);
+  letter-spacing: -0.01em;
+}
+
+.ui-usage-card__email {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--ui-faint);
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 400;
 }
 
 .ui-usage-card__state {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   margin-left: auto;
   flex: none;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: rgba(255, 181, 71, 0.12);
-  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, rgba(255,181,71,0.15), rgba(255,181,71,0.05));
+  border: 1px solid rgba(255,181,71,0.2);
+  font-size: 10px;
   font-weight: 600;
   color: #ffcf8a;
+  letter-spacing: 0.02em;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
-/* Codex com números recentes: a idade fica à mostra, discreta (os números só se renovam com sessão rodando). */
 .ui-usage-card__state.is-fresh {
-  background: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  border-color: rgba(255,255,255,0.1);
   color: var(--ui-muted);
 }
 
@@ -1035,12 +1085,33 @@
 }
 
 .ui-usage-card__state .ui-px-icon {
-  width: 10px;
-  height: 10px;
-  border: 0;
-  background: none;
-  color: inherit;
+  width: 9px;
+  height: 9px;
+  opacity: 0.8;
 }
+
+/* Animação sutil de entrada */
+.ui-usage-card {
+  animation: ui-usage-card-in 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+}
+
+@keyframes ui-usage-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Delay escalonado para múltiplos cards */
+.ui-usage-card:nth-child(1) { animation-delay: 0ms; }
+.ui-usage-card:nth-child(2) { animation-delay: 60ms; }
+.ui-usage-card:nth-child(3) { animation-delay: 120ms; }
+.ui-usage-card:nth-child(4) { animation-delay: 180ms; }
+.ui-usage-card:nth-child(5) { animation-delay: 240ms; }
 
 /* As duas linhas (5h e Semana) dividem as mesmas colunas (subgrid): barras alinhadas e a coluna do
    reinício do tamanho do texto mais longo; quem cede espaço é a barra. */
@@ -1067,7 +1138,7 @@
   display: grid;
   grid-template-columns: subgrid;
   align-items: center;
-  height: 15px;
+  height: 14px;
   font-size: 10.5px;
 }
 
@@ -1098,7 +1169,8 @@
   position: relative;
   display: block;
   width: 100%;
-  height: 8px;
+  height: 6px;
+  border-radius: 3px;
   overflow: hidden;
   background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 4px, transparent 4px 5px);
 }
@@ -1129,6 +1201,15 @@
   color: var(--ui-muted);
 }
 
+/* Modo tokens (sem % de cota): sem barra, só o número absoluto. */
+.ui-meter.is-absolute .ui-meter__bar {
+  visibility: hidden;
+}
+
+.ui-meter.is-absolute .ui-meter__pct {
+  color: var(--ui-text);
+}
+
 .ui-meter__reset {
   min-width: 0;
   overflow: hidden;
@@ -1144,13 +1225,13 @@
 }
 
 /* Cartão estreito (3 contas, telas médias): some o e-mail (fica na dica), depois rótulos e reinício encurtam. */
-@container usage-card (max-width: 236px) {
+@container usage-card (max-width: 172px) {
   .ui-usage-card__email {
     display: none;
   }
 }
 
-@container usage-card (max-width: 206px) {
+@container usage-card (max-width: 152px) {
   .ui-usage-card__meters {
     grid-template-columns: 30px minmax(14px, 1fr) 30px auto;
     column-gap: 5px;
@@ -1168,7 +1249,7 @@
 }
 
 /* Cartão minúsculo (4 ou mais contas em telas médias): sem a coluna do reinício (fica na dica). */
-@container usage-card (max-width: 123px) {
+@container usage-card (max-width: 112px) {
   .ui-usage-card__meters {
     grid-template-columns: 24px minmax(8px, 1fr) 30px;
     column-gap: 4px;
@@ -1189,8 +1270,8 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 30px;
-  font-size: 11.5px;
+  height: 24px;
+  font-size: 11px;
   color: var(--ui-muted);
 }
 
@@ -1214,7 +1295,7 @@
 .ui-usage-card__how {
   flex: none;
   margin-left: auto;
-  height: 22px;
+  height: 20px;
   padding: 0 8px;
   border-radius: 6px;
   background: var(--ui-accent-soft);
@@ -1233,7 +1314,7 @@
   display: none;
 }
 
-@container usage-card (max-width: 206px) {
+@container usage-card (max-width: 152px) {
   .ui-usage-card__msg-long,
   .ui-usage-card__how-long {
     display: none;
@@ -1250,7 +1331,7 @@
 }
 
 /* Cartão minúsculo (3 contas no celular): fica só o botão, que já diz que falta ativar. */
-@container usage-card (max-width: 112px) {
+@container usage-card (max-width: 102px) {
   .ui-usage-card__msg-text {
     display: none;
   }
@@ -1258,6 +1339,15 @@
   .ui-usage-card__how {
     margin-left: 0;
   }
+}
+
+/* Pílulas da topbar: nome + uso/botão à mostra; selo da ferramenta, e-mail e idade ficam na dica do hover.
+   Vem por último de propósito: mesma especificidade das regras acima, então vale a ordem. */
+.ui-usage-card .ui-prov,
+.ui-usage-card__email,
+.ui-usage-card__state,
+.ui-usage-card__flag {
+  display: none;
 }
 
 .ui-usage-tip {
@@ -3045,6 +3135,43 @@
   color: #c9d1e2;
 }
 
+/* Biblioteca de skills: nome + onde tem, descrição e botões de instalar. */
+.ui-skills__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ui-skills__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ui-skills__have {
+  font-size: 11.5px;
+  color: var(--ui-muted);
+}
+
+.ui-skills__desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ui-muted);
+}
+
+.ui-skills__install {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.ui-skills__sub {
+  margin: 12px 0 6px;
+  font-size: 12.5px;
+}
+
 .ui-help__usage .ui-usage-setup {
   font-size: 12.5px;
   max-width: 76ch;
@@ -3076,8 +3203,7 @@
 /* Centralizado na área livre (fora da barra lateral, da gaveta e do feed). */
 .ui-empty {
   position: fixed;
-  z-index: 10;
-  top: calc((var(--free-top) + 100vh - var(--free-bottom)) / 2);
+  z-index: 10;  top: calc((var(--free-top) + 100vh - var(--free-bottom)) / 2);
   left: calc((var(--free-left) + 100vw - var(--free-right)) / 2);
   width: min(528px, calc(100vw - var(--free-left) - var(--free-right) - 16px), calc(100vw - 32px));
   max-height: calc(100vh - var(--free-top) - var(--free-bottom));
@@ -3268,6 +3394,19 @@
   color: #c9d1e2;
   font-size: 13.5px;
   margin-bottom: 8px;
+}
+
+.ui-empty__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.ui-empty__demo-hint {
+  max-width: 40ch;
+  margin-top: 8px;
+  color: var(--ui-faint);
+  font-size: 11.5px;
 }
 
 .ui-splash {
@@ -3899,15 +4038,26 @@
   }
 }
 
-/* 4 ou mais contas (ex.: as do Claude Code, a do Codex e as do demo): os cartões podem estreitar até perder a coluna
-   do reinício (ela continua na dica de cada cartão) e o zoom fica na rolagem do mouse e nos atalhos + / −. */
+/* 4 ou mais contas: o zoom fica na rolagem do mouse e nos atalhos + / −. */
 @media (max-width: 1700px) {
-  .ui-topbar:has(.ui-usage-card:nth-child(4)) .ui-usage-card {
-    min-width: 128px;
-  }
-
   .ui-topbar:has(.ui-usage-card:nth-child(4)) .ui-topbar__right .ui-btn-group:first-child .ui-icon-btn:not(:first-child) {
     display: none;
+  }
+
+  /* Com 4+ contas e nada precisando de você, o contador vira só o número (economiza ~80 px). */
+  .ui-topbar:has(.ui-usage-card:nth-child(4)) .ui-counter--waiting:disabled {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .ui-topbar:has(.ui-usage-card:nth-child(4)) .ui-counter--waiting:disabled .ui-counter__label {
+    display: none;
+  }
+
+  .ui-topbar:has(.ui-usage-card:nth-child(4)) .ui-counter--waiting:disabled .ui-counter__icon {
+    display: block;
   }
 }
 
@@ -4096,32 +4246,11 @@
     order: 10;
     flex: 1 0 100%;
     margin-left: 0;
+    flex-wrap: wrap;
   }
 
   .ui-usage-card {
-    flex: 1 1 0;
-    width: auto;
     min-width: 0;
-    gap: 6px;
-    padding: 4px 6px 4px 4px;
-  }
-
-  .ui-usage-card > .ui-acc-chip {
-    width: 22px;
-    font-size: 14px;
-  }
-
-  /* Sem cabeçalho: a idade dos números vira um selo no chip; o reinício fica na forma curta (↻1h29). */
-  .ui-usage-card__head {
-    display: none;
-  }
-
-  .ui-usage-card__flag {
-    display: grid;
-  }
-
-  .ui-meter__label {
-    font-size: 10px;
   }
 
   .ui-usage-tip {

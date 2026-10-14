@@ -1,10 +1,10 @@
 // Ajuda ("?"): legenda de status e ícones, controles, o que o escritório mostra, contas e uso, e o Codex.
-import type { AgentStatus } from '../../../shared/types';
-import type { HelpSection } from './context';
+import type { AgentStatus, Provider, SkillsInventory } from '../../../shared/types';
+import type { HelpSection, UiContext } from './context';
 import { h, iconButton, prefersReducedMotion } from './dom';
 import { ICONS } from './icons';
 import { SHELL_STAGES, STATUS_LABEL } from './model';
-import { CODEX_LIVE_HINT } from './provider';
+import { CODEX_LIVE_HINT, PROVIDER_NAME } from './provider';
 import { createUsageSetup, richText } from './usage';
 import { createAccountChip, updateAccountChip } from './widgets';
 
@@ -57,7 +57,7 @@ const GITHUB_HELP: [string, string][] = [
 
 /** O Codex no escritório: o que muda em relação ao Claude Code (trechos `assim` viram código). */
 const CODEX_HELP: string[] = [
-  'Cada projeto aberto no Codex (no terminal ou no app) vira uma sala: a mesma do Claude Code naquela pasta, e os dois dividem a sala.',
+  'Cada projeto aberto no Codex (no terminal ou no app) vira uma sala: a mesma das outras ferramentas naquela pasta, e todas dividem a sala.',
   'Os agentes do Codex têm o chip da conta vazado (só a borda na cor da conta) e o selo CODEX na etiqueta e nos detalhes.',
   `${CODEX_LIVE_HINT} Sem os hooks, o escritório lê os arquivos de sessão do Codex: cada passo aparece quando termina.`,
   'Aprovar pelo escritório: no Codex, a aprovação só aparece no terminal depois que você responder aqui ou o prazo acabar (alguns segundos). Não há “não perguntar de novo” nem “interromper”, e recusar pede um motivo.',
@@ -74,7 +74,7 @@ const SHELL_END_HELP: [string, string][] = [
 ];
 
 const INTRO =
-  'Cada projeto aberto no Claude Code ou no Codex vira uma sala (os dois no mesmo projeto dividem a sala), e cada sessão aberta é um personagem com nome próprio. ' +
+  'Cada projeto aberto no Claude Code, no Codex, no OpenCode ou no DeepSeek Harness vira uma sala (ferramentas diferentes no mesmo projeto dividem a sala), e cada sessão aberta é um personagem com nome próprio. ' +
   'Subagentes chegam como colegas novos, trabalham na mesma sala e vão embora quando terminam. ' +
   'Quando a última sessão de uma sala é fechada, quem sai apaga a luz e a sala é desmontada.';
 
@@ -102,8 +102,10 @@ function keys(list: string[]): HTMLElement {
 export class HelpDialog {
   readonly el: HTMLDialogElement;
   private sections = new Map<HelpSection, HTMLElement>();
+  private skillsBody!: HTMLElement;
+  private skillsLoading = false;
 
-  constructor() {
+  constructor(private ctx: UiContext) {
     const close = iconButton(ICONS.close, 'Fechar ajuda', () => this.el.close(), 'ui-icon-btn--sm');
     const statusList = h(
       'ul',
@@ -143,7 +145,7 @@ export class HelpDialog {
             h('li', { text: 'Clique em um personagem ou sala para ver os detalhes; duplo clique aproxima a câmera.' }),
             h('li', { text: 'Passe o mouse sobre um personagem para ver o que ele está fazendo.' }),
             h('li', {
-              text: 'Nos detalhes de um agente, “Abrir terminal” mostra a conversa da sessão como no Claude Code (ou no Codex), ao vivo (precisa do acesso local, bind 127.0.0.1).',
+              text: 'Nos detalhes de um agente, “Abrir terminal” mostra a conversa da sessão como na ferramenta dela (Claude Code, Codex, OpenCode ou DeepSeek Harness), ao vivo (precisa do acesso local, bind 127.0.0.1).',
             }),
             h('li', {
               text: 'Com o plugin habblaud-mensagens (npm run mod:install), dá para mandar mensagens ao agente principal pelos detalhes dele ou pela caixa no rodapé do terminal: o texto entra na sessão como se você o tivesse digitado. Enter manda, Shift+Enter quebra a linha.',
@@ -159,6 +161,8 @@ export class HelpDialog {
         ),
         this.usageSection(),
         this.codexSection(),
+        this.toolsSection(),
+        this.skillsSection(),
       ),
     );
     // Clique no fundo (fora do conteúdo) fecha.
@@ -169,6 +173,7 @@ export class HelpDialog {
 
   open(section?: HelpSection): void {
     if (!this.el.open) this.el.showModal();
+    void this.refreshSkills();
     const target = section ? this.sections.get(section) : undefined;
     if (!target) return;
     // Rola até a seção pedida e a destaca por um instante.
@@ -245,10 +250,13 @@ export class HelpDialog {
       h(
         'ul',
         { class: 'ui-help__list' },
-        h('li', { text: 'O chip colorido com a letra (C, D…) mostra de qual conta do Claude Code é cada agente: cada atalho de terminal usa uma pasta de configuração diferente.' }),
+        h('li', { text: 'O chip com a logo mostra de qual ferramenta é cada agente (Claude Code, Codex, OpenCode ou DeepSeek Harness); a letra e a cor dizem a conta: cada atalho de terminal usa uma pasta de configuração diferente.' }),
         h('li', {}, accountSample('C', '#f08a3c'), ' Conta do Claude Code · ', accountSample('X', '#a77bf3', true), ' Conta do Codex (chip vazado, com o selo CODEX onde há espaço).'),
         h('li', {
           text: 'No topo, cada conta mostra o uso da sessão de 5 horas e da semana. O ↻ indica quando cada limite reinicia (contagem regressiva se faltar menos de um dia). Verde abaixo de 50%, âmbar até 80% e vermelho a partir daí.',
+        }),
+        h('li', {
+          text: 'OpenCode e DeepSeek Harness não têm cota do plano: o cartão mostra os tokens somados das sessões (e o custo, quando conhecido), sem barra nem reinício.',
         }),
         h('li', { text: 'Números antigos ficam acinzentados com a idade ao lado (ex.: “há 3 h”); uma janela que já reiniciou desde a leitura mostra “—” e “renovada”.' }),
       ),
@@ -269,6 +277,144 @@ export class HelpDialog {
     );
     this.sections.set('codex', el);
     return el;
+  }
+
+  /** Biblioteca de skills, MCPs e memória: o servidor descobre sozinho onde cada ferramenta guarda as suas. */
+  private skillsSection(): HTMLElement {
+    this.skillsBody = h('div', { class: 'ui-skills__body' }, h('p', { class: 'ui-muted', text: 'Carregando…' }));
+    return h(
+      'section',
+      { class: 'ui-help__usage' },
+      h('h3', { text: 'Skills, MCPs e memória' }),
+      h('p', {
+        class: 'ui-help__lead',
+        text: 'O Habblaud descobre sozinho onde cada ferramenta guarda skills, MCPs e memória, e mostra tudo junto aqui — para todo mundo do escritório usar. Instalar copia a pasta da skill para a ferramenta (MCPs e memórias não são copiados: segredos nunca saem da ferramenta).',
+      }),
+      this.skillsBody,
+    );
+  }
+
+  private async refreshSkills(): Promise<void> {
+    if (this.skillsLoading || !this.skillsBody) return;
+    this.skillsLoading = true;
+    try {
+      const inv = await this.ctx.store.fetchSkills();
+      this.skillsBody.replaceChildren(...(inv ? this.renderSkills(inv) : [h('p', { class: 'ui-muted', text: 'Não deu para carregar agora.' })]));
+    } catch {
+      this.skillsBody.replaceChildren(h('p', { class: 'ui-muted', text: 'Não deu para carregar agora.' }));
+    } finally {
+      this.skillsLoading = false;
+    }
+  }
+
+  private renderSkills(inv: SkillsInventory): Node[] {
+    const out: Node[] = [];
+    const byName = new Map<string, { description: string; have: Map<Provider, string> }>();
+    for (const s of inv.skills) {
+      let e = byName.get(s.name);
+      if (!e) {
+        e = { description: s.description, have: new Map() };
+        byName.set(s.name, e);
+      }
+      if (!e.description && s.description) e.description = s.description;
+      if (!e.have.has(s.provider)) e.have.set(s.provider, s.accountName || s.accountId);
+    }
+    const providers = [...new Set(inv.skills.map((s) => s.provider))];
+    if (!byName.size) {
+      out.push(h('p', { class: 'ui-muted', text: 'Nenhuma skill nas pastas visíveis para o servidor.' }));
+    } else {
+      const items: HTMLElement[] = [];
+      for (const [name, e] of [...byName].sort(([a], [b]) => a.localeCompare(b))) {
+        const missing = providers.filter((p) => !e.have.has(p));
+        const haveText = [...e.have].map(([p, acc]) => `${PROVIDER_NAME[p]}${acc ? ` (${acc})` : ''}`).join(', ');
+        items.push(
+          h(
+            'li',
+            {},
+            h('div', { class: 'ui-skills__head' }, h('code', { class: 'ui-usage-setup__cmd', text: name }), h('span', { class: 'ui-skills__have', text: `em: ${haveText}` })),
+            e.description ? h('p', { class: 'ui-skills__desc', text: e.description }) : null,
+            missing.length
+              ? h(
+                  'div',
+                  { class: 'ui-skills__install' },
+                  ...missing.map((p) =>
+                    h('button', {
+                      class: 'ui-btn ui-btn--sm',
+                      type: 'button',
+                      text: `Instalar no ${PROVIDER_NAME[p]}`,
+                      title: `Copia a pasta da skill para ${PROVIDER_NAME[p]}`,
+                      on: { click: (ev) => void this.installSkill(name, e.have, p, ev.target as HTMLElement) },
+                    }),
+                  ),
+                )
+              : null,
+          ),
+        );
+      }
+      out.push(h('ul', { class: 'ui-help__list ui-skills__list' }, ...items));
+    }
+    if (inv.mcp.length) {
+      const byProv = new Map<Provider, string[]>();
+      for (const m of inv.mcp) {
+        const list = byProv.get(m.provider) ?? [];
+        if (!list.includes(m.name)) list.push(m.name);
+        byProv.set(m.provider, list);
+      }
+      out.push(h('h4', { class: 'ui-skills__sub', text: 'MCPs (só nomes — segredos nunca saem da ferramenta)' }));
+      out.push(
+        h(
+          'ul',
+          { class: 'ui-help__list' },
+          ...[...byProv].map(([p, names]) => h('li', {}, h('strong', { text: `${PROVIDER_NAME[p]}: ` }), h('span', { text: names.join(', ') || '—' }))),
+        ),
+      );
+    }
+    if (inv.memory.length) {
+      out.push(h('h4', { class: 'ui-skills__sub', text: 'Memória (só presença — o conteúdo nunca é lido)' }));
+      out.push(
+        h(
+          'ul',
+          { class: 'ui-help__list' },
+          ...inv.memory.map((m) => h('li', {}, h('strong', { text: `${PROVIDER_NAME[m.provider]}${m.accountName ? ` (${m.accountName})` : ''}: ` }), h('span', { text: m.detail }))),
+        ),
+      );
+    }
+    return out;
+  }
+
+  private async installSkill(name: string, have: Map<Provider, string>, to: Provider, btn: HTMLElement): Promise<void> {
+    const from = [...have.keys()][0];
+    const fromEntry = { provider: from, accountId: '' };
+    btn.setAttribute('disabled', '');
+    try {
+      const r = await this.ctx.store.installSkill(name, fromEntry, to);
+      this.ctx.announce(r.ok ? `Skill ${name} instalada no ${PROVIDER_NAME[to]}.` : `Não instalou: ${r.error}`);
+      if (r.ok) await this.refreshSkills();
+    } finally {
+      btn.removeAttribute('disabled');
+    }
+  }
+
+  /** Como cada ferramenta entra no escritório (o Habblaud observa: ele não abre terminais nem cria sessões). */
+  private toolsSection(): HTMLElement {
+    return h(
+      'section',
+      { class: 'ui-help__usage' },
+      h('h3', { text: 'Ligando cada ferramenta' }),
+      h(
+        'ul',
+        { class: 'ui-help__list' },
+        h('li', {
+          text: 'O escritório não abre programas: abra a ferramenta na pasta do projeto e a sala aparece sozinha. Várias empresas ao mesmo tempo: cada pasta vira uma sala — use a visão geral (O), a busca (/) e os filtros de conta na lateral para navegar e focar.',
+        }),
+        h('li', {}, ...richText('Claude Code: `npm run mod:install` liga o uso ao vivo, as mensagens pelo escritório e as permissões com Aprovar/Recusar por aqui.')),
+        h('li', {}, ...richText('Codex: `npm run codex:install` liga os hooks (ao vivo e aprovações); com o Habblaud no Docker, deixe `npm run codex:bridge` rodando para mensagens e aprovações.')),
+        h('li', {}, ...richText('OpenCode: deixe `npm run opencode:bridge` rodando neste computador para mensagens e aprovações; o uso em tokens aparece sozinho.')),
+        h('li', {
+          text: 'DeepSeek Harness: só leitura (agentes, terminal e uso em tokens aparecem sozinhos); permissões e mensagens se resolvem no próprio aplicativo.',
+        }),
+      ),
+    );
   }
 
   get isOpen(): boolean {

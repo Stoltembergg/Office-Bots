@@ -1,7 +1,18 @@
 // Regras puras da camada de texto do mundo (balões e enquadramento).
 import { describe, expect, it } from 'vitest';
 import { overviewFrame } from '../camera';
-import { rationBubbles, waitBubbleText } from './overlay';
+import { providerBadge, rationBubbles, waitBubbleText } from './overlay';
+
+describe('selo da ferramenta na etiqueta', () => {
+  it('Codex, OpenCode e DSH ganham selo; Claude Code não', () => {
+    expect(providerBadge('codex')).toBe('CODEX');
+    expect(providerBadge('opencode')).toBe('OPENCODE');
+    expect(providerBadge('dsh')).toBe('DSH');
+    expect(providerBadge('claude')).toBeUndefined();
+    expect(providerBadge(undefined)).toBeUndefined();
+    expect(providerBadge('outra')).toBeUndefined();
+  });
+});
 
 describe('balões', () => {
   it('espera: só o motivo, sem o prefixo redundante', () => {
