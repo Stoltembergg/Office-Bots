@@ -26,25 +26,32 @@ export function looksLikeCodexId(id: string): boolean {
   return /(?:^|[:/\\])\.?codex(?:[-_.~]|$)/i.test(id);
 }
 
+function looksLikeCursorId(id: string): boolean {
+  return /(?:^|[:/\\])\.?cursor(?:[-_.~]|$)/i.test(id);
+}
+
 /** Ferramenta da conta: a do snapshot; sem ela, a dica de quem chamou ou o jeito do id. */
 export function accountProvider(account: Pick<AccountInfo, 'provider'> | undefined, fallbackId = '', hint?: Provider): Provider {
   if (account) return providerOf(account);
-  return hint ?? (looksLikeCodexId(fallbackId) ? 'codex' : 'claude');
+  if (hint) return hint;
+  if (looksLikeCodexId(fallbackId)) return 'codex';
+  return looksLikeCursorId(fallbackId) ? 'cursor' : 'claude';
 }
 
 /**
  * Letra do chip de uma conta que não está no snapshot: a primeira letra depois do prefixo da pasta
- * (".claude-conta2" -> "C", ".codex-trabalho" -> "T"). A pasta padrão do Codex (".codex") vira "X"; a do Claude Code,
- * "?" (como antes). Nunca devolve "." nem vazio.
+ * (".claude-conta2" -> "C", ".codex-trabalho" -> "T"). As pastas padrão do Codex e Cursor viram "X" e "R";
+ * a do Claude Code, "?" (como antes). Nunca devolve "." nem vazio.
  */
 export function fallbackShort(id: string, provider: Provider = accountProvider(undefined, id)): string {
   const rest = id
     .replace(/^.*:/, '')
     .replace(/~\d+$/, '')
-    .replace(/^\.?(?:claude|codex)(?=[-_.]|$)[-_.]?/i, '');
+    .replace(/^\.?(?:claude|codex|cursor)(?=[-_.]|$)[-_.]?/i, '');
   const letter = /[\p{L}\p{N}]/u.exec(rest)?.[0];
   if (letter) return letter.toUpperCase();
-  return provider === 'codex' ? 'X' : '?';
+  if (provider === 'codex') return 'X';
+  return provider === 'cursor' ? 'R' : '?';
 }
 
 /** O selo "Codex" ao lado do nome da conta (não repete quando o nome já diz "Codex"). */

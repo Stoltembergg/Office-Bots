@@ -9,11 +9,18 @@ import {
   hasCodexPermission,
   isCodex,
   looksLikeCodexId,
+  PROVIDER_NAME,
   providerOf,
   showsProviderTag,
 } from './provider';
 
-describe('ferramenta (Claude Code ou Codex)', () => {
+describe('ferramenta (Claude Code, Codex ou Cursor)', () => {
+  it('identifica o Cursor sem tratá-lo como Codex', () => {
+    expect(PROVIDER_NAME.cursor).toBe('Cursor');
+    expect(providerOf({ provider: 'cursor' })).toBe('cursor');
+    expect(isCodex({ provider: 'cursor' })).toBe(false);
+  });
+
   it('provider ausente = Claude Code', () => {
     expect(providerOf(undefined)).toBe('claude');
     expect(providerOf({})).toBe('claude');
@@ -41,6 +48,7 @@ describe('ferramenta (Claude Code ou Codex)', () => {
     expect(fallbackShort('.codex-trabalho')).toBe('T');
     expect(fallbackShort('.codex~2')).toBe('X');
     expect(fallbackShort('demo:.codex')).toBe('X');
+    expect(fallbackShort('.cursor')).toBe('R');
     expect(fallbackShort('minha-conta')).toBe('M');
     expect(fallbackShort('')).toBe('?');
     expect(fallbackShort('...', 'codex')).toBe('X');
