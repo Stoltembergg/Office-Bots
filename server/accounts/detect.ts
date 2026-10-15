@@ -218,6 +218,10 @@ const ALIAS_TOOLS: Record<Provider, { invokes: RegExp; dir: RegExp }> = {
     invokes: /(?:^|[\s;&|(])(?:[\w.~/-]*\/)?codex(?=$|[\s;&|)])/,
     dir: /\bCODEX_HOME=(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/,
   },
+  cursor: {
+    invokes: /(?:^|[\s;&|(])(?:[\w.~/-]*\/)?cursor-agent(?=$|[\s;&|)])/,
+    dir: /\bHABBLAUD_CURSOR_DIR=(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/,
+  },
 };
 
 /**
