@@ -2,6 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { tempDir } from '../test/fixtures';
+import type { ProcInfo } from '../pty/procinfo';
 import { compareVersions, parseRegistryEntry, registryStatus, RegistryReader } from './registry';
 
 const entry = (pid: number, extra: Record<string, unknown> = {}) =>
@@ -55,6 +56,25 @@ describe('registro de sessões', () => {
     expect(reader.poll().entries.map((e) => e.pid)).toEqual([10]);
     const docker = new RegistryReader(tmp.dir, { checkPid: false });
     expect(docker.poll().entries.map((e) => e.pid).sort()).toEqual([10, 11]);
+  });
+
+  it('ignora registro que sobrou com o PID reaproveitado por outro processo', async () => {
+    writeFileSync(join(sessions, '30.json'), entry(30, { procStart: '111' }));
+    writeFileSync(join(sessions, '31.json'), entry(31, { procStart: '222' }));
+    const alive = new Set([30, 31]);
+    const procs: Record<number, ProcInfo> = {
+      30: { startMs: 0, name: 'claude', fileTime: '111' },
+      31: { startMs: 0, name: 'svchost', fileTime: '999' },
+    };
+    const reader = new RegistryReader(tmp.dir, { checkPid: true, isAlive: (pid) => alive.has(pid), readProc: async (pid) => procs[pid] });
+    expect(reader.poll().entries.map((e) => e.pid).sort()).toEqual([30, 31]); // até a conferência responder
+    await Promise.resolve();
+    expect(reader.poll().entries.map((e) => e.pid)).toEqual([30]);
+    // Morreu e o PID voltou com outro processo: o registro não volta.
+    alive.delete(30);
+    expect(reader.poll().entries).toEqual([]);
+    alive.add(30);
+    expect(reader.poll().entries).toEqual([]);
   });
 
   it('JSON inválido (gravação em andamento) mantém a última versão boa', () => {

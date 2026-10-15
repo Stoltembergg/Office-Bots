@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { basename } from 'node:path';
 
 export interface ProcInfo {
-  /** Início do processo, em ms desde 1970. */
+  /** Início do processo, em ms desde 1970 (NaN quando o sistema nega, como nos processos do sistema). */
   startMs: number;
   /** Nome do executável (sem pasta nem extensão). */
   name: string;
@@ -56,7 +56,8 @@ export async function readProcInfo(pid: number, platform: NodeJS.Platform = proc
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      `$p = Get-Process -Id ${pid} -ErrorAction Stop; $p.StartTime.ToFileTimeUtc(); $p.ProcessName`,
+      // Processos do sistema (svchost etc.) negam o StartTime: '-' no lugar, o nome ainda diz que não é o Claude.
+      `$p = Get-Process -Id ${pid} -ErrorAction Stop; try { $p.StartTime.ToFileTimeUtc() } catch { '-' }; $p.ProcessName`,
     ]);
     return out === undefined ? undefined : parseWindows(out);
   }
@@ -65,9 +66,10 @@ export async function readProcInfo(pid: number, platform: NodeJS.Platform = proc
   return out === undefined ? undefined : parsePs(out);
 }
 
-/** Saída do PowerShell: FILETIME na primeira linha, nome na segunda. */
+/** Saída do PowerShell: FILETIME (ou '-', negado) na primeira linha, nome na segunda. */
 export function parseWindows(out: string): ProcInfo | undefined {
   const [ft, name] = out.trim().split(/\r?\n/).map((s) => s.trim());
+  if (ft === '-' && name) return { startMs: Number.NaN, name };
   if (!ft || !/^\d+$/.test(ft) || !name) return undefined;
   return { startMs: Number(BigInt(ft) / 10_000n) - FILETIME_EPOCH_MS, name, fileTime: ft };
 }

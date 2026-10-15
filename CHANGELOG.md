@@ -42,6 +42,12 @@ sair e o que nunca sai está em [`docs/world/privacidade.md`](docs/world/privaci
 - O build grava `dist/build.json` com o commit e se a cópia estava modificada (vai junto na conexão com o World, nas
   próximas fases). O `docker-compose.yml` repassa `HABBLAUD_WORLD`, `HABBLAUD_WORLD_URL` e `HABBLAUD_WORLD_DEV`.
 
+### Corrigido
+
+- Uma sessão que morreu sem limpar o registro (crash, terminal fechado, reinício do computador) não deixa mais uma
+  sala com o agente parado quando o PID dela é reaproveitado por outro processo (no Windows, muitas vezes um
+  `svchost`): o Habblaud confere o início real do processo contra o do registro.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
