@@ -60,6 +60,13 @@ describe('trava do terminal (config)', () => {
     expect(terminalOffReason({ HABBLAUD_TERMINAL: 'sim', HABBLAUD_BIND: '0.0.0.0' }, '0.0.0.0', true)).toBeDefined();
   });
 
+  it('com HABBLAUD_PASSWORD: liga mesmo com porta exposta', () => {
+    expect(terminalOffReason({ HABBLAUD_PASSWORD: 'segredo' }, '0.0.0.0', false)).toBeUndefined();
+    expect(terminalOffReason({ HABBLAUD_PASSWORD: 'segredo', HABBLAUD_BIND: '0.0.0.0' }, '0.0.0.0', true)).toBeUndefined();
+    expect(terminalOffReason({ HABBLAUD_PASSWORD: '  ' }, '0.0.0.0', false)).toBeDefined();
+    expect(terminalOffReason({ HABBLAUD_PASSWORD: 'segredo', HABBLAUD_TERMINAL: '0' }, '0.0.0.0', false)).toMatch(/HABBLAUD_TERMINAL/);
+  });
+
   it('loadConfig preenche ServerConfig.terminal', () => {
     const tmp = tempDir();
     try {

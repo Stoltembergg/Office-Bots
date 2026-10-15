@@ -50,10 +50,18 @@ export interface ServerConfig {
   updateCheck: boolean;
   /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
   codex: boolean;
+  /** Senha do modo remoto (valor bruto só em memória; nunca logar). */
+  authPassword?: string;
 }
 
 export function isTruthy(v: string | undefined): boolean {
   return !!v && /^(1|true|yes|sim|on)$/i.test(v.trim());
+}
+
+/** Senha do modo remoto (trim); undefined = desligado. */
+export function authPassword(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const p = env.HABBLAUD_PASSWORD?.trim();
+  return p || undefined;
 }
 
 /** Sobe a partir de `from` até achar o package.json do projeto. */
@@ -123,6 +131,7 @@ export function isLoopbackBind(value: string | undefined): boolean {
 export function terminalOffReason(env: NodeJS.ProcessEnv, host: string, inDocker: boolean): string | undefined {
   const flag = env.HABBLAUD_TERMINAL?.trim();
   if (flag && !isTruthy(flag)) return `HABBLAUD_TERMINAL=${flag}`;
+  if (authPassword(env)) return undefined;
   if (inDocker) {
     const bind = env.HABBLAUD_BIND?.trim();
     if (!bind) return 'HABBLAUD_BIND não chegou ao container, então a porta pode estar exposta na rede';
@@ -169,5 +178,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    authPassword: authPassword(env),
   };
 }
