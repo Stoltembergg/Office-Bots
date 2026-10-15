@@ -357,7 +357,7 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 ## Cursor (modo observação)
 
 Fonte de agentes (`sources/cursor/`): `CursorSource` com `provider: 'cursor'`. Ids: `<conta>:<chatId>` (`sessionId` =
-chatId). **Fase 1 — só presença:** lê `~/.cursor/chats/<id>/meta.json` e o *mtime* de `store.db` (não abre o SQLite);
+chatId). **Fase 1 — só presença:** lê `~/.cursor/chats/<projectHash>/<chatId>/meta.json` e o *mtime* de `store.db` (não abre o SQLite);
 `transcriptPathOf()` devolve `undefined` (sem terminal nem histórico). Subagentes (`isSubagent`) e chats sem `cwd` ficam
 de fora. Uma conta `.cursor` no MVP (várias raízes em `HABBLAUD_CURSOR_DIRS` compartilham a mesma conta).
 

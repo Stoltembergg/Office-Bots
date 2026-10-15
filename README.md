@@ -496,7 +496,7 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
 
 ### Cursor (modo observação)
 
-Se você usa o **Cursor** (IDE com agente), os chats ativos entram no escritório como personagens com o selo **CURSOR** e o chip **R** da conta `.cursor`. O Habblaud acha sozinho `~/.cursor` (precisa existir a pasta `chats/`) e lê só `meta.json` de cada conversa e o *mtime* de `store.db` — **sem abrir o SQLite** — para saber quem está aberto, ocioso ou digitando (atividade recente). Título e sala vêm do `meta.json` (`cwd`); subagentes e chats sem pasta de projeto ficam de fora.
+Se você usa o **Cursor** (IDE com agente), os chats ativos entram no escritório como personagens da conta `.cursor` (chip **R** e nome **Cursor** nos detalhes do agente). O Habblaud acha sozinho `~/.cursor` (precisa existir a pasta `chats/`) e lê só `meta.json` de cada conversa e o *mtime* de `store.db` — **sem abrir o SQLite** — para saber quem está aberto, ocioso ou digitando (atividade recente). Título e sala vêm do `meta.json` (`cwd`); subagentes e chats sem pasta de projeto ficam de fora.
 
 - **Só observação (fase 1):** não há terminal, histórico, hooks nem responder/mandar mensagem pelo escritório para o Cursor; atividades detalhadas e “precisa de você” vêm em fases futuras (hooks/terminal).
 - **Presença:** chat com atividade nos últimos 30 min aparece; parado há mais tempo some do escritório. “Trabalhando” vs ocioso usa uma janela curta (5 min) em cima disso.
@@ -627,7 +627,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_CURSOR` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_CURSOR_DIRS`, `HABBLAUD_USAGE_DIR` e
-`HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. A fonte do Cursor no container depende de montar `~/.cursor/chats` (somente leitura) no `docker:up` — enquanto isso não existir, use o modo Node no host para ver chats do Cursor. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
+`HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Para ver chats do Cursor no Docker, monte `~/.cursor/chats` (somente leitura) no host — o `docker:up` padrão ainda não faz isso; use o modo Node no host enquanto não houver montagem. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
 ## Como funciona
