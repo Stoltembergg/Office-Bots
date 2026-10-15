@@ -115,12 +115,25 @@ sair e o que nunca sai está em [`docs/world/privacidade.md`](docs/world/privaci
   Privacidade) ou **Já tenho conta**; código de 6 dígitos com reenvio; **Esqueci a senha**. Na lista de espera, só
   o aviso, sem posição nem previsão, e já dá para **criar o personagem**: nome de jogador, dica visual, o mesmo
   editor de aparência da gaveta do agente, 2 ou 3 traços de personalidade (os que não combinam ficam desabilitados)
-  e uma frase de apresentação da lista. Com o acesso liberado, "Seu prédio entra no mundo na próxima versão".
-  Também: visibilidade do prédio (ao vivo ou discreto, fechado a visitas, esconder o país, tokens, placar,
+  e uma frase de apresentação da lista. Com o acesso liberado, o cartão **Seu prédio** (abaixo). Também: visibilidade do prédio (ao vivo ou discreto, fechado a visitas, esconder o país, tokens, placar,
   compactações), dispositivos (revogar) e sair. Se a moderação trocar o nome de jogador, a seção pede um nome novo,
   que entra sem esperar os 30 dias. Tudo só pelo próprio computador; nada pela porta remota do celular.
   O cartão **Conheça o Habblaud World** aparece uma vez, para quem ainda não tem conta. No modo demonstração,
   `?mock=1&world=logged_out` (ou `waiting`, `approved`) simula o servidor; o código é 123456.
+- **Seu prédio no mundo (interface):** com o acesso liberado, o cartão **Seu prédio** em Configurações › Habblaud
+  World mostra se o prédio está conectado, reconectando, pausado ou fora do mundo (ou se ainda falta o personagem),
+  quantos andares e agentes ele tem, quando saiu a última remessa e, se o mundo recusar uma remessa, o motivo. Quando
+  o servidor do mundo para o prédio, o cartão diz por quê: **Atualize o Habblaud** (versão antiga), **Conectado em
+  outro computador** (com **Trazer para este computador**), conta suspensa ou banida. **Pausar** interrompe o envio
+  na hora e apaga o prédio, guardando o lote; **Retomar** acende de novo. **Sair do mundo** (em dois cliques, com a
+  diferença para a pausa ao lado) retira o prédio na hora e libera o lote; a conta e o personagem continuam, e
+  **Voltar ao mundo** cria um prédio novo, em outro lote. **Ver o que foi enviado** abre o JSON exato da última
+  remessa, com o horário, o tamanho em bytes, a resposta do mundo (com os bytes que ele contou) e um botão para
+  copiar: é tudo o que saiu do computador. O tema escolhido em **Aparência › Tema do escritório** também vale para o
+  prédio (e o tema guardado para o prédio vale para o escritório), e a barra do topo ganha o selo "🏙️ no mundo" /
+  "⏸ pausado" / "⚠️ parado", que abre a seção (some na barra apertada e no celular). No modo
+  demonstração, `?mock=1&world=approved` mostra o prédio com a remessa de exemplo de `docs/world/privacidade.md`;
+  `npm run shots:world` refaz as capturas `docs/screenshots/world-predio.png` e `world-enviado.png`.
 - **Conta e personagem pelo servidor local:** rotas `/api/world/*` para criar a conta (o desafio anti-robô é resolvido
   pelo próprio Habblaud), confirmar o e-mail, entrar, sair, reenviar o código, trocar a senha, salvar o personagem
   (nome, aparência, 2 ou 3 traços e a frase de apresentação) e a visibilidade, e ver ou desconectar dispositivos. Só
@@ -132,8 +145,27 @@ sair e o que nunca sai está em [`docs/world/privacidade.md`](docs/world/privaci
   regras do nome de jogador, os 14 traços, as 20 frases de apresentação e os 10 cumprimentos ficam em `shared/world/`.
 - **Aviso sobre dados verdadeiros** para pessoas e agentes de IA (`CLAUDE.md`, `AGENTS.md`, `shared/world/README.md` e
   nos arquivos do World), e a regra de revisão de PRs que mexem nele no `CONTRIBUTING.md`.
-- O build grava `dist/build.json` com o commit e se a cópia estava modificada (vai junto na conexão com o World, nas
-  próximas fases). O `docker-compose.yml` repassa `HABBLAUD_WORLD`, `HABBLAUD_WORLD_URL` e `HABBLAUD_WORLD_DEV`.
+- O build grava `dist/build.json` com o commit e se a cópia estava modificada (vai na primeira mensagem da conexão do
+  prédio). O `docker-compose.yml` repassa `HABBLAUD_WORLD`, `HABBLAUD_WORLD_URL` e `HABBLAUD_WORLD_DEV`.
+- **O prédio sobe ao mundo:** com a conta liberada e o personagem criado, o Habblaud abre uma conexão (WebSocket) com o
+  servidor do mundo e manda o prédio ao vivo: um andar por sala com alguém presente e, por agente, só um id aleatório,
+  principal ou subagente, a ferramenta, o status, um nome sorteado e a aparência; mais o tema, as tarefas concluídas no
+  dia em faixa, os tokens do prédio arredondados (desligável) e, se você ligar, as compactações. Os ids dos andares e
+  dos agentes são aleatórios e trocam a cada 24 h (±6 h); caminhos, nomes de sala, títulos, atividades, modelo, branch,
+  conta e nomes editados nunca saem. Manda ao mudar (no máximo uma vez a cada 5 s), reconecta sozinho e para quando o
+  servidor pede (conta suspensa, versão antiga, conectada em outro lugar). Agentes do modo demonstração nunca sobem.
+  As tarefas e as compactações são contadas também com o prédio pausado ou sem conexão, e vão na remessa seguinte.
+- **Pausar e retomar o prédio** (`POST /api/world/pause` e `/resume`): pausar fecha a conexão antes de responder e
+  apaga o prédio na hora para todos; uma retomada que o servidor do mundo não confirmou tenta de novo com a espera da
+  reconexão (2 s a 60 s). **Sair do mundo** (`POST /api/world/leave`): fecha a conexão e só responde depois que o
+  servidor do mundo retira o prédio (`DELETE /v1/me/building`). **Ver o que foi enviado**
+  (`GET /api/world/last-uplink`): o pacote exato da última remessa, a hora, o tamanho e a resposta do servidor,
+  guardado em `~/.habblaud/world-last-uplink.json` (permissão 600). O tema de Aparência vai para o prédio
+  (`PUT /api/world/theme`; o automático vira o tema do dia). O status do World e o snapshot (`meta.world.building`)
+  ganham o resumo do prédio: conectado, pausado, fora do mundo, parado, andares, agentes e a última remessa.
+- **Transparência:** `docs/world/privacidade.md` lista cada campo do pacote e da conexão, com um teste que confere a
+  página contra o `schema.json`; os testes da projeção conferem cada chave e que nenhum texto do escritório aparece no
+  pacote. Os 60 nomes fictícios de andar ("Projeto Ipê", "Projeto Jade"...) ficam em `shared/world/`, traduzidos.
 
 ## [0.11.0] - 2026-10-13
 

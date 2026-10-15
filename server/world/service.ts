@@ -21,12 +21,29 @@
 //   muda (meta.world) e a interface mostra "Liberado" sem ninguém clicar. Para ao sair, ao ser aprovado ou sem a trava.
 // - Qualquer 401 do servidor do mundo numa rota com token = token revogado ou vencido: a sessão daqui é apagada.
 // - Entrar de novo (outra conta ou a mesma) troca a sessão e revoga o dispositivo anterior no servidor.
-import { getLocale } from '../../shared/i18n';
-import { worldLastError, type WorldKnownErrorCode, type WorldMeta, type WorldState, type WorldStatus } from '../../shared/world/api';
+// - O prédio (uplink.ts) acompanha a conta: cada mudança de estado chama `uplink.sync()`; pausar fecha o uplink antes de
+//   responder e avisa o servidor do mundo (POST /v1/me/building/pause); o `goodbye` do uplink atualiza a conta daqui.
+// - "Sair do mundo" (leave): grava a saída e a pausa, fecha o uplink e espera o DELETE /v1/me/building antes de
+//   responder; a conta e o personagem continuam, e retomar cria um prédio novo, em outro lote.
+// - Retomar sem resposta do servidor do mundo (rede, 429, 5xx): o uplink reconecta assim mesmo, e o aviso da retomada
+//   tenta de novo com a espera crescente da reconexão (backoffDelay), até dar certo ou o prédio ser pausado de novo.
+// - GET /api/world/status sem `refresh` é barato: responde com o que está em memória e, se o /v1/me venceu, relê em
+//   segundo plano (só espera a leitura quando ainda não há nada guardado).
+import { getLocale, tr } from '../../shared/i18n';
+import {
+  worldLastError,
+  type WorldKnownErrorCode,
+  type WorldLastUplink,
+  type WorldMeta,
+  type WorldState,
+  type WorldStatus,
+  type WorldThemeChoice,
+} from '../../shared/world/api';
 import {
   TOS_VERSION,
   type DeviceAuth,
   type DeviceInfo,
+  type GoodbyeReason,
   type MeResponse,
   type Player,
   type PlayerInput,
@@ -34,11 +51,16 @@ import {
   type WorldLocale,
 } from '../../shared/world/protocol';
 import type { WorldConfig } from '../config';
+import { log } from '../log';
 import { encodeAltchaPayload, solveAltcha } from './altcha';
-import type { WorldClient, WorldResult } from './client';
+import { CLIENT_ERROR, type WorldClient, type WorldResult } from './client';
 import type { WorldSession, WorldSettingsStore } from './settings';
+import { backoffDelay, UPLINK_TIMING, type BuildingUplink } from './uplink';
 
 export type Outcome<T> = WorldResult<T>;
+
+/** Avisos do prédio ao servidor do mundo (REST, com o token). */
+type BuildingCall = 'pause' | 'resume' | 'leave';
 
 export interface WorldServiceOptions {
   config: WorldConfig;
@@ -56,7 +78,17 @@ export interface WorldServiceOptions {
   meTtlMs?: number;
   /** Na lista de espera, intervalo da releitura automática de /v1/me (padrão 30 min). */
   waitingPollMs?: number;
+  /** Sorteio da espera entre as tentativas da retomada (padrão Math.random). */
+  random?: () => number;
+  /** Retomada sem resposta: primeira espera e teto (padrão: os da reconexão do uplink, 2 s → 60 s). */
+  resumeBackoff?: { minMs: number; maxMs: number };
 }
+
+/** Teto da espera pedida pelo servidor do mundo (Retry-After) entre duas tentativas da retomada. */
+const RESUME_RETRY_AFTER_MAX_MS = 5 * 60_000;
+
+/** Vale tentar de novo: sem rede, prazo, 429 ou erro do servidor do mundo. */
+const retryable = (status: number) => status === 0 || status === 408 || status === 429 || status >= 500;
 
 /** Releitura automática de /v1/me enquanto a conta está na lista de espera. */
 export const WAITING_POLL_MS = 30 * 60_000;
@@ -84,11 +116,19 @@ export class WorldService {
   private readonly pollMs: number;
   private pollTimer?: ReturnType<typeof setTimeout>;
   private stopped = false;
+  private uplink?: BuildingUplink;
+  /** Pausa e retomada chegam ao servidor do mundo na ordem em que foram pedidas (uma por vez). */
+  private buildingQueue: Promise<void> = Promise.resolve();
+  /** Próxima tentativa da retomada que o servidor do mundo não confirmou. */
+  private resumeTimer?: ReturnType<typeof setTimeout>;
+  private resumeAttempt = 0;
+  private readonly random: () => number;
 
   constructor(private readonly o: WorldServiceOptions) {
     this.now = o.now ?? Date.now;
     this.ttl = o.meTtlMs ?? 30_000;
     this.pollMs = o.waitingPollMs ?? WAITING_POLL_MS;
+    this.random = o.random ?? Math.random;
     // Quem já estava na lista de espera ao abrir o Habblaud (world.json lido antes) também é relido sozinho.
     this.schedulePoll();
   }
@@ -97,6 +137,12 @@ export class WorldService {
   stop(): void {
     this.stopped = true;
     this.stopPoll();
+    this.clearResumeRetry();
+  }
+
+  /** Liga o prédio (server/world/uplink.ts) à conta: status, snapshot, pausa e as mudanças de estado. */
+  attachUplink(uplink: BuildingUplink): void {
+    this.uplink = uplink;
   }
 
   get configured(): boolean {
@@ -116,16 +162,153 @@ export class WorldService {
 
   /** OfficeSnapshot.meta.world. Sem HABBLAUD_WORLD_URL, `enabled: false`: o recurso está desligado e nada aparece. */
   meta(): WorldMeta {
-    return { enabled: this.o.config.enabled && this.configured, configured: this.configured, state: this.state() };
+    const m: WorldMeta = { enabled: this.o.config.enabled && this.configured, configured: this.configured, state: this.state() };
+    if (this.uplink && this.hasBuilding()) m.building = this.uplink.meta();
+    return m;
   }
 
-  /** GET /api/world/status: o estado da conta, relendo /v1/me quando venceu (ou com `refresh`). */
+  /**
+   * GET /api/world/status: o estado da conta. Com `refresh`, relê /v1/me antes de responder; sem, responde com o que
+   * está em memória e relê em segundo plano se venceu (só espera quando ainda não há nada guardado deste token).
+   */
   async status(refresh = false): Promise<WorldStatus> {
     const base = { available: this.available, configured: this.configured, state: this.state() };
     if (!this.o.client) return base;
     if (!this.o.terminal) return { ...base, lastError: 'terminal_off' };
-    if (this.o.store.get() && (refresh || this.now() - this.lastFetchAt >= this.ttl)) await this.refreshMe();
+    const s = this.o.store.get();
+    if (s && (refresh || this.now() - this.lastFetchAt >= this.ttl)) {
+      // lastFetchAt -Infinity = algo daqui mudou do outro lado (dispositivo revogado, goodbye): espera a leitura.
+      const cached = !!this.me && this.meToken === s.token && this.lastFetchAt !== -Infinity;
+      if (refresh || !cached) await this.refreshMe();
+      else void this.refreshMe().catch(() => undefined);
+    }
     return this.compose();
+  }
+
+  /** Pausa o prédio: grava a pausa, fecha o uplink (antes de responder) e avisa o servidor do mundo. */
+  async pause(): Promise<Outcome<WorldStatus>> {
+    const s = this.o.store.get();
+    if (!s) return { ok: false, status: 401, code: 'not_logged_in' };
+    this.clearResumeRetry();
+    if (!s.paused) this.o.store.update({ paused: true });
+    await this.uplink?.pause();
+    this.o.onChange?.();
+    void this.queueBuilding('pause', s.token);
+    return { ok: true, status: 200, data: this.compose() };
+  }
+
+  /**
+   * Sai do mundo: grava a saída (com a pausa, o uplink não reabre), fecha o uplink e só então pede ao servidor do mundo
+   * que retire o prédio (DELETE /v1/me/building), esperando a resposta. Sem resposta boa, o prédio fica só pausado
+   * aqui (nada sai; a pausa também é avisada) e a interface mostra o erro para tentar de novo.
+   */
+  async leave(): Promise<Outcome<WorldStatus>> {
+    const s = this.o.store.get();
+    if (!s) return { ok: false, status: 401, code: 'not_logged_in' };
+    this.clearResumeRetry();
+    this.o.store.update({ paused: true, left: true });
+    await this.uplink?.pause();
+    this.o.onChange?.();
+    const r = await this.queueBuilding('leave', s.token);
+    const same = this.o.store.get()?.token === s.token;
+    if (r.ok) return { ok: true, status: 200, data: this.compose() };
+    if (same) {
+      this.o.store.update({ left: undefined });
+      if (r.status === 401) this.drop('session_expired');
+      else void this.queueBuilding('pause', s.token);
+      this.o.onChange?.();
+    }
+    return r;
+  }
+
+  /** Retoma o prédio (ou volta ao mundo depois de sair): tira a pausa, avisa o servidor do mundo e reabre o uplink. */
+  resume(): Outcome<WorldStatus> {
+    const s = this.o.store.get();
+    if (!s) return { ok: false, status: 401, code: 'not_logged_in' };
+    if (s.paused || s.left) this.o.store.update({ paused: undefined, left: undefined });
+    this.o.onChange?.();
+    // O servidor do mundo não acende um prédio pausado com o sinal de vida: o resume vai (depois de uma pausa ainda
+    // a caminho) antes de reconectar. Sem resposta, o uplink reconecta assim mesmo e a retomada tenta de novo.
+    this.clearResumeRetry();
+    this.resumeAttempt = 0;
+    void this.sendResume(s.token).finally(() => this.uplink?.resume());
+    return { ok: true, status: 200, data: this.compose() };
+  }
+
+  /**
+   * Avisa a retomada. Sem resposta (rede, prazo, 429 ou 5xx), tenta de novo com a espera crescente da reconexão do
+   * uplink (backoffDelay: 2 s, 4 s... até 60 s, com sorteio; um Retry-After maior vale), até dar certo, a sessão mudar
+   * ou o prédio ser pausado de novo (ou sair do mundo).
+   */
+  private async sendResume(token: string): Promise<void> {
+    const r = await this.queueBuilding('resume', token);
+    if (r.ok || !retryable(r.status)) {
+      this.resumeAttempt = 0;
+      return;
+    }
+    if (!this.stillResuming(token) || this.resumeTimer) return;
+    const b = this.o.resumeBackoff ?? { minMs: UPLINK_TIMING.backoffMinMs, maxMs: UPLINK_TIMING.backoffMaxMs };
+    const asked = Math.min(RESUME_RETRY_AFTER_MAX_MS, (r.retryAfter ?? 0) * 1000);
+    const wait = Math.max(backoffDelay(this.resumeAttempt++, this.random, b.minMs, b.maxMs), asked);
+    this.resumeTimer = setTimeout(() => {
+      this.resumeTimer = undefined;
+      if (this.stillResuming(token)) void this.sendResume(token);
+    }, wait);
+    this.resumeTimer.unref?.();
+  }
+
+  /** A retomada ainda vale: mesma sessão, sem pausa nova (nem saída) e o processo de pé. */
+  private stillResuming(token: string): boolean {
+    const s = this.o.store.get();
+    return !this.stopped && !!s && s.token === token && !s.paused;
+  }
+
+  private clearResumeRetry(): void {
+    if (this.resumeTimer) clearTimeout(this.resumeTimer);
+    this.resumeTimer = undefined;
+  }
+
+  /** Tema escolhido para o prédio (vale com ou sem conta; fica em world.json). */
+  setTheme(theme: WorldThemeChoice): Outcome<{ theme: WorldThemeChoice }> {
+    this.o.store.setTheme(theme);
+    this.uplink?.themeChanged();
+    return { ok: true, status: 200, data: { theme } };
+  }
+
+  /** GET /api/world/last-uplink: a última remessa deste computador, exata (ou nada). */
+  lastUplink(): WorldLastUplink | undefined {
+    return this.uplink?.lastUplink();
+  }
+
+  /** O servidor do mundo fechou o uplink com `goodbye`: a conta daqui acompanha. */
+  goodbye(reason: GoodbyeReason): void {
+    const s = this.o.store.get();
+    if (!s) return;
+    switch (reason) {
+      case 'waiting':
+        this.o.store.update({ access: 'waiting' });
+        this.lastFetchAt = -Infinity;
+        this.changed();
+        this.schedulePoll();
+        return;
+      case 'no_player':
+        this.o.store.update({ player: undefined });
+        if (this.me && this.meToken === s.token) this.me = { ...this.me, player: undefined };
+        this.changed();
+        return;
+      case 'unauthorized':
+        this.drop('session_expired');
+        return;
+      case 'banned':
+      case 'suspended':
+        this.lastError = reason;
+        this.lastFetchAt = -Infinity;
+        this.o.onChange?.();
+        return;
+      default:
+        // update e other-device: o status do prédio mostra (building.stopped).
+        this.o.onChange?.();
+    }
   }
 
   register(input: { email: string; password: string; locale?: WorldLocale; invite?: string }): Promise<Outcome<Record<string, never>>> {
@@ -285,7 +468,7 @@ export class WorldService {
     this.lastFetchAt = -Infinity;
     this.lastError = saved ? undefined : 'storage_failed';
     if (before && before.token !== auth.token) await this.o.client!.logout(before.token).catch(() => undefined);
-    this.o.onChange?.();
+    this.changed();
     await this.refreshMe();
     if (!saved) this.lastError = 'storage_failed';
     this.schedulePoll();
@@ -296,18 +479,23 @@ export class WorldService {
   private drop(error: string | undefined): void {
     const had = !!this.o.store.get();
     this.stopPoll();
+    this.clearResumeRetry();
     this.o.store.clear();
     this.me = undefined;
     this.meToken = undefined;
     this.lastFetchAt = -Infinity;
     this.lastError = error === undefined ? undefined : worldLastError(error);
-    if (had) this.o.onChange?.();
+    if (had) this.changed();
   }
 
   private rememberPlayer(player: Player): void {
     if (this.me) this.me = { ...this.me, player };
     const s = this.o.store.get();
-    if (s && !sameJson(s.player, player)) this.o.store.update({ player });
+    if (s && !sameJson(s.player, player)) {
+      this.o.store.update({ player });
+      // Personagem criado ou trocado: o prédio pode subir agora (e as opções de visibilidade valem já).
+      this.changed();
+    }
   }
 
   /** Relê /v1/me (uma leitura por vez; quem chega durante a leitura espera a mesma). */
@@ -339,7 +527,8 @@ export class WorldService {
     const access = me.account.access;
     if (s.access !== access || !sameJson(s.player, me.player)) {
       this.o.store.update({ access, player: me.player });
-      if (s.access !== access) this.o.onChange?.();
+      if (s.access !== access || !s.player !== !me.player) this.changed();
+      else this.uplink?.sync();
     }
     this.schedulePoll();
   }
@@ -377,6 +566,57 @@ export class WorldService {
       if (me) st.devices = me.devices;
     }
     if (this.lastError) st.lastError = this.lastError;
+    if (this.uplink && this.hasBuilding()) st.building = this.uplink.status();
+    const theme = this.o.store.getTheme();
+    if (theme !== 'auto') st.theme = theme;
     return st;
+  }
+
+  /** O prédio existe para a interface: conta aprovada e personagem criado. */
+  private hasBuilding(): boolean {
+    const s = this.o.store.get();
+    return !!s && s.access === 'approved' && !!s.player;
+  }
+
+  /** Mudou o estado da conta: o snapshot é republicado e o prédio confere se conecta ou desconecta. */
+  private changed(): void {
+    this.o.onChange?.();
+    this.uplink?.sync();
+  }
+
+  /**
+   * Põe o aviso de pausa, retomada ou saída na fila: um "pausar, retomar" rápido nunca chega invertido ao servidor.
+   * Responde com o resultado (sem prédio lá, 404, conta como feito).
+   */
+  private queueBuilding(what: BuildingCall, token: string): Promise<Outcome<unknown>> {
+    const run = this.buildingQueue.then(() => this.buildingCall(what, token));
+    this.buildingQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  /** Avisa o servidor do mundo da pausa, da retomada ou da saída (sem prédio lá, 404: tudo bem). */
+  private async buildingCall(what: BuildingCall, token: string): Promise<Outcome<unknown>> {
+    const client = this.o.client;
+    if (!client) return { ok: true, status: 204, data: null };
+    let r: Outcome<unknown>;
+    try {
+      r = what === 'pause' ? await client.pauseBuilding(token) : what === 'resume' ? await client.resumeBuilding(token) : await client.leaveBuilding(token);
+    } catch {
+      r = { ok: false, status: 502, code: CLIENT_ERROR.unreachable };
+    }
+    if (r.ok || r.status === 404) {
+      log.clearOnce('world-building-call');
+      return { ok: true, status: r.ok ? r.status : 204, data: null };
+    }
+    log.warnOnce(
+      'world-building-call',
+      what === 'leave'
+        ? tr('Habblaud World: o servidor do mundo não confirmou a saída do prédio ({0}).', [r.code])
+        : tr('Habblaud World: o servidor do mundo não confirmou a pausa ou a retomada do prédio ({0}).', [r.code]),
+    );
+    return r;
   }
 }

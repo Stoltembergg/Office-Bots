@@ -1,7 +1,9 @@
 // Seção "Habblaud World" das Configurações (depois de "Acesso pelo celular"): conta (cadastro com aceite dos termos e o
 // resumo de privacidade, código do e-mail, login, esqueci a senha), lista de espera, personagem (o editor de aparência
-// da gaveta do agente, mais nome, traços e frase de apresentação), visibilidade do prédio, dispositivos e sair.
-// Fala com as rotas locais /api/world/* (net/world.ts); as regras puras estão em world-model.ts.
+// da gaveta do agente, mais nome, traços e frase de apresentação), o cartão "Seu prédio" com Pausar/Retomar e "Ver o
+// que foi enviado" (building.ts), visibilidade do prédio, dispositivos e sair. Também a dica do tema em Aparência,
+// quando a escolha vai para o prédio. Fala com as rotas locais /api/world/* (net/world.ts); as regras puras estão em
+// world-model.ts.
 //
 // O popover de Configurações chama render() a cada quadro sujo: o miolo só é refeito quando a tela muda (senão o que
 // foi digitado e o foco se perderiam); o status é buscado ao abrir o popover, depois de cada ação e quando o
@@ -10,6 +12,7 @@ import { getLocale, intlLocale, tr } from '../../../../shared/i18n';
 import type { Appearance } from '../../art/api';
 import { access } from '../../net/access';
 import {
+  buildingFromMeta,
   FAKE_CODE,
   type WorldClient,
   type WorldDevice,
@@ -17,8 +20,10 @@ import {
   type WorldResult,
   type WorldSource,
   type WorldStatus,
+  type WorldThemeChoice,
   type WorldVisibility,
 } from '../../net/world';
+import { BuildingCard, SentDialog } from './building';
 import { TRAITS, TRAIT_IDS, type TraitId } from '../../../../shared/world/traits';
 import { AppearanceFields } from '../appearance-fields';
 import { createAvatar } from '../avatar';
@@ -42,6 +47,7 @@ import {
   normalizeEmail,
   passwordProblem,
   passwordProblemText,
+  themeGoesToWorld,
   traitBlock,
   toggleTrait,
   VISIBILITY_SWITCHES,
@@ -51,24 +57,20 @@ import {
   type VisibilitySwitch,
   type WorldAction,
   type WorldFlash,
+  type WorldGate,
   type WorldScreen,
   type WorldSectionMode,
   type WorldUi,
   type WorldUiEvent,
 } from './world-model';
+import { extLink, WORLD_PRIVACY_URL, WORLD_TERMS_URL } from './links';
 
-export const WORLD_TERMS_URL = 'https://habblaud.com/world/termos';
-export const WORLD_PRIVACY_URL = 'https://habblaud.com/world/privacidade';
+export { extLink, WORLD_PRIVACY_URL, WORLD_TERMS_URL } from './links';
 
 /** Depois de reenviar o código, o botão espera este tempo (o servidor também limita: 3 por hora). */
 const RESEND_COOLDOWN_MS = 30_000;
 
 // ------------------------------------------------------------------ pedaços de DOM
-
-/** Link para fora (termos, privacidade), sempre em outra aba. */
-export function extLink(text: string, href: string): HTMLAnchorElement {
-  return h('a', { class: 'ui-link-btn', text, attrs: { href, target: '_blank', rel: 'noopener noreferrer' } });
-}
 
 /**
  * Frase traduzida com elementos no meio: as lacunas {0}, {1}... de `text` (já passado por tr(), sem argumentos) viram
@@ -234,6 +236,12 @@ function visibilityText(key: VisibilitySwitch): { label: string; hint: string } 
   }
 }
 
+/** As travas da seção nesta página (celular, endereço local, trava do terminal, modo demonstração). */
+export function worldGate(ctx: UiContext, src: WorldSource): WorldGate {
+  const a = access();
+  return { remote: a.remote, local: a.local, terminal: !!ctx.store.liveSnapshot?.meta.terminal, fake: src.fake };
+}
+
 /** Tela montada: o elemento e, se precisar, o que atualizar sem refazer (texto, estado dos botões). */
 interface View {
   el: HTMLElement;
@@ -265,6 +273,22 @@ export class WorldSettingsGroup {
   private epoch = 0;
   private lastFlash: WorldFlash | null = null;
   private resendUntil = 0;
+  /** `meta.world.building` da última vez: quando muda (remessa nova, pausa), o status é relido com a seção aberta. */
+  private metaBuildingSig = '';
+  private readonly sent: SentDialog;
+  /** Dica em Aparência › Tema do escritório (só quando a escolha também vai para o prédio). */
+  readonly themeNote: HTMLElement;
+  private readonly themeError: HTMLElement;
+  private themeLinked = false;
+  private themeReq = 0;
+  /** Um PUT do tema a caminho (o status que chegar no meio não decide o tema). */
+  private themeInflight = 0;
+  /** Quando a última escolha de tema foi feita aqui (um status pedido antes dela não a desfaz). */
+  private themePickedAt = 0;
+  /** Rolar até a seção de novo quando ela terminar de carregar (aberta pelo chip ou pelo convite, ainda carregando). */
+  private scrollPending = false;
+  /** Relógio lógico das escolhas de tema e dos pedidos de status (qual veio antes). */
+  private themeClock = 0;
 
   constructor(
     private readonly ctx: UiContext,
@@ -273,13 +297,17 @@ export class WorldSettingsGroup {
     this.chip = h('span', { class: 'ui-world__chip' });
     this.flashEl = h('p', { class: 'ui-world__flash', role: 'status', hidden: true });
     this.body = h('div', { class: 'ui-world__body' });
+    this.sent = new SentDialog(() => this.client, () => this.ctx.now());
     this.el = h(
       'div',
       { class: 'ui-set-group ui-world', hidden: true, attrs: { id: 'ui-world' } },
       h('div', { class: 'ui-world__top' }, h('h3', { text: tr('Habblaud World'), tabIndex: -1 }), this.chip),
       this.flashEl,
       this.body,
+      this.sent.el,
     );
+    this.themeError = h('span', { class: 'ui-world__error', role: 'alert', hidden: true });
+    this.themeNote = h('span', { class: 'ui-set__hint ui-world-theme', hidden: true }, h('span', { text: tr('O tema também vale para o seu prédio no Habblaud World.') }), this.themeError);
     src.onChange?.(() => {
       this.stale = true;
       ctx.invalidate();
@@ -293,15 +321,22 @@ export class WorldSettingsGroup {
   /** A cada render do popover (barato: só refaz o miolo quando a tela muda). */
   render(open: boolean): void {
     const meta = this.src.meta();
-    const a = access();
-    this.mode = worldSectionMode(meta, { remote: a.remote, local: a.local, terminal: !!this.ctx.store.liveSnapshot?.meta.terminal, fake: this.src.fake });
+    const gate = worldGate(this.ctx, this.src);
+    this.mode = worldSectionMode(meta, gate);
     setHidden(this.el, this.mode === 'hidden');
+    this.themeLinked = themeGoesToWorld(meta, gate);
+    setHidden(this.themeNote, !this.themeLinked);
     if (this.mode === 'active' && meta) {
       if (meta.state !== this.metaState) {
         this.metaState = meta.state;
         this.stale = true;
         // Antes do primeiro status, a tela segue o snapshot.
         if (!this.status) this.ui = worldReduce(this.ui, { type: 'server', state: meta.state });
+      }
+      const buildingSig = JSON.stringify(meta.building ?? null);
+      if (buildingSig !== this.metaBuildingSig) {
+        this.metaBuildingSig = buildingSig;
+        this.stale = true;
       }
       if (open && !this.wasOpen) this.stale = true;
       if (open && this.stale && !this.loading) void this.refresh();
@@ -316,8 +351,39 @@ export class WorldSettingsGroup {
     this.ctx.invalidate();
   }
 
+  /**
+   * A escolha de Aparência › Tema do escritório também vai para o prédio (PUT /api/world/theme), quando o World está
+   * ligado e a conta aprovada. Se não der, a dica do tema mostra o erro (o escritório troca de tema do mesmo jeito).
+   */
+  async onThemePicked(theme: WorldThemeChoice): Promise<void> {
+    const client = this.client;
+    this.themePickedAt = ++this.themeClock;
+    if (!this.themeLinked || !client) return;
+    const req = ++this.themeReq;
+    this.themeInflight++;
+    const r = await client.setTheme(theme).finally(() => this.themeInflight--);
+    if (req !== this.themeReq) return;
+    setText(this.themeError, r.ok ? '' : ` ${tr('Não deu para mandar o tema para o prédio: {0}', [worldErrorText(r.code, 'theme')])}`);
+    setHidden(this.themeError, r.ok);
+  }
+
+  /**
+   * O tema do escritório e o do prédio ficam iguais (o status traz o do prédio, guardado em world.json): uma escolha
+   * guardada neste computador (`theme` presente) vale também para o escritório desta página; sem escolha guardada (o
+   * automático, padrão), a escolha desta página vai para o prédio. Nada disso com um PUT do tema a caminho, nem com um
+   * status pedido antes da última escolha feita aqui.
+   */
+  private syncTheme(st: WorldStatus, askedAt: number): void {
+    if (!this.themeLinked || st.state !== 'approved' || this.themeInflight > 0 || askedAt < this.themePickedAt) return;
+    const pref = this.ctx.prefs.theme;
+    if (st.theme && st.theme !== pref) this.ctx.updatePrefs({ theme: st.theme });
+    else if (!st.theme && pref !== 'auto') void this.onThemePicked(pref);
+  }
+
   /** Rola até a seção e a destaca por um instante. */
   highlight(): void {
+    // Carregando, a seção ainda é curta e a rolagem para antes dela: rola de novo quando o conteúdo chegar.
+    this.scrollPending = this.builtKey === 'loading' || this.loading;
     this.el.scrollIntoView({ block: 'start' });
     this.el.classList.remove('is-highlight');
     void this.el.offsetWidth;
@@ -337,6 +403,7 @@ export class WorldSettingsGroup {
     const client = this.client;
     if (!client) return;
     const req = ++this.statusReq;
+    const askedAt = this.themeClock;
     this.loading = true;
     this.stale = false;
     const r = await client.status();
@@ -344,7 +411,10 @@ export class WorldSettingsGroup {
     this.loading = false;
     if (r.ok) {
       this.status = r.data;
-      const sig = JSON.stringify(r.data);
+      this.syncTheme(r.data, askedAt);
+      // O prédio muda a cada remessa: o cartão se atualiza sozinho (BuildingCard.sync), sem refazer a tela.
+      const { building: _building, ...rest } = r.data;
+      const sig = JSON.stringify(rest);
       if (sig !== this.statusSig) {
         this.statusSig = sig;
         this.statusRev++;
@@ -392,6 +462,10 @@ export class WorldSettingsGroup {
       this.body.replaceChildren(this.view.el);
     } else {
       this.view?.sync?.();
+    }
+    if (this.scrollPending && !this.loading && this.builtKey !== 'loading') {
+      this.scrollPending = false;
+      requestAnimationFrame(() => this.el.scrollIntoView({ block: 'start' }));
     }
     setText(this.chip, this.chipText());
     setVariant(this.chip, 'is-', this.mode === 'active' ? (this.ui.server ?? 'loading') : this.mode);
@@ -688,17 +762,27 @@ export class WorldSettingsGroup {
 
   private buildHome(): View {
     const wrap = h('div', { class: 'ui-world__stack' });
+    const card = new BuildingCard({
+      client: this.client,
+      building: () => this.status?.building ?? buildingFromMeta(this.src.meta()?.building),
+      hasPlayer: () => !!this.status?.player,
+      refresh: () => void this.refresh(),
+      openSent: (opener) => void this.sent.open(opener),
+      now: () => this.ctx.now(),
+    });
     let rev = -1;
     const sync = () => {
-      if (rev === this.statusRev) return;
-      rev = this.statusRev;
-      wrap.replaceChildren(...this.homeContent());
+      if (rev !== this.statusRev) {
+        rev = this.statusRev;
+        wrap.replaceChildren(...this.homeContent(card));
+      }
+      card.sync();
     };
     sync();
     return { el: wrap, sync };
   }
 
-  private homeContent(): Node[] {
+  private homeContent(card: BuildingCard): Node[] {
     const s = this.status;
     const approved = this.ui.server === 'approved';
     const out: Node[] = [];
@@ -708,14 +792,17 @@ export class WorldSettingsGroup {
         approved ? tr('Acesso liberado!') : tr('Você está na lista de espera. Estamos liberando o acesso aos poucos e avisamos por e-mail quando chegar a sua vez.'),
       ),
     );
-    out.push(
-      h(
-        'div',
-        { class: 'ui-world__lot' },
-        h('span', { class: 'ui-world__lot-art', attrs: { 'aria-hidden': 'true' } }),
-        h('span', { class: 'ui-world__lot-text', text: approved ? tr('Seu prédio entra no mundo na próxima versão.') : tr('Seu prédio vai aparecer aqui') }),
-      ),
-    );
+    // Aprovado: o cartão "Seu prédio" (conexão, contagens, pausar, o que foi enviado). Na espera, o lote vazio.
+    if (approved) out.push(card.el);
+    else
+      out.push(
+        h(
+          'div',
+          { class: 'ui-world__lot' },
+          h('span', { class: 'ui-world__lot-art', attrs: { 'aria-hidden': 'true' } }),
+          h('span', { class: 'ui-world__lot-text', text: tr('Seu prédio vai aparecer aqui') }),
+        ),
+      );
 
     const player = s?.player;
     if (player?.mustRename) {
