@@ -6,6 +6,7 @@ import http from 'node:http';
 import { join } from 'node:path';
 import { codexDirsRefused } from './accounts/detect';
 import { AccountsService } from './accounts/service';
+import { createAuthService } from './auth/service';
 import { loadConfig, messagesOffReason, terminalOffReason } from './config';
 import { createApiHandler, sendJson } from './http/app';
 import { createRequestGuard } from './http/guard';
@@ -101,7 +102,9 @@ if (codex) agents.add(codex);
 const codexLive: CodexLive | undefined = codex;
 late.office = office;
 late.agents = agents;
-const hub = new Hub(office);
+// Modo remoto: com HABBLAUD_PASSWORD há login por senha; quem tem sessão vale como o computador local nas rotas sensíveis.
+const auth = config.authPassword ? createAuthService({ password: config.authPassword }) : undefined;
+const hub = new Hub(office, { isLocalClient: auth ? (req) => auth.isPrivileged(req) : undefined });
 // "Meu dia": amostra o escritório a cada segundo e persiste em <dataDir>/stats/ (ver history/daystats.ts).
 const stats = new DayStatsService({ dir: join(config.dataDir, 'stats'), snapshot: () => hub.current() });
 stats.load();
@@ -195,6 +198,7 @@ const api = createApiHandler({
   codexLive,
   stats,
   updates,
+  auth,
 });
 
 const server = http.createServer();

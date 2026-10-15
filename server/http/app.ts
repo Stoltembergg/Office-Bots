@@ -3,12 +3,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { NAME_MAX, parseAppearanceParts, parseCharacterName, parseSeed } from '../../shared/appearance';
 import type { AgentInfo, ModSummary, OfficeSnapshot, SourceInfo, UpdateStatus } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
+import type { AuthService } from '../auth/service';
 import { handleCodexEvent } from '../codex/http';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import type { CodexLive } from '../sources/codex/live';
 import type { SessionLookup } from '../sources/source';
-import { isJsonContentType, isLoopbackHost } from './guard';
+import { AUTH_REQUIRED, isJsonContentType, isLoopbackHost } from './guard';
 import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
 import { handleStatsRoute } from './stats';
@@ -58,6 +59,11 @@ export interface ApiDeps {
     status(): UpdateStatus;
     check(opts: { manual?: boolean }): Promise<UpdateStatus>;
   };
+  /**
+   * Modo remoto (HABBLAUD_PASSWORD): login por senha + cookie de sessão. Ausente = sem modo remoto (/api/auth/* é 404 e
+   * as rotas sensíveis seguem presas ao Host local). Com ele, quem tem Host local ou sessão válida é "privilegiado".
+   */
+  auth?: AuthService;
 }
 
 /** GET /api/agents/:id/terminal (ids nunca contêm '/'). */
@@ -223,6 +229,51 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     sendJson(res, 200, { ok: true });
   };
 
+  const { auth } = deps;
+
+  /** Rotas antes abertas (snapshot, stream...): com senha, só para quem é privilegiado. Devolve true se já respondeu. */
+  const denyUnprivileged = (req: IncomingMessage, res: ServerResponse): boolean => {
+    if (!auth || auth.isPrivileged(req)) return false;
+    sendJson(res, 401, { error: AUTH_REQUIRED });
+    return true;
+  };
+
+  /** Rotas sensíveis: com senha, privilegiado (401 se não); sem senha, Host local (403 com `localMessage`). */
+  const denyNonLocal = (req: IncomingMessage, res: ServerResponse, localMessage: string): boolean => {
+    if (auth) return denyUnprivileged(req, res);
+    if (isLoopbackHost(req.headers.host)) return false;
+    sendJson(res, 403, { error: localMessage });
+    return true;
+  };
+
+  const handleAuth = (req: IncomingMessage, res: ServerResponse, path: string, method: string) => {
+    if (!auth) return sendJson(res, 404, { error: 'rota desconhecida' });
+    if (path === '/api/auth/session') {
+      if (method !== 'GET' && method !== 'HEAD') return methodNotAllowed(res, 'GET');
+      return sendJson(res, 200, auth.session(req));
+    }
+    if (path === '/api/auth/logout') {
+      if (method !== 'POST') return methodNotAllowed(res, 'POST');
+      req.resume();
+      auth.logout(req, res);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (path === '/api/auth/login') {
+      if (method !== 'POST') return methodNotAllowed(res, 'POST');
+      readJson(req)
+        .then((body) => {
+          const password = (body as { password?: unknown } | null)?.password;
+          if (typeof password !== 'string' || !password) throw new HttpError(400, 'esperado {password}');
+          const r = auth.login(req, res, password);
+          if (r.status === 200) sendJson(res, 200, { ok: true, authenticated: true });
+          else sendJson(res, r.status, { error: r.error });
+        })
+        .catch((err) => fail(res, err));
+      return;
+    }
+    sendJson(res, 404, { error: 'rota desconhecida' });
+  };
+
   const fail = (res: ServerResponse, err: unknown) => {
     if (res.headersSent) return void res.destroy();
     if (err instanceof HttpError) sendJson(res, err.status, { error: err.message });
@@ -235,12 +286,18 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     const method = req.method ?? 'GET';
     const isRead = method === 'GET' || method === 'HEAD';
 
+    if (path === '/api/auth' || path.startsWith('/api/auth/')) {
+      handleAuth(req, res, path, method);
+      return true;
+    }
     if (path === '/api/stream') {
+      if (denyUnprivileged(req, res)) return true;
       if (method !== 'GET') methodNotAllowed(res, 'GET');
       else hub.attach(req, res);
       return true;
     }
     if (path === '/api/snapshot') {
+      if (denyUnprivileged(req, res)) return true;
       if (!isRead) methodNotAllowed(res, 'GET');
       else sendJson(res, 200, hub.current());
       return true;
@@ -257,6 +314,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           permissions: !!deps.permissions,
           messages: !!deps.messages,
           codexEvents: !!deps.codexLive,
+          authRequired: !!auth,
           updates: updatesSummary(deps.updates?.status()),
           sources: deps.sources(),
           accounts: accounts.allEntries().map((a) =>
@@ -270,6 +328,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     }
     if (path === '/api/mod/summary') {
       // Lido a cada 5 s por sessão com o mod: só contagens e quem espera (nada que o snapshot já não mostre).
+      if (denyUnprivileged(req, res)) return true;
       if (!isRead) methodNotAllowed(res, 'GET');
       else {
         const own = { account: url.searchParams.get('account') || undefined, session: url.searchParams.get('session') || undefined };
@@ -282,8 +341,8 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       if (method !== 'GET') methodNotAllowed(res, 'GET');
       else if (!terminals) {
         sendJson(res, 403, { error: 'terminal desligado: ele só funciona com o Habblaud acessível apenas pelo próprio computador' });
-      } else if (!isLoopbackHost(req.headers.host)) {
-        sendJson(res, 403, { error: 'o terminal só abre pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else if (denyNonLocal(req, res, 'o terminal só abre pelo próprio computador (http://localhost ou http://127.0.0.1)')) {
+        // respondido
       } else {
         let id: string;
         try {
@@ -297,15 +356,19 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       return true;
     }
     if (path.startsWith('/api/sessions/')) {
-      handleSessionsRoute(req, res, path, { history: deps.terminal ? deps.sessions : undefined, terminals });
+      handleSessionsRoute(req, res, path, {
+        history: deps.terminal ? deps.sessions : undefined,
+        terminals,
+        isPrivileged: auth ? (r) => auth.isPrivileged(r) : undefined,
+      });
       return true;
     }
     if (path === '/api/permissions' || path.startsWith('/api/permissions/')) {
       // Responder pelo escritório age sobre as sessões: a mesma trava do terminal (bind local + Host local).
       if (!deps.permissions) {
         sendJson(res, 403, { error: 'responder pelo escritório desligado: só funciona com o Habblaud acessível apenas pelo próprio computador' });
-      } else if (!isLoopbackHost(req.headers.host)) {
-        sendJson(res, 403, { error: 'pedidos de permissão só são respondidos pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else if (denyNonLocal(req, res, 'pedidos de permissão só são respondidos pelo próprio computador (http://localhost ou http://127.0.0.1)')) {
+        // respondido
       } else {
         deps.permissions(req, res, path);
       }
@@ -317,8 +380,8 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       if (method !== 'PUT' && method !== 'DELETE') methodNotAllowed(res, 'PUT, DELETE');
       else if (!deps.terminal) {
         sendJson(res, 403, { error: 'editar o personagem desligado: só funciona com o Habblaud acessível apenas pelo próprio computador' });
-      } else if (!isLoopbackHost(req.headers.host)) {
-        sendJson(res, 403, { error: 'o personagem só é editado pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else if (denyNonLocal(req, res, 'o personagem só é editado pelo próprio computador (http://localhost ou http://127.0.0.1)')) {
+        // respondido
       } else {
         let id: string;
         try {
@@ -347,14 +410,15 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         sendJson(res, 403, {
           error: 'mensagens pelo escritório desligadas: só funcionam com o Habblaud acessível apenas pelo próprio computador (e sem HABBLAUD_MENSAGENS=0)',
         });
-      } else if (!isLoopbackHost(req.headers.host)) {
-        sendJson(res, 403, { error: 'mensagens só são mandadas pelo próprio computador (http://localhost ou http://127.0.0.1)' });
+      } else if (denyNonLocal(req, res, 'mensagens só são mandadas pelo próprio computador (http://localhost ou http://127.0.0.1)')) {
+        // respondido
       } else {
         deps.messages(req, res, path);
       }
       return true;
     }
     if (path.startsWith('/api/agents/')) {
+      if (denyUnprivileged(req, res)) return true;
       if (!isRead) {
         methodNotAllowed(res, 'GET');
         return true;
@@ -375,8 +439,9 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       // Como o personagem: a mesma trava do terminal (bind local + Host local).
       if (method !== 'POST') methodNotAllowed(res, 'POST');
       else if (!deps.terminal) sendJson(res, 403, { error: 'renomear salas desligado: só funciona com o Habblaud acessível apenas pelo próprio computador' });
-      else if (!isLoopbackHost(req.headers.host)) sendJson(res, 403, { error: 'renomear salas só pelo próprio computador (http://localhost)' });
-      else
+      else if (denyNonLocal(req, res, 'renomear salas só pelo próprio computador (http://localhost)')) {
+        // respondido
+      } else
         readJson(req)
           .then((body) => {
             const b = body as { id?: unknown; name?: unknown };
@@ -389,20 +454,24 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       return true;
     }
     if (path === '/api/stats' || path.startsWith('/api/stats/')) {
+      if (denyUnprivileged(req, res)) return true;
       handleStatsRoute(req, res, url, deps.stats, sendJson);
       return true;
     }
     if (path === '/api/demo') {
+      if (denyUnprivileged(req, res)) return true;
       if (method !== 'POST') methodNotAllowed(res, 'POST');
       else handleDemo(req, res).catch((err) => fail(res, err));
       return true;
     }
     if (path === '/api/updates') {
+      if (denyUnprivileged(req, res)) return true;
       if (!isRead) methodNotAllowed(res, 'GET');
       else sendJson(res, 200, { version: deps.version, ...(deps.updates?.status() ?? { state: 'off', available: false }) });
       return true;
     }
     if (path === '/api/updates/check') {
+      if (denyUnprivileged(req, res)) return true;
       // "Verificar agora": consulta o GitHub (no máximo uma vez a cada 30 s) e devolve o status novo.
       if (method !== 'POST') methodNotAllowed(res, 'POST');
       else {
@@ -417,6 +486,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       }
       return true;
     }
+    if ((path === '/api/timeline' || path.startsWith('/api/timeline/')) && denyUnprivileged(req, res)) return true;
     if (deps.timeline?.(req, res, url)) return true;
     sendJson(res, 404, { error: 'rota desconhecida' });
     return true;

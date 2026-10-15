@@ -6,6 +6,7 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { AccountsService } from '../accounts/service';
+import type { AuthService } from '../auth/service';
 import { createApiHandler } from '../http/app';
 import { createRequestGuard } from '../http/guard';
 import { Hub } from '../http/sse';
@@ -33,7 +34,7 @@ export interface PermissionServer {
 }
 
 export async function servePermissions(
-  opts: { enabled?: boolean; viewers?: number; demo?: boolean; registry?: Partial<RegistryOptions>; codex?: boolean; codexLive?: CodexLive } = {},
+  opts: { enabled?: boolean; viewers?: number; demo?: boolean; registry?: Partial<RegistryOptions>; codex?: boolean; codexLive?: CodexLive; auth?: AuthService } = {},
 ): Promise<PermissionServer> {
   const tmp = tempDir();
   const enabled = opts.enabled ?? true;
@@ -49,7 +50,7 @@ export async function servePermissions(
     terminal: enabled,
     permissions: () => late.registry?.snapshot() ?? new Map(),
   });
-  const hub = new Hub(office, { throttleMs: 10 });
+  const hub = new Hub(office, { throttleMs: 10, isLocalClient: opts.auth ? (req) => opts.auth!.isPrivileged(req) : undefined });
   const registry = enabled
     ? new PermissionRegistry({
         office,
@@ -73,6 +74,7 @@ export async function servePermissions(
     terminal: enabled,
     permissions: registry ? createPermissionRoutes(registry) : undefined,
     codexLive: opts.codexLive,
+    auth: opts.auth,
   });
   const guard = createRequestGuard({ allowedHosts: new Set(['habblaud.lan']) });
   const server = http.createServer((req, res) => {

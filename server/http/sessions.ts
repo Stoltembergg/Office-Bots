@@ -11,7 +11,7 @@ import { errMsg, log } from '../log';
 import { HISTORY_DAYS, HISTORY_LIMIT } from '../sources/history';
 import type { SessionLookup } from '../sources/source';
 import { sendJson } from './app';
-import { isLoopbackHost } from './guard';
+import { AUTH_REQUIRED, isLoopbackHost } from './guard';
 import type { TerminalStreams } from './terminal';
 
 export interface SessionRoutesDeps {
@@ -19,15 +19,22 @@ export interface SessionRoutesDeps {
   history?: SessionLookup;
   /** Ausente = terminal desligado. */
   terminals?: TerminalStreams;
+  /** Com o modo remoto (senha): quem decide se a requisição é privilegiada (Host local ou sessão). Ausente = trava do Host local. */
+  isPrivileged?: (req: IncomingMessage) => boolean;
 }
 
 const RECENT_ROUTE = '/api/sessions/recent';
 /** GET /api/sessions/:conta/:sessionId/terminal (segmentos sem '/'; um %2F só aparece depois de decodificar). */
 const TERMINAL_ROUTE = /^\/api\/sessions\/([^/]+)\/([^/]+)\/terminal$/;
 
-/** Por que a trava recusa a requisição (undefined = liberada): os mesmos textos do terminal do agente. */
-export function sessionsLockError(enabled: boolean, host: string | undefined): string | undefined {
+/**
+ * Por que a trava recusa a requisição (undefined = liberada): os mesmos textos do terminal do agente.
+ * `privileged` vem do modo remoto (senha): quando definido, substitui a checagem do Host local e a recusa vira
+ * 'autenticação necessária'.
+ */
+export function sessionsLockError(enabled: boolean, host: string | undefined, privileged?: boolean): string | undefined {
   if (!enabled) return 'terminal desligado: ele só funciona com o Habblaud acessível apenas pelo próprio computador';
+  if (privileged !== undefined) return privileged ? undefined : AUTH_REQUIRED;
   if (!isLoopbackHost(host)) return 'o terminal só abre pelo próprio computador (http://localhost ou http://127.0.0.1)';
   return undefined;
 }
@@ -51,8 +58,9 @@ export function handleSessionsRoute(req: IncomingMessage, res: ServerResponse, p
     return sendJson(res, 405, { error: 'método não permitido' });
   }
   const { history, terminals } = deps;
-  const locked = sessionsLockError(!!history && !!terminals, req.headers.host);
-  if (locked || !history || !terminals) return sendJson(res, 403, { error: locked });
+  const privileged = deps.isPrivileged?.(req);
+  const locked = sessionsLockError(!!history && !!terminals, req.headers.host, privileged);
+  if (locked || !history || !terminals) return sendJson(res, privileged === false && locked === AUTH_REQUIRED ? 401 : 403, { error: locked });
 
   if (recent) {
     history

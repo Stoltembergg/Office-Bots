@@ -11,7 +11,7 @@ const MAX_BUFFERED = 8 * 1024 * 1024;
 
 export class Hub {
   private clients = new Set<ServerResponse>();
-  /** Clientes que abriram a página por um Host local (os únicos que podem responder pedidos de permissão). */
+  /** Clientes privilegiados (Host local ou, com senha, sessão autenticada): os únicos que podem responder pedidos de permissão. */
   private local = new WeakSet<ServerResponse>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pinger: ReturnType<typeof setInterval> | null = null;
@@ -20,11 +20,13 @@ export class Hub {
   private snapshotCbs = new Set<(snap: OfficeSnapshot) => void>();
   private readonly throttleMs: number;
   private readonly pingMs: number;
+  private readonly isLocalClient: (req: IncomingMessage) => boolean;
 
   constructor(
     private readonly office: Office,
-    opts: { throttleMs?: number; pingMs?: number } = {},
+    opts: { throttleMs?: number; pingMs?: number; isLocalClient?: (req: IncomingMessage) => boolean } = {},
   ) {
+    this.isLocalClient = opts.isLocalClient ?? ((req) => isLoopbackHost(req.headers.host));
     this.throttleMs = opts.throttleMs ?? 200;
     this.pingMs = opts.pingMs ?? 15_000;
   }
@@ -78,7 +80,7 @@ export class Hub {
     res.write(frame('snapshot', snapshot));
     res.write(frame('feed', this.office.recentFeed(50)));
     this.clients.add(res);
-    if (isLoopbackHost(req.headers.host)) this.local.add(res);
+    if (this.isLocalClient(req)) this.local.add(res);
     const drop = () => this.clients.delete(res);
     req.on('close', drop);
     res.on('close', drop);
