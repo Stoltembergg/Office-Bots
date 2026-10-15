@@ -147,6 +147,36 @@ describe('ClaudeWatcher', () => {
     expect(c.notices.at(-1)).toMatchObject({ level: 'success', text: `✅ ${a.name} concluiu em loja` });
   });
 
+  it('mesma sessão em duas pastas de projeto: segue a modificada por último e troca quando a outra volta a ser gravada', () => {
+    const sid = 'sess-a';
+    const id = '.claude:100';
+    // Cópia antiga na pasta da cwd (a sessão começou em outra pasta e entrou neste worktree depois).
+    const atCwd = c.transcript(sid);
+    writeLines(atCwd, [L.prompt('Pedido antigo', { at: c.now() - 3_600_000 })]);
+    const anHourAgo = new Date(c.now() - 3_600_000);
+    utimesSync(atCwd, anHourAgo, anHourAgo);
+    const live = join(c.dir, 'projects', encodeCwd('/projetos'), `${sid}.jsonl`);
+    writeLines(live, [
+      L.prompt('Arruma o total do carrinho', { at: c.now() - 5000 }),
+      L.assistant([L.tool('r1', 'Read', { file_path: `${CWD}/src/Cart.tsx` })], { at: c.now() - 4000 }),
+    ]);
+    const aMinuteAgo = new Date(c.now() - 60_000);
+    utimesSync(live, aMinuteAgo, aMinuteAgo);
+    c.openSession(100, sid);
+    c.watcher.boot();
+    expect(c.watcher.transcriptPathOf(id)).toBe(live);
+    expect(c.agent(id)!.activity?.text).toBe('Lendo Cart.tsx');
+
+    appendLines(atCwd, [L.assistant([L.tool('e1', 'Edit', { file_path: `${CWD}/src/Cart.tsx` })])]);
+    c.poll();
+    expect(c.watcher.transcriptPathOf(id)).toBe(live); // só confere de novo depois do intervalo
+    c.advance(16_000);
+    c.poll();
+    c.poll();
+    expect(c.watcher.transcriptPathOf(id)).toBe(atCwd);
+    expect(c.agent(id)!.activity?.text).toBe('Editando Cart.tsx');
+  });
+
   it('publica os prompts antes e depois de um TodoWrite malformado no mesmo lote', () => {
     const id = bootWithSession();
     appendLines(c.transcript('sess-a'), [

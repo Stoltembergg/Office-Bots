@@ -99,6 +99,9 @@ interface SubTracker {
   state: TranscriptState;
 }
 
+/** De quanto em quanto tempo confere se outra pasta de projeto tem um transcript mais recente da sessão. */
+const TRANSCRIPT_RECHECK_MS = 15_000;
+
 interface SessionTracker {
   key: string;
   accountId: string;
@@ -107,6 +110,8 @@ interface SessionTracker {
   sessionId: string;
   transcriptPath?: string;
   nextResolveAt: number;
+  /** Próxima conferência de outro arquivo da mesma sessão mais recente (ver switchTranscript). */
+  nextRecheckAt: number;
   tail?: FileTail;
   state: TranscriptState;
   customTitleFile?: string;
@@ -403,6 +408,7 @@ export class ClaudeWatcher implements AgentSource {
       entry,
       sessionId: entry.sessionId,
       nextResolveAt: 0,
+      nextRecheckAt: 0,
       state: createTranscriptState(),
       subs: new Map(),
       known: new Map(),
@@ -429,20 +435,53 @@ export class ClaudeWatcher implements AgentSource {
     const now = this.now();
     if (now < t.nextResolveAt) return undefined;
     t.nextResolveAt = now + 3_000;
+    return this.findTranscript(t);
+  }
+
+  /**
+   * O transcript da sessão: o modificado por último entre o da pasta da cwd e os das outras pastas de projeto com o
+   * mesmo sessionId. O Claude Code grava na pasta onde a sessão começou; se ela entrou num worktree depois, a cwd do
+   * registro aponta para outra pasta, que pode ter uma cópia antiga da mesma sessão.
+   */
+  private findTranscript(t: SessionTracker): string | undefined {
     const name = `${t.sessionId}.jsonl`;
     const projects = join(t.dir, 'projects');
-    const expected = join(projects, encodeCwd(t.entry.cwd), name);
-    if (existsSync(expected)) return expected;
+    let best: string | undefined;
+    let bestMtime = -1;
+    const consider = (p: string): void => {
+      try {
+        const mtime = statSync(p).mtimeMs;
+        if (mtime > bestMtime) {
+          best = p;
+          bestMtime = mtime;
+        }
+      } catch {
+        // não existe nesta pasta
+      }
+    };
+    consider(join(projects, encodeCwd(t.entry.cwd), name));
     // Caminhos longos podem ser abreviados pelo Claude Code: procura pelo sessionId.
     try {
-      for (const d of readdirSync(projects)) {
-        const p = join(projects, d, name);
-        if (existsSync(p)) return p;
-      }
+      for (const d of readdirSync(projects)) consider(join(projects, d, name));
     } catch {
       // projects/ ainda não existe
     }
-    return undefined;
+    return best;
+  }
+
+  /** Outro arquivo da mesma sessão passou a ser o mais recente (ver findTranscript): passa a seguir ele. */
+  private switchTranscript(t: SessionTracker): boolean {
+    const now = this.now();
+    if (!t.tail || now < t.nextRecheckAt) return false;
+    t.nextRecheckAt = now + TRANSCRIPT_RECHECK_MS;
+    const path = this.findTranscript(t);
+    if (!path || path === t.tail.path) return false;
+    log.info(tr('Transcript da sessão {0} mudou de pasta; seguindo o mais recente.', [t.key]));
+    this.closeWatchers(t);
+    t.transcriptPath = path;
+    this.loadMain(t, path);
+    this.watchSession(t);
+    return true;
   }
 
   private pumpMain(t: SessionTracker): void {
@@ -450,10 +489,12 @@ export class ClaudeWatcher implements AgentSource {
       const path = this.resolveTranscript(t);
       if (!path) return;
       t.transcriptPath = path;
+      t.nextRecheckAt = this.now() + TRANSCRIPT_RECHECK_MS;
       this.loadMain(t, path);
       this.watchSession(t);
       return;
     }
+    if (this.switchTranscript(t)) return;
     for (let i = 0; i < 4; i++) {
       const r = t.tail.read();
       if (r.reset) {

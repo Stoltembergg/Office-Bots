@@ -1947,6 +1947,7 @@ export const ES: Readonly<Record<string, string>> = {
   "Sessão {0}: {1}": "Sesión {0}: {1}",
   "Agente {0}": "Agente {0}",
   "Transcript da sessão {0} foi truncado/substituído; relendo.": "El transcript de la sesión {0} se truncó/reemplazó; releyendo.",
+  "Transcript da sessão {0} mudou de pasta; seguindo o mais recente.": "El transcript de la sesión {0} cambió de carpeta; siguiendo el más reciente.",
   "Não foi possível ler o início de um transcript ({0}).": "No se pudo leer el inicio de un transcript ({0}).",
   "Subagente {0} ignorado: {1}": "Subagente {0} ignorado: {1}",
   "Subagente {0}: {1}": "Subagente {0}: {1}",
