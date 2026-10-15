@@ -125,8 +125,8 @@ export function isLoopbackBind(value: string | undefined): boolean {
  * - Docker: o processo sempre escuta em 0.0.0.0 dentro do container e quem decide a exposição é a porta
  *   publicada no host, HABBLAUD_BIND (o docker-compose.yml repassa o mesmo valor ao container). Ausente
  *   ou vazia = desligado: sem ela não dá para saber se a porta está exposta.
- * HABBLAUD_TERMINAL com qualquer valor que não seja "ligado" (0, false, off...) desliga; não existe forma
- * de ligar com a porta exposta.
+ * HABBLAUD_TERMINAL com qualquer valor que não seja "ligado" (0, false, off...) desliga mesmo com senha.
+ * HABBLAUD_PASSWORD não vazio (após trim) ignora a checagem de bind/host e permite ligar com a porta exposta.
  */
 export function terminalOffReason(env: NodeJS.ProcessEnv, host: string, inDocker: boolean): string | undefined {
   const flag = env.HABBLAUD_TERMINAL?.trim();
