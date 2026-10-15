@@ -69,7 +69,12 @@ export async function login(password: string): Promise<LoginResult> {
 /** POST /api/auth/logout (o cookie é apagado pelo servidor). Falha de rede não impede de sair. */
 export async function logout(): Promise<void> {
   try {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: '{}',
+    });
   } catch {
     // Sem rede: o estado local sai do mesmo jeito.
   }

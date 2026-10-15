@@ -61,7 +61,10 @@ describe('logout', () => {
     setAuth({ required: true, authenticated: true });
     const fn = mockFetch(200, { ok: true });
     await logout();
-    expect(fn).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({ method: 'POST' }));
+    expect(fn).toHaveBeenCalledWith(
+      '/api/auth/logout',
+      expect.objectContaining({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+    );
     expect(getAuth()).toEqual({ required: true, authenticated: false });
   });
 
