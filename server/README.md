@@ -354,6 +354,20 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   `/ack` (mesma trava das mensagens). `canMessage` = há entregador (binário achado, ou auxiliar visto há até 10 s).
   Retorno 0 = entrou na fila da sessão (`delivered`); o Codex consome a fila a cada ~10 s, quando a sessão fica ociosa.
 
+## Cursor (modo observação)
+
+Fonte de agentes (`sources/cursor/`): `CursorSource` com `provider: 'cursor'`. Ids: `<conta>:<chatId>` (`sessionId` =
+chatId). **Fase 1 — só presença:** lê `~/.cursor/chats/<id>/meta.json` e o *mtime* de `store.db` (não abre o SQLite);
+`transcriptPathOf()` devolve `undefined` (sem terminal nem histórico). Subagentes (`isSubagent`) e chats sem `cwd` ficam
+de fora. Uma conta `.cursor` no MVP (várias raízes em `HABBLAUD_CURSOR_DIRS` compartilham a mesma conta).
+
+- **Pastas** (`sources/cursor/files.ts`): `discoverCursorRoots` — padrão `~/.cursor` se existir `chats/`; `HABBLAUD_CURSOR_DIRS`
+  (ou `HABBLAUD_CURSOR_DIR`) substituem. `HABBLAUD_CURSOR=0` desliga em `config.ts`.
+- **Presença** (`files.ts`, `source.ts`): atividade nos últimos `CURSOR_RECENT_MS` (30 min) = chat aberto; `working` vs
+  `idle` na janela `CURSOR_WORKING_MS` (5 min). Ausência por 1,5 s fecha o agente (mesma folga das outras fontes).
+- **Conta** (`sources/cursor/accounts.ts`): id `.cursor`, letra **R**, cor da paleta sem repetir Claude/Codex.
+- **Roadmap:** terminal, atividades por ferramenta, hooks e “precisa de você” para o Cursor ainda não estão implementados.
+
 ## Variáveis de ambiente
 
 | Variável | Padrão | Uso |
@@ -365,6 +379,8 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | `HABBLAUD_CODEX` | ligado | `0` desliga a fonte do Codex |
 | `HABBLAUD_CODEX_DIRS` | — | pastas do Codex separadas por vírgula; substitui a detecção (`CODEX_HOME` e `~/.codex*`) |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
+| `HABBLAUD_CURSOR` | ligado | `0` desliga a fonte do Cursor (modo observação) |
+| `HABBLAUD_CURSOR_DIRS` / `HABBLAUD_CURSOR_DIR` | — | raízes do Cursor (com `chats/`), separadas por vírgula; `DIRS` tem prioridade sobre `DIR` |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0`, `false`, `off` ou `no` desligam só as mensagens pelo escritório |
 | `HABBLAUD_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` (Docker: `/data`) | estado do Habblaud (nomes e personagens dos projetos persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |

@@ -494,6 +494,14 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
   pouco para ir embora depois que você fecha o terminal.
 - Conversas da nuvem do ChatGPT (sem arquivo no computador) não aparecem. `HABBLAUD_CODEX=0` desliga o Codex.
 
+### Cursor (modo observação)
+
+Se você usa o **Cursor** (IDE com agente), os chats ativos entram no escritório como personagens com o selo **CURSOR** e o chip **R** da conta `.cursor`. O Habblaud acha sozinho `~/.cursor` (precisa existir a pasta `chats/`) e lê só `meta.json` de cada conversa e o *mtime* de `store.db` — **sem abrir o SQLite** — para saber quem está aberto, ocioso ou digitando (atividade recente). Título e sala vêm do `meta.json` (`cwd`); subagentes e chats sem pasta de projeto ficam de fora.
+
+- **Só observação (fase 1):** não há terminal, histórico, hooks nem responder/mandar mensagem pelo escritório para o Cursor; atividades detalhadas e “precisa de você” vêm em fases futuras (hooks/terminal).
+- **Presença:** chat com atividade nos últimos 30 min aparece; parado há mais tempo some do escritório. “Trabalhando” vs ocioso usa uma janela curta (5 min) em cima disso.
+- **Desligar ou apontar pastas:** `HABBLAUD_CURSOR=0` desliga a fonte; `HABBLAUD_CURSOR_DIRS` ou `HABBLAUD_CURSOR_DIR` (vírgula) substituem a detecção automática de `~/.cursor`.
+
 ### GitHub no escritório
 
 O que os agentes fazem no GitHub anima a sala do projeto, sem token e sem acessar a internet: o Habblaud lê nos
@@ -612,12 +620,14 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_CODEX` | ligado | `0` desliga o Codex no escritório. |
 | `HABBLAUD_CODEX_DIRS` | detecção automática | Pastas do Codex, separadas por vírgula (no lugar de `~/.codex*` e `CODEX_HOME`). |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH (no Windows, `codex.exe`) | O binário do Codex que entrega as mensagens (`codex queue`), no modo Node ou no `npm run codex:bridge`. |
+| `HABBLAUD_CURSOR` | ligado | `0` desliga o Cursor no escritório (modo observação). |
+| `HABBLAUD_CURSOR_DIRS` / `HABBLAUD_CURSOR_DIR` | detecção automática (`~/.cursor` com `chats/`) | Pastas raiz do Cursor, separadas por vírgula (`HABBLAUD_CURSOR_DIRS` tem prioridade sobre `HABBLAUD_CURSOR_DIR`). |
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
-`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` e
-`HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
+`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_CURSOR` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_CURSOR_DIRS`, `HABBLAUD_USAGE_DIR` e
+`HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. A fonte do Cursor no container depende de montar `~/.cursor/chats` (somente leitura) no `docker:up` — enquanto isso não existir, use o modo Node no host para ver chats do Cursor. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
 
 ## Como funciona
