@@ -5,6 +5,7 @@
 // Renomear/remover campos quebra servidor, mundo e UI ao mesmo tempo.
 
 import type { AppearanceParts } from './appearance';
+import type { WorldMeta } from './world/api';
 
 export type AgentKind = 'main' | 'sub';
 
@@ -375,6 +376,13 @@ export interface OfficeSnapshot {
     pty?: PtyStatus;
     /** Verificação de versão nova no GitHub (ausente nos testes e no timelapse). */
     updates?: UpdateStatus;
+    /**
+     * Habblaud World (server/world/): `enabled` = a seção aparece (HABBLAUD_WORLD não é 0 e HABBLAUD_WORLD_URL é válida;
+     * sem a URL o recurso fica desligado e nada do World aparece); `configured` = HABBLAUD_WORLD_URL válida; `state` = a
+     * conta neste computador. Nada da conta além disso (o snapshot também vai ao celular e à linha do tempo). Ausente
+     * nos testes e no timelapse.
+     */
+    world?: WorldMeta;
   };
 }
 
@@ -391,6 +399,11 @@ export interface AccessInfo {
   terminal: boolean;
   /** Pode abrir agentes novos no app do Claude (POST /api/spawn). */
   spawn: boolean;
+  /**
+   * Pode usar a conta do Habblaud World (/api/world/*): recurso ligado (HABBLAUD_WORLD), trava do terminal e porta local
+   * com Host local. Ausente em servidores antigos.
+   */
+  world?: boolean;
 }
 
 export interface FeedItem {
