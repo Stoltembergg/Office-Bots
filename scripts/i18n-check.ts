@@ -8,7 +8,7 @@ import { ES } from '../shared/locales/es';
 import { FR } from '../shared/locales/fr';
 
 const ROOT = join(import.meta.dirname, '..');
-const DIRS = ['client/src', 'shared', 'server', 'scripts'];
+const DIRS = ['client/src', 'shared', 'server', 'scripts', 'mod'];
 const DICTS: Record<string, Readonly<Record<string, string>>> = { en: EN, es: ES, fr: FR };
 
 /** Primeiro argumento literal de cada tr('...') do código (sem os testes). */

@@ -39,6 +39,9 @@ instalação está no README principal.
 
   Fora do ar: `O Habblaud não respondeu em http://localhost:4747. Para subir: npm run docker:up na pasta do Habblaud.`
 
+Idioma dos avisos e do `/habblaud`: `HABBLAUD_LANG` no ambiente do Claude Code (`en`, `es`, `fr` ou `pt-BR`;
+sem configuração, português). O motivo da espera vem do servidor e segue o idioma dele.
+
 ### O que ele acessa
 
 Saída de `claude plugin validate --strict mod/habblaud` (a análise estática que o Claude Code faz antes de
@@ -49,11 +52,11 @@ carregar o módulo; nada fora desta lista é chamado):
 ❯ ./register.ts answers its own command: command.run{command=habblaud}
 ❯ ./register.ts calls: $.clock.after (via askHabblaud), $.clock.every (via schedule), $.clock.now (via writeUsage), $.command.register, $.env.get (via readEnv), $.fs.write (via writeUsage), $.http.fetch (via askHabblaud), $.session.id (via poll), $.session.surfaces (via poll), $.session.usage, $.ui.status (via setStatus)
 ❯ ./register.ts env writes: nothing
-❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, HABBLAUD_PORT, HABBLAUD_USAGE_DIR, HOME, USERPROFILE
+❯ ./register.ts env reads: CLAUDE_CONFIG_DIR, HABBLAUD_LANG, HABBLAUD_PORT, HABBLAUD_USAGE_DIR, HOME, USERPROFILE
 ```
 
 Em palavras: só observa (nenhum hook decide nada: não aprova ferramentas, não muda prompts, não lê mensagens),
-grava um único arquivo (o de uso), fala só com `127.0.0.1` e lê cinco variáveis de ambiente. `$.clock.after` é o
+grava um único arquivo (o de uso), fala só com `127.0.0.1` e lê seis variáveis de ambiente. `$.clock.after` é o
 prazo de 2 s de cada pergunta ao Habblaud (`$.http.fetch` não aceita AbortSignal).
 
 ## `habblaud-permissoes` — responder permissões pelo escritório

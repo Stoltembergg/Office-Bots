@@ -22,6 +22,7 @@
 // Análise estática do Claude Code: cada chamada é escrita por extenso ($.noun.método), o nome do evento é
 // sempre uma string literal e `$` só é passado para funções declaradas no topo deste arquivo.
 import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
+import { setLanguage, tr } from './i18n'
 
 /** Porta padrão do Habblaud (a mesma do servidor, do hook de permissão e do docker-compose). */
 export const DEFAULT_PORT = 4747
@@ -206,7 +207,7 @@ export function parseSummary(text: string): Summary | undefined {
       name,
       room: str(w.room) ?? '?',
       account: str(w.account) ?? '',
-      waitingFor: str(w.waitingFor) ?? 'responder no terminal',
+      waitingFor: str(w.waitingFor) ?? tr('responder no terminal'),
       answerable: w.answerable === true,
     }
     if (typeof w.since === 'number' && Number.isFinite(w.since)) agent.since = w.since
@@ -219,27 +220,27 @@ export function parseSummary(text: string): Summary | undefined {
 export function statusText(waiting: readonly WaitingAgent[]): string | undefined {
   const first = waiting[0]
   if (!first) return undefined
-  if (waiting.length === 1) return `🏢 ${first.name} precisa de você em ${first.room}`
+  if (waiting.length === 1) return tr('🏢 {0} precisa de você em {1}', [first.name, first.room])
   const shown = waiting.slice(0, MAX_NAMES).map((w) => `${w.name} (${w.room})`)
   const rest = waiting.length - shown.length
-  return `🏢 ${waiting.length} precisam de você: ${shown.join(', ')}${rest > 0 ? ` e mais ${rest}` : ''}`
+  return tr('🏢 {0} precisam de você: {1}{2}', [waiting.length, shown.join(', '), rest > 0 ? tr(' e mais {0}', [rest]) : ''])
 }
 
 /** A resposta do /habblaud com o Habblaud no ar. */
 export function summaryText(s: Summary, url: string): string {
-  const agents = s.agents === 1 ? '1 agente' : `${s.agents} agentes`
-  const waiting = s.waiting.length === 0 ? 'ninguém precisa de você' : s.waiting.length === 1 ? '1 precisa de você' : `${s.waiting.length} precisam de você`
-  const lines = [`Habblaud ${s.version} em ${url}`, `${agents} · ${s.working} trabalhando · ${waiting}`]
-  for (const w of s.waiting) lines.push(`✋ ${w.name} (${w.room}): ${w.waitingFor}${w.answerable ? ' · dá para responder pelo escritório' : ''}`)
+  const agents = s.agents === 1 ? tr('1 agente') : tr('{0} agentes', [s.agents])
+  const waiting = s.waiting.length === 0 ? tr('ninguém precisa de você') : s.waiting.length === 1 ? tr('1 precisa de você') : tr('{0} precisam de você', [s.waiting.length])
+  const lines = [tr('Habblaud {0} em {1}', [s.version, url]), tr('{0} · {1} trabalhando · {2}', [agents, s.working, waiting])]
+  for (const w of s.waiting) lines.push(`✋ ${w.name} (${w.room}): ${w.waitingFor}${w.answerable ? tr(' · dá para responder pelo escritório') : ''}`)
   return lines.join('\n')
 }
 
 export function offlineText(url: string): string {
-  return `O Habblaud não respondeu em ${url}. Para subir: npm run docker:up na pasta do Habblaud.`
+  return tr('O Habblaud não respondeu em {0}. Para subir: npm run docker:up na pasta do Habblaud.', [url])
 }
 
 export function outdatedText(url: string): string {
-  return `O Habblaud em ${url} está numa versão sem a rota do mod. Para atualizar: git pull e npm run docker:up na pasta do Habblaud.`
+  return tr('O Habblaud em {0} está numa versão sem a rota do mod. Para atualizar: git pull e npm run docker:up na pasta do Habblaud.', [url])
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -259,6 +260,7 @@ let polling = false
 /** O ambiente da sessão, lido uma vez por carga (cada nome escrito por extenso, como a análise exige). */
 async function readEnv($: EngineInterface): Promise<ModEnv> {
   if (env) return env
+  setLanguage(await $.env.get('HABBLAUD_LANG'))
   // No Windows, HOME só existe se alguém o definir: vale o USERPROFILE (a mesma ordem do servidor, HOME e depois homedir()).
   const home = (await $.env.get('HOME'))?.trim() || (await $.env.get('USERPROFILE'))?.trim() || undefined
   const configDir = configDirOf(await $.env.get('CLAUDE_CONFIG_DIR'), home)
@@ -371,7 +373,8 @@ async function habblaudText($: EngineInterface): Promise<string> {
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     try {
-      await $.command.register({ name: 'habblaud', description: 'Resumo do Habblaud: quantos agentes, quem trabalha e quem precisa de você' })
+      await readEnv($)
+      await $.command.register({ name: 'habblaud', description: tr('Resumo do Habblaud: quantos agentes, quem trabalha e quem precisa de você') })
     } catch {
       // sem o comando, o resto segue
     }
