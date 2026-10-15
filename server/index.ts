@@ -33,6 +33,8 @@ import { ClaudeWatcher } from './sources/watcher';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
+import { discoverCursorRoots } from './sources/cursor/files';
+import { CursorSource } from './sources/cursor/source';
 import { createBuildReader } from './build';
 import { UpdateChecker } from './updates/checker';
 
@@ -96,6 +98,10 @@ const agents = new SourceSet([claude]);
 const codexDirs = config.codex ? discoverCodexDirs(process.env, config.home) : [];
 const codex = codexDirs.length ? new CodexSource({ accounts, office, dirs: codexDirs, env: process.env, home: config.home }) : undefined;
 if (codex) agents.add(codex);
+// Cursor (chats em ~/.cursor/chats; HABBLAUD_CURSOR=0 desliga): fonte própria, depois da do Codex.
+const cursorRoots = config.cursor ? discoverCursorRoots(process.env, config.home) : [];
+const cursor = cursorRoots.length ? new CursorSource({ accounts, office, roots: cursorRoots }) : undefined;
+if (cursor) agents.add(cursor);
 // Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
 // (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.
 const codexLive: CodexLive | undefined = codex;
@@ -268,6 +274,12 @@ server.listen(config.port, config.host, () => {
     }
   } else {
     log.info(`   Codex: ${config.codex ? 'nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)' : 'desligado (HABBLAUD_CODEX=0)'}.`);
+  }
+  if (cursor) {
+    const open = cursor.sources().reduce((n, s) => n + s.sessions, 0);
+    log.info(`   Cursor: ${cursor.accountEntries().length} conta(s), ${open} chat(s) aberto(s) · ${cursorRoots.join(', ')}`);
+  } else {
+    log.info(`   Cursor: ${config.cursor ? 'nenhuma pasta do Cursor encontrada (defina HABBLAUD_CURSOR_DIRS)' : 'desligado (HABBLAUD_CURSOR=0)'}.`);
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
   if (config.terminal) log.info('   Terminal: ligado (acesso só local).');
