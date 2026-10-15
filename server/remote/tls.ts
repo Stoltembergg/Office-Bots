@@ -17,7 +17,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes, X509Certificate } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { hostname, networkInterfaces, tmpdir } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { tr } from '../../shared/i18n';
 
@@ -157,6 +157,18 @@ function ensureDir(dir: string, mode: number): void {
   chmodSync(dir, mode);
 }
 
+/**
+ * Pasta de trabalho para gerar chaves e certificados: dentro de `paths.base` (700), no mesmo sistema de arquivos do
+ * destino, para o renameSync do fim ser uma troca atômica. Em tmpdir() o rename falha com EXDEV quando /tmp é outro
+ * disco (tmpfs, como no Ubuntu do WSL).
+ */
+function workDir(paths: TlsPaths, prefix: string): string {
+  ensureDir(paths.base, 0o700);
+  const work = join(paths.base, `.${prefix}-${randomBytes(6).toString('hex')}`);
+  mkdirSync(work, { mode: 0o700 });
+  return work;
+}
+
 function constraintsFile(paths: TlsPaths): string {
   return join(paths.caDir, 'constraints.json');
 }
@@ -198,8 +210,7 @@ export function ensureCa(paths: TlsPaths, label: string, run: Run = spawnSync, d
   ensureDir(paths.base, 0o700);
   ensureDir(paths.caDir, 0o700);
   const dns = caDomains(domains);
-  const work = join(tmpdir(), `habblaud-ca-${randomBytes(6).toString('hex')}`);
-  mkdirSync(work, { mode: 0o700 });
+  const work = workDir(paths, 'habblaud-ca');
   try {
     const cnf = join(work, 'ca.cnf');
     writeFileSync(
@@ -237,8 +248,7 @@ export function ensureCa(paths: TlsPaths, label: string, run: Run = spawnSync, d
 export function issueServerCert(paths: TlsPaths, targets: CertTargets, run: Run = spawnSync): void {
   if (!existsSync(paths.caKey) || !existsSync(paths.caCert)) throw new Error(tr('a CA local não existe: rode npm run remote:setup'));
   ensureDir(paths.serverDir, 0o755);
-  const work = join(tmpdir(), `habblaud-cert-${randomBytes(6).toString('hex')}`);
-  mkdirSync(work, { mode: 0o700 });
+  const work = workDir(paths, 'habblaud-cert');
   try {
     const key = join(work, 'server.key');
     const csr = join(work, 'server.csr');

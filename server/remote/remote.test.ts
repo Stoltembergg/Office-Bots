@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
-import { readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import type { AddressInfo } from 'node:net';
@@ -140,6 +140,25 @@ describe.skipIf(!HAS_OPENSSL)('certificados (openssl)', () => {
     expect(days).toBeLessThan(398);
     expect(caFingerprint(paths)).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
     expect(readFileSync(paths.publicCa, 'utf8')).toBe(readFileSync(paths.caCert, 'utf8'));
+  });
+
+  it('gera no mesmo disco do destino: funciona com a pasta temporária do sistema inutilizável (ou noutro disco)', () => {
+    const tmp = tempDir();
+    closers.push(tmp.cleanup);
+    // tmpdir() passa a ser um arquivo: uma pasta de trabalho ali falharia, como o rename de /tmp (tmpfs) para a home.
+    const notADir = join(tmp.dir, 'nao-e-pasta');
+    writeFileSync(notADir, '');
+    const before = process.env.TMPDIR;
+    process.env.TMPDIR = notADir;
+    try {
+      const paths = tlsPaths(join(tmp.dir, 'remote-tls'));
+      expect(ensureServerCert(paths, targets)).toMatchObject({ createdCa: true, issued: true });
+      expect(ensureServerCert(paths, targets, { force: true })).toMatchObject({ createdCa: false, issued: true });
+      expect(readdirSync(paths.base).filter((f) => f.startsWith('.'))).toEqual([]);
+    } finally {
+      if (before === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = before;
+    }
   });
 
   it('a CA só assina localhost, .local, o endereço próprio e IPs privados (um certificado para outro site falha)', () => {
