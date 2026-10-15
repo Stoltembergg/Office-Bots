@@ -236,8 +236,10 @@ Depois abra `http://<ip-do-computador>:4747` no celular (no macOS: `ipconfig get
 `ipconfig getifaddr en1`). No modo Node, use `HABBLAUD_HOST=0.0.0.0 npm start`.
 
 > ⚠️ Com isso, qualquer aparelho da rede vê a atividade dos agentes (comandos, arquivos, títulos das sessões). Use
-> só em redes de confiança. O [terminal](#terminal) (e com ele responder e mandar mensagens pelo escritório) fica
-> desligado enquanto a porta estiver exposta. Para voltar: apague o `.env` e rode `npm run docker:up -- --no-build`.
+> só em redes de confiança. Sem [`HABBLAUD_PASSWORD`](#modo-remoto-habblaud_password), o [terminal](#terminal) (e com
+> ele responder e mandar mensagens pelo escritório) fica desligado enquanto a porta estiver exposta. Com senha, dá
+> para usar o celular ou o Tailscale com login. Para voltar ao padrão local: apague o `.env` e rode
+> `npm run docker:up -- --no-build`.
 
 ### Atualizar
 
@@ -374,10 +376,11 @@ estiver ocupado, entra quando ele terminar o que está fazendo. Subagentes e ses
   por dia, com busca por título, projeto ou conta. Uma sessão encerrada abre no terminal com projeto, título e data no
   cabeçalho e "Sessão encerrada às …" no rodapé; uma sessão ainda aberta abre o terminal ao vivo do agente.
 
-Como o terminal (e o histórico) mostra a conversa inteira, ele só existe quando o Habblaud está acessível **apenas pelo
-próprio computador** (o padrão) e só abre por `http://localhost` ou `http://127.0.0.1`. Com a porta liberada para a rede
-(`HABBLAUD_BIND=0.0.0.0` ou `HABBLAUD_HOST=0.0.0.0`), ele fica desligado. Detalhes em
-[Privacidade e segurança](#privacidade-e-segurança).
+Como o terminal (e o histórico) mostra a conversa inteira, por padrão ele só existe com o Habblaud acessível **apenas
+pelo próprio computador** (`http://localhost` ou `http://127.0.0.1`). Com a porta liberada para a rede
+(`HABBLAUD_BIND=0.0.0.0` ou `HABBLAUD_HOST=0.0.0.0`), ele fica desligado — **exceto** se você definir
+[`HABBLAUD_PASSWORD`](#modo-remoto-habblaud_password) (modo remoto: terminal, permissões e mensagens na rede, com
+login no navegador). Detalhes em [Privacidade e segurança](#privacidade-e-segurança).
 
 ### Timelapse do dia
 
@@ -599,15 +602,16 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | Variável | Padrão | Para quê |
 | --- | --- | --- |
 | `HABBLAUD_PORT` | `4747` | Porta HTTP (no Docker, a porta publicada no host). |
-| `HABBLAUD_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora de `127.0.0.1`/`localhost`, o terminal (e responder e mandar mensagens pelo escritório) fica desligado. |
-| `HABBLAUD_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (e desliga o terminal e o que age sobre as sessões). |
+| `HABBLAUD_HOST` | `127.0.0.1` | Interface do servidor no modo Node. Fora do loopback, o terminal (e responder e mandar mensagens) fica desligado, salvo com `HABBLAUD_PASSWORD`. |
+| `HABBLAUD_BIND` | `127.0.0.1` | Só Docker (no `.env`): onde a porta é publicada. `0.0.0.0` libera a rede local (desliga terminal etc., salvo com `HABBLAUD_PASSWORD`). |
+| `HABBLAUD_PASSWORD` | — | Se definida (não vazia após trim), liga o **modo remoto**: terminal, permissões e mensagens funcionam com a porta na rede; quem abre por IP ou nome precisa da senha (cookie de sessão HttpOnly, 7 dias). Sem ela, o comportamento continua o de sempre. |
 | `HABBLAUD_CLAUDE_DIRS` | detecção automática | Pastas das contas, separadas por vírgula (ex.: `/caminho/conta1,/caminho/conta2`). |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` | Onde o Habblaud guarda os próprios dados (nomes dos personagens e das salas, linha do tempo do timelapse e estatísticas do Meu dia). |
 | `HABBLAUD_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `HABBLAUD_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
 | `HABBLAUD_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
-| `HABBLAUD_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal, responder e mandar mensagens pelo escritório e o editor de personagem. Com a porta exposta eles já ficam desligados, sem opção de ligar. |
+| `HABBLAUD_TERMINAL` | ligado (só com acesso local, ou remoto com senha) | `0` desliga o terminal, responder e mandar mensagens pelo escritório e o editor de personagem. Com a porta exposta e **sem** `HABBLAUD_PASSWORD`, ficam desligados. |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0` desliga só as mensagens pelo escritório (a caixa no terminal e nos detalhes do agente). |
 | `HABBLAUD_CODEX` | ligado | `0` desliga o Codex no escritório. |
 | `HABBLAUD_CODEX_DIRS` | detecção automática | Pastas do Codex, separadas por vírgula (no lugar de `~/.codex*` e `CODEX_HOME`). |
@@ -615,10 +619,38 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
-**No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
+**No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_PASSWORD`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX` e `HABBLAUD_UPDATE_CHECK` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` e
 `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),
 `npm run docker:down` (para) e `npm run docker:logs` (acompanha os logs).
+
+### Modo remoto (`HABBLAUD_PASSWORD`)
+
+`HABBLAUD_PASSWORD` — se definida, liga o modo remoto: terminal, permissões e mensagens funcionam com a porta na rede,
+e o navegador em host não local precisa da senha (cookie de sessão). Sem ela, o comportamento continua o de sempre
+(terminal só com bind local + Host local).
+
+Exemplo (Docker + celular ou Tailscale):
+
+```bash
+printf 'HABBLAUD_BIND=0.0.0.0\nHABBLAUD_PASSWORD=sua-senha-forte\n' > .env
+npm run docker:up -- --no-build
+```
+
+**Quem conta como “local” (privilegiado).** Uma requisição é tratada como no próprio computador se tiver **cookie de
+sessão válido** **ou** se **as duas** condições forem verdadeiras: cabeçalho `Host` loopback (`localhost` /
+`127.0.0.1`) **e** endereço TCP de origem loopback (`remoteAddress` da conexão). Só forjar o `Host` **não** basta.
+
+> ⚠️ **Proxy:** não coloque na frente do Habblaud um reverse proxy que reescreva o `Host` para `localhost` ou
+> `127.0.0.1` com o modo senha ligado — clientes remotos passariam a ser tratados como locais.
+
+> **Docker:** com porta publicada no host, o navegador pode precisar de senha mesmo “na mesma máquina”: a URL pode ser
+> `http://127.0.0.1:4747`, mas o TCP que chega ao processo costuma vir do IP da bridge do Docker, não do loopback.
+> Nesse caso use a senha ou acesse pelo modo Node (`npm start`) se quiser entrar sem login.
+
+Login: `POST /api/auth/login` (rate limit de 5 tentativas por IP a cada 60 s); logout: `POST /api/auth/logout`.
+Cookie `Secure` quando a conexão é HTTPS (ou `X-Forwarded-Proto: https`). Rotas sensíveis e o snapshot/stream exigem
+privilégio; eventos dos hooks do Codex (`POST /api/codex/events`) continuam só do loopback real (não valem sessão remota).
 
 ## Como funciona
 
@@ -725,12 +757,12 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   `sk-…`, `ghp_…`, `AKIA…`, JWTs, senhas em URLs) viram `***` antes de chegar ao navegador.
 - **Protegido contra sites maliciosos:** o servidor recusa endereços que não sejam `localhost`/IP (DNS rebinding) e
   `POST` vindos de outras origens (CSRF), e não deixa a página ser embutida em outros sites.
-- **Terminal só local:** a conversa completa das sessões (e o histórico das sessões encerradas, com os
-  títulos) só sai do servidor com o Habblaud acessível apenas pelo próprio computador (`HABBLAUD_HOST` local no Node;
-  `HABBLAUD_BIND` local no Docker) — não há como
-  ligá-lo com a porta exposta — e cada pedido precisa vir por `localhost`/`127.0.0.1`: IPs da rede e nomes de
-  `HABBLAUD_ALLOWED_HOSTS` (proxies, túneis) são recusados. Segredos são mascarados e textos longos truncados antes
-  de chegar ao navegador; no modo demonstração, a conversa é fictícia. `HABBLAUD_TERMINAL=0` desliga de vez.
+- **Terminal só local (ou remoto autenticado):** a conversa completa das sessões (e o histórico) só sai do servidor
+  com bind local **ou** com `HABBLAUD_PASSWORD` (modo remoto). Sem senha, não há como ligar o terminal com a porta
+  exposta. Cada pedido precisa ser **privilegiado**: sessão válida **ou** (`Host` loopback **e** TCP loopback); IPs da
+  rede, nomes de `HABBLAUD_ALLOWED_HOSTS` e `Host` forjado sem TCP loopback são recusados (401 com senha, 403 sem).
+  Não use proxy que reescreva `Host` para localhost com senha ligada. No Docker, `http://127.0.0.1` no host pode
+  ainda exigir login se o peer TCP for a bridge. Segredos mascarados; `HABBLAUD_TERMINAL=0` desliga de vez.
 - **Linha do tempo do timelapse:** só os resumos que já aparecem na tela (atividade em uma linha, status, títulos,
   uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.habblaud/timeline/` e apagados depois
   de 7 dias. `HABBLAUD_TIMELINE=0` desliga a gravação.

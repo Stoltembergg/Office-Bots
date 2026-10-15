@@ -127,19 +127,30 @@ de `shared/demo/terminal.ts` (atualizada a cada 500 ms). Ping a cada 15 s, no m�
 cliente com mais de 8 MB acumulados é desconectado. O que se digita no rodapé do terminal vai como mensagem (ver
 [Mensagens pelo escritório](#mensagens-pelo-escritório)); o stream continua só de leitura.
 
-O recurso só existe com **bind local** (`config.ts`, `terminalOffReason`), já que mostra a conversa inteira:
+O recurso liga quando `terminalOffReason` (`config.ts`) devolve `undefined`. Por padrão exige **bind local** (mostra a
+conversa inteira):
 
 - Node: `HABBLAUD_HOST` loopback (127.0.0.0/8, `::1`, `localhost`); `0.0.0.0`, `::` ou IP de rede desligam;
-- Docker: o processo sempre escuta em `0.0.0.0` dentro do container, então vale a porta publicada no host,
-  `HABBLAUD_BIND` (o `docker-compose.yml` repassa o mesmo valor ao container): loopback liga; ausente, vazia ou
-  qualquer outra desliga;
-- `HABBLAUD_TERMINAL=0` desliga sempre; nenhuma variável liga o terminal com a porta exposta.
+- Docker: o processo escuta em `0.0.0.0` no container; vale `HABBLAUD_BIND` no host (repassado pelo Compose): só
+  loopback liga; ausente ou vazia desliga;
+- `HABBLAUD_TERMINAL=0` desliga sempre.
 
-Além disso, cada requisição precisa de `Host` local (`localhost`, `*.localhost`, 127.x ou `[::1]`): IPs da rede e
-nomes de `HABBLAUD_ALLOWED_HOSTS` (proxies, túneis) recebem 403. O estado sai em `meta.terminal` do snapshot e em
-`terminal` no `/api/health`. Erros antes do stream respondem JSON `{error}`: 403 (desligado ou acesso que não é
-local), 404 (agente ou transcript desconhecido), 405 (método que não é `GET`), 429 (terminais demais) e 500
-(transcript ilegível).
+**Modo remoto:** `HABBLAUD_PASSWORD` não vazio (após trim) ignora a checagem de bind/host e permite terminal (e
+permissões/mensagens) com a porta na rede. Login: `POST /api/auth/login` → cookie `habblaud_session` (HttpOnly,
+SameSite=Lax, `Secure` se HTTPS ou `X-Forwarded-Proto: https`), sessão em memória 7 dias, logout em
+`POST /api/auth/logout`, rate limit 5 falhas / IP / 60 s. Sem senha, `/api/auth/*` responde 404.
+
+**Trava por requisição** (`auth/service.ts`, `isPrivileged`): cookie de sessão válido **ou** (`Host` loopback **e**
+`socket.remoteAddress` loopback). Só forjar `Host` não basta. Com senha, quem não é privilegiado leva 401 nas rotas
+fechadas (403 continua valendo sem senha quando o `Host` não é local). **Não** use reverse proxy que reescreva `Host`
+para `localhost`/`127.0.0.1` com senha ligada. No Docker, abrir `http://127.0.0.1` no host pode ainda pedir senha: o
+TCP costuma vir do gateway/bridge, não do loopback.
+
+Snapshot/stream (`Hub`/`SSE`) seguem a mesma regra de privilégio quando há senha. `POST /api/codex/events` continua só
+loopback real (Host loopback e, fora do Docker, também `remoteAddress` loopback) — sessão remota não vale.
+
+O estado sai em `meta.terminal` do snapshot e em `terminal` no `/api/health`. Erros antes do stream: 401 (senha, sem
+sessão), 403 (desligado ou Host não local sem senha), 404, 405, 429, 500.
 
 ## Linha do tempo (timelapse)
 
@@ -239,7 +250,7 @@ nenhuma válida) não é desviada (`unsupported-tool`).
 
 `permissions/registry.ts` (`PermissionRegistry`):
 
-- só aceita o pedido com alguma página conectada por `Host` local (`Hub.localSize`) e com a sessão conhecida
+- só aceita o pedido com alguma página privilegiada conectada (`Hub.localSize`, `isPrivileged` no SSE) e com a sessão conhecida
   (principal pelo `session_id`; subagente por `<session_id>:<agent_id>`, ou o principal com `subagent` = tipo);
   senão `{skip: 'no-viewers' | 'unknown-session' | 'unsupported-tool' | 'too-many'}` (máx. 32 abertos);
 - publica o pedido mais antigo de cada agente em `AgentInfo.permission` (sem `input`, que só sai pelo detalhe;
@@ -252,8 +263,8 @@ nenhuma válida) não é desviada (`unsupported-tool`).
   `tool_result` dela; sem a chamada, um principal que esteve `waiting` no registro de sessões e saiu dele há 3 s;
 - decisões não buscadas ficam guardadas por 30 s; pedidos do demo (`demo:perm-…`) vão para o simulador.
 
-As rotas (`permissions/http.ts`) seguem a trava do terminal: sem `ServerConfig.terminal` → 403 em
-todas; `Host` que não é local → 403. O guard já exige JSON e `Origin` local nos `POST`. Erros: 400 (corpo, sugestão
+As rotas (`permissions/http.ts`) seguem a trava do terminal: sem `ServerConfig.terminal` → 403; com senha, quem não é
+privilegiado → 401; sem senha, `Host` que não é local → 403. O guard já exige JSON e `Origin` local nos `POST`. Erros: 400 (corpo, sugestão
 ou resposta inválidos), 404 (pedido desconhecido, já entregue ou expirado), 405, 409 (já respondido).
 
 ## Mensagens pelo escritório
@@ -276,7 +287,8 @@ o plugin `habblaud-mensagens` da sessão o busca (`POST /api/mod/inbox`, a cada 
   mensagens fictícias, entregues em ~1 s, sem sessão real.
 
 As rotas (`messages/http.ts`) seguem a trava do terminal e mais uma chave: `ServerConfig.messages` = terminal ligado e
-`HABBLAUD_MENSAGENS` não desligado (`0`, `false`, `off`, `no`). Desligado ou `Host` que não é local → 403 em todas.
+`HABBLAUD_MENSAGENS` não desligado (`0`, `false`, `off`, `no`). Desligado → 403; com senha, não privilegiado → 401;
+sem senha, `Host` não local → 403.
 Erros de `POST /api/messages`: 400 (corpo inválido, texto vazio ou longo demais), 404 (agente desconhecido), 409 (o
 agente não recebe: subagente, saiu ou sessão sem o plugin conectado) e 429. O estado sai em `meta.messages` do
 snapshot e em `messages` no `/api/health`.
@@ -359,9 +371,10 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
 | Variável | Padrão | Uso |
 | --- | --- | --- |
 | `HABBLAUD_PORT` | `4747` | porta HTTP |
-| `HABBLAUD_HOST` | `127.0.0.1` | interface (o Docker usa `0.0.0.0`); fora do loopback, o terminal (e as permissões e mensagens) fica desligado |
-| `HABBLAUD_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada, repassada ao container; só loopback liga o terminal |
-| `HABBLAUD_TERMINAL` | — | `0` desliga o terminal, as permissões e as mensagens pelo escritório (não liga com a porta exposta) |
+| `HABBLAUD_HOST` | `127.0.0.1` | interface (o Docker usa `0.0.0.0`); fora do loopback, terminal/permissões/mensagens desligados, salvo com `HABBLAUD_PASSWORD` |
+| `HABBLAUD_BIND` | — (Compose: `127.0.0.1`) | só Docker: interface do host onde a porta é publicada; só loopback liga o terminal (salvo senha) |
+| `HABBLAUD_PASSWORD` | — | senha do modo remoto (trim); ligada → terminal/permissões/mensagens na rede + login por cookie; ausente → comportamento original |
+| `HABBLAUD_TERMINAL` | — | `0` desliga terminal, permissões e mensagens (mesmo com senha) |
 | `HABBLAUD_CODEX` | ligado | `0` desliga a fonte do Codex |
 | `HABBLAUD_CODEX_DIRS` | — | pastas do Codex separadas por vírgula; substitui a detecção (`CODEX_HOME` e `~/.codex*`) |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
