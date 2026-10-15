@@ -647,6 +647,11 @@ sessão válido** **ou** se **as duas** condições forem verdadeiras: cabeçalh
 > **Docker:** com porta publicada no host, o navegador pode precisar de senha mesmo “na mesma máquina”: a URL pode ser
 > `http://127.0.0.1:4747`, mas o TCP que chega ao processo costuma vir do IP da bridge do Docker, não do loopback.
 > Nesse caso use a senha ou acesse pelo modo Node (`npm start`) se quiser entrar sem login.
+>
+> **Docker + senha e os plugins:** os hooks dos plugins (permissões, mensagens, resumo) rodam no host e chegam ao container
+> pelo IP da bridge, sem sessão e sem TCP loopback. Com `HABBLAUD_PASSWORD` eles levam **401** em permissões, inbox e
+> summary, então **responder e mandar mensagens pelo escritório via plugins não funciona** nesse arranjo. Para hooks +
+> senha, use Node (`npm start`) ou bind só em loopback.
 
 Login: `POST /api/auth/login` (rate limit de 5 tentativas por IP a cada 60 s); logout: `POST /api/auth/logout`.
 Cookie `Secure` quando a conexão é HTTPS (ou `X-Forwarded-Proto: https`). Rotas sensíveis e o snapshot/stream exigem
@@ -766,7 +771,7 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
 - **Linha do tempo do timelapse:** só os resumos que já aparecem na tela (atividade em uma linha, status, títulos,
   uso das contas, sem e-mails, comandos completos ou conversas), gravados em `~/.habblaud/timeline/` e apagados depois
   de 7 dias. `HABBLAUD_TIMELINE=0` desliga a gravação.
-- **Responder pelo escritório, só local:** aprovar ou recusar age sobre as sessões, então segue a mesma trava do
+- **Responder pelo escritório, só local (ou remoto autenticado com senha):** aprovar ou recusar age sobre as sessões, então segue a mesma trava do
   terminal (bind local, `Host` local, nada de proxies ou túneis) e só existe com o hook de permissão (o do plugin
   `habblaud-permissoes` ou o do jeito antigo) instalado por você. As respostas exigem JSON e origem local (um site
   aberto no navegador não consegue mandá-las), o hook só fala com `127.0.0.1` e, na dúvida — Habblaud fora do ar,
@@ -775,14 +780,14 @@ das contas (letra, e-mail, organização) são lidos no host pelo `docker:up` e 
   para aquele pedido. Atenção: qualquer programa ou pessoa que consiga abrir `http://localhost:4747` nesta máquina
   também consegue responder; em computadores compartilhados com outros usuários, não instale o hook
   (`npm run mod:install -- --sem-permissoes`).
-- **Mandar mensagens, só local — e com um aviso:** a mensagem entra na sessão como se você a tivesse digitado, então
+- **Mandar mensagens, só local (ou remoto autenticado) — e com um aviso:** a mensagem entra na sessão como se você a tivesse digitado, então
   vale o que o agente pode fazer com um pedido seu. Segue a mesma trava (bind local, `Host` local, JSON e origem local,
   então um site aberto no navegador não consegue mandar), mas **qualquer programa desta máquina** que fale com
   `http://localhost:4747` — inclusive um agente rodando um comando — consegue deixar uma mensagem para outra sessão
   que tenha o plugin. Se isso não serve para você (computador compartilhado, agentes rodando sem supervisão), não
   instale o plugin (`npm run mod:install -- --sem-mensagens`) ou desligue com `HABBLAUD_MENSAGENS=0`. O texto das
   mensagens não é gravado: some do servidor assim que é entregue.
-- **Editor de personagem, só local:** salvar ou voltar ao sorteio muda o escritório e grava em `names.json`, então
+- **Editor de personagem, só local (ou remoto autenticado):** salvar ou voltar ao sorteio muda o escritório e grava em `names.json`, então
   segue a mesma trava do terminal (bind local, `Host` local, nada de proxies ou túneis): sem ela, o lápis não aparece
   e o servidor responde `403`. As mudanças exigem JSON e origem local. `HABBLAUD_TERMINAL=0` desliga junto.
 - **Estatísticas do Meu dia:** só números agregados (tempo por status, contagens, tokens, custo) com nomes de projeto,

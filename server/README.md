@@ -137,7 +137,7 @@ conversa inteira):
 
 **Modo remoto:** `HABBLAUD_PASSWORD` não vazio (após trim) ignora a checagem de bind/host e permite terminal (e
 permissões/mensagens) com a porta na rede. Login: `POST /api/auth/login` → cookie `habblaud_session` (HttpOnly,
-SameSite=Lax, `Secure` se HTTPS ou `X-Forwarded-Proto: https`), sessão em memória 7 dias, logout em
+SameSite=Strict, `Secure` se HTTPS ou `X-Forwarded-Proto: https`), sessão em memória 7 dias, logout em
 `POST /api/auth/logout`, rate limit 5 falhas / IP / 60 s. Sem senha, `/api/auth/*` responde 404.
 
 **Trava por requisição** (`auth/service.ts`, `isPrivileged`): cookie de sessão válido **ou** (`Host` loopback **e**
@@ -151,6 +151,11 @@ loopback real (Host loopback e, fora do Docker, também `remoteAddress` loopback
 
 O estado sai em `meta.terminal` do snapshot e em `terminal` no `/api/health`. Erros antes do stream: 401 (senha, sem
 sessão), 403 (desligado ou Host não local sem senha), 404, 405, 429, 500.
+
+**Docker + senha (limitação):** os hooks dos plugins rodam no host e chegam ao container pelo IP da bridge, sem cookie
+de sessão e sem TCP loopback; com `HABBLAUD_PASSWORD` eles levam **401** em permissões, inbox e summary. Ou seja,
+aprovar/mensagens pelo escritório via plugins **não funcionam** nesse arranjo. O caminho suportado para hooks + senha é
+Node (`npm start`) ou bind só em loopback (sem expor a porta).
 
 ## Linha do tempo (timelapse)
 
