@@ -48,6 +48,13 @@ function isLoopbackName(name: string): boolean {
   return isIP(name) === 4 && name.startsWith('127.');
 }
 
+/** Conexão vinda do próprio computador (127.x, ::1 ou ::ffff:127.x). */
+export function isLoopbackAddress(addr: string | undefined): boolean {
+  if (!addr) return false;
+  const a = addr.replace(/^::ffff:/i, '');
+  return a === '::1' || /^127\./.test(a);
+}
+
 /**
  * Cabeçalho Host local (`localhost`, `*.localhost`, 127.x ou `[::1]`; porta ignorada)? Usado pelo terminal, pelas
  * permissões e pelas mensagens, que só atendem quem abriu o Habblaud pelo próprio computador: um IP da rede ou um nome

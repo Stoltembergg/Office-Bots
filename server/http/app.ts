@@ -9,7 +9,7 @@ import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import type { CodexLive } from '../sources/codex/live';
 import type { SessionLookup } from '../sources/source';
-import { AUTH_REQUIRED, isJsonContentType, isLoopbackHost } from './guard';
+import { AUTH_REQUIRED, isJsonContentType, isLoopbackAddress, isLoopbackHost } from './guard';
 import { handleSessionsRoute } from './sessions';
 import type { Hub } from './sse';
 import { handleStatsRoute } from './stats';
@@ -72,13 +72,6 @@ const TERMINAL_ROUTE = /^\/api\/agents\/([^/]+)\/terminal$/;
 /** PUT|DELETE /api/agents/:id/character: personagem do projeto (ver Office.setCharacter). */
 const CHARACTER_ROUTE = /^\/api\/agents\/([^/]+)\/character$/;
 const NOT_EDITABLE = 'agente não encontrado: só o agente principal de uma sessão aberta tem personagem editável';
-
-/** Conexão vinda do próprio computador (127.x, ::1 ou ::ffff:127.x). */
-function isLoopbackAddress(addr: string | undefined): boolean {
-  if (!addr) return false;
-  const a = addr.replace(/^::ffff:/i, '');
-  return a === '::1' || /^127\./.test(a);
-}
 
 /** Rotas das mensagens pelo escritório (server/messages/http.ts); /api/mod/summary fica de fora (sem trava). */
 function isMessagesPath(path: string): boolean {

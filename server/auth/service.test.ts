@@ -37,10 +37,29 @@ describe('AuthService', () => {
     expect(createAuthService({ password: 'secret' }).required).toBe(true);
   });
 
-  it('treats a localhost Host as privileged without a cookie', () => {
+  it('treats a localhost Host from a loopback address as privileged without a cookie', () => {
     const auth = createAuthService({ password: 'secret' });
 
-    expect(auth.isPrivileged(request({ host: 'localhost:3000' }))).toBe(true);
+    expect(auth.isPrivileged(request({ host: 'localhost:3000', ip: '127.0.0.1' }))).toBe(true);
+    expect(auth.isPrivileged(request({ host: 'localhost:3000', ip: '::1' }))).toBe(true);
+    expect(auth.isPrivileged(request({ host: 'localhost:3000', ip: '::ffff:127.0.0.1' }))).toBe(true);
+  });
+
+  it('does not trust a forged localhost Host from a non-loopback address', () => {
+    const auth = createAuthService({ password: 'secret' });
+
+    expect(auth.isPrivileged(request({ host: 'localhost:3000', ip: '192.168.0.10' }))).toBe(false);
+    expect(auth.isPrivileged(request({ host: 'localhost:3000', ip: '::ffff:192.168.0.10' }))).toBe(false);
+    expect(auth.isPrivileged(request({ host: 'localhost:3000', ip: undefined as unknown as string }))).toBe(false);
+  });
+
+  it('treats a valid session as privileged with a remote Host and IP', () => {
+    const auth = createAuthService({ password: 'secret' });
+    const { res, setHeader } = response();
+    auth.login(request({ host: '10.0.0.1', ip: '192.168.0.10' }), res, 'secret');
+    const cookie = `habblaud_session=${sessionToken(setHeader)}`;
+
+    expect(auth.isPrivileged(request({ host: '10.0.0.1', ip: '192.168.0.10', cookie }))).toBe(true);
   });
 
   it('does not treat a remote Host as privileged without a cookie', () => {

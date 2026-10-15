@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { isLoopbackHost } from '../http/guard';
+import { isLoopbackAddress, isLoopbackHost } from '../http/guard';
 import { parseCookie, sessionClearCookie, sessionSetCookie } from './cookies';
 import { passwordsEqual } from './password';
 import { LoginRateLimit } from './rate-limit';
@@ -40,7 +40,8 @@ export function createAuthService(opts: { password: string; now?: () => number }
     },
 
     isPrivileged(req) {
-      return isLoopbackHost(req.headers.host) || service.isAuthenticated(req);
+      // Host sozinho é forjável por cliente remoto: exige também endereço de origem loopback.
+      return service.isAuthenticated(req) || (isLoopbackHost(req.headers.host) && isLoopbackAddress(req.socket.remoteAddress));
     },
 
     login(req, res, password) {
