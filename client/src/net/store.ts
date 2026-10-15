@@ -6,6 +6,7 @@
 // ex.: servidor reiniciando atrás de um proxy), tenta de novo com espera crescente.
 import type { AppearanceParts } from '../../../shared/appearance';
 import type { Activity, AgentDetail, AgentInfo, FeedItem, Notice, OfficeSnapshot, OutboxMessage, PermissionDecision, PermissionRequestInfo, RoomInfo } from '../../../shared/types';
+import { reportUnauthorized } from './auth';
 import { DemoSimulator } from '../../../shared/demo/simulator';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed' | 'mock';
@@ -169,7 +170,7 @@ export class OfficeStore {
   /** Histórico longo de um agente (servidor). No modo mock e no timelapse devolve o `recent`. */
   async agentHistory(id: string): Promise<Activity[]> {
     if (this.mock || this.replay) return this.agent(id)?.recent ?? [];
-    const res = await fetch(`/api/agents/${encodeURIComponent(id)}`);
+    const res = this.guard(await fetch(`/api/agents/${encodeURIComponent(id)}`));
     if (!res.ok) return this.agent(id)?.recent ?? [];
     const detail = (await res.json()) as AgentDetail;
     return detail.history;
@@ -178,18 +179,20 @@ export class OfficeStore {
   /** Liga/desliga os agentes de demonstração no servidor. */
   async setDemo(enabled: boolean): Promise<boolean> {
     if (this.mock) return true;
-    const res = await fetch('/api/demo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
+    const res = this.guard(
+      await fetch('/api/demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      }),
+    );
     return res.ok;
   }
 
   /** "Verificar agora": pede ao servidor uma consulta ao GitHub (o resultado chega no snapshot). */
   async checkUpdates(): Promise<boolean> {
     if (this.mock) return false;
-    const res = await fetch('/api/updates/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const res = this.guard(await fetch('/api/updates/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
     return res.ok;
   }
 
@@ -238,7 +241,7 @@ export class OfficeStore {
     const inline = this.agent(agentId)?.permission;
     if (inline?.id === id && inline.input !== undefined) return inline;
     if (this.mock) return inline?.id === id ? inline : undefined;
-    const res = await fetch(`/api/permissions/${encodeURIComponent(id)}`);
+    const res = this.guard(await fetch(`/api/permissions/${encodeURIComponent(id)}`));
     if (!res.ok) return undefined;
     return (await res.json()) as PermissionRequestInfo;
   }
@@ -254,11 +257,13 @@ export class OfficeStore {
       this.applySnapshot(sim.snapshot());
       return undefined;
     }
-    const res = await fetch(`/api/permissions/${encodeURIComponent(id)}/decision`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(d),
-    });
+    const res = this.guard(
+      await fetch(`/api/permissions/${encodeURIComponent(id)}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(d),
+      }),
+    );
     if (res.ok) return undefined;
     try {
       const body = (await res.json()) as { error?: unknown };
@@ -286,11 +291,13 @@ export class OfficeStore {
     if (this.mock || this.replay) return 'Editar o personagem só funciona com o escritório ao vivo.';
     let res: Response;
     try {
-      res = await fetch(`/api/agents/${encodeURIComponent(id)}/character`, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      res = this.guard(
+        await fetch(`/api/agents/${encodeURIComponent(id)}/character`, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
     } catch {
       return 'Sem conexão com o Habblaud.';
     }
@@ -313,7 +320,7 @@ export class OfficeStore {
    */
   async sendMessage(agentId: string, text: string): Promise<{ message: OutboxMessage } | { error: string }> {
     if (this.mock) return this.mockSend(agentId, text);
-    const res = await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId, text }) });
+    const res = this.guard(await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId, text }) }));
     let body: unknown;
     try {
       body = await res.json();
@@ -331,7 +338,7 @@ export class OfficeStore {
       const m = this.mockOutbox.get(id);
       return m ? { ...m } : null;
     }
-    const res = await fetch(`/api/messages/${encodeURIComponent(id)}`);
+    const res = this.guard(await fetch(`/api/messages/${encodeURIComponent(id)}`));
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`erro ${res.status}`);
     return (await res.json()) as OutboxMessage;
@@ -448,6 +455,7 @@ export class OfficeStore {
       if (es.readyState === ES_CLOSED) {
         this.setConnection('closed');
         this.scheduleRetry();
+        void this.probeAuth();
       } else {
         this.setConnection('connecting');
       }
@@ -473,6 +481,30 @@ export class OfficeStore {
     this.source?.close();
     this.source = null;
   }
+
+  /** Resposta 401 (modo remoto sem sessão): avisa a página para pedir o login de novo. */
+  private guard(res: Response): Response {
+    if (res.status === 401 && !this.mock) reportUnauthorized();
+    return res;
+  }
+
+  /**
+   * O EventSource não expõe o status HTTP: quando o stream fecha, pergunta ao servidor (/api/snapshot) se o motivo é
+   * falta de sessão (401). Qualquer outra resposta ou falha de rede segue o caminho normal de reconexão.
+   */
+  private async probeAuth(): Promise<void> {
+    if (this.probing || this.mock || typeof fetch !== 'function') return;
+    this.probing = true;
+    try {
+      const res = await fetch('/api/snapshot', { cache: 'no-store', credentials: 'same-origin' });
+      if (res.status === 401 && !this.stopped) this.guard(res);
+    } catch {
+      // Sem rede (ou fora do navegador): a reconexão cuida.
+    } finally {
+      this.probing = false;
+    }
+  }
+  private probing = false;
 
   private scheduleRetry(): void {
     if (this.retryTimer || this.mock || this.stopped) return;

@@ -7772,3 +7772,81 @@ html.is-replay #world {
 .ui-char__reset {
   margin-left: auto;
 }
+
+/* Login do modo remoto (ui/login.ts): camada simples por cima do escritório. */
+.ui-login {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 45%, #1d2433, #12151d 70%),
+    #12151d;
+}
+
+.ui-login__box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(320px, 100%);
+}
+
+.ui-login__name {
+  display: block;
+  color: var(--ui-text);
+}
+
+.ui-login__note {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.ui-login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.ui-login__label {
+  color: var(--ui-muted);
+  font: 500 12.5px/1.2 var(--font-px);
+}
+
+.ui-login__input {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-bg-solid);
+  color: var(--ui-text);
+  font: 14px var(--font-ui);
+}
+
+.ui-login__input:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
+.ui-login__submit {
+  justify-content: center;
+}
+
+.ui-login__submit:disabled {
+  opacity: 0.6;
+}
+
+.ui-login__error {
+  margin: 0;
+  color: var(--lv-crit);
+  font-size: 12.5px;
+}
+
+.ui-login__error[hidden] {
+  display: none;
+}

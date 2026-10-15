@@ -6,6 +6,7 @@ import {
   CODEX_PERMISSION_NOTE,
   destinationLabel,
   expiryText,
+  isClientPrivileged,
   isLocalHostname,
   isQuestionRequest,
   nextPermissionAgent,
@@ -88,6 +89,14 @@ describe('responder pelo escritório (peças puras)', () => {
   it('isLocalHostname: a mesma regra do servidor para aceitar respostas', () => {
     for (const h of ['localhost', 'habblaud.localhost', '127.0.0.1', '127.1.2.3', '[::1]', '::1', 'LOCALHOST']) expect(isLocalHostname(h), h).toBe(true);
     for (const h of ['192.168.0.10', 'meu-mac.local', 'habblaud.lan', '128.0.0.1', '127.0.0.1.nip.io']) expect(isLocalHostname(h), h).toBe(false);
+  });
+
+  it('isClientPrivileged: máquina local OU sessão autenticada (o servidor continua sendo a barreira)', () => {
+    expect(isClientPrivileged('100.64.0.5', true)).toBe(true);
+    expect(isClientPrivileged('100.64.0.5', false)).toBe(false);
+    expect(isClientPrivileged('localhost', false)).toBe(true);
+    expect(isClientPrivileged('localhost', true)).toBe(true);
+    expect(isClientPrivileged('127.0.0.1.nip.io', false)).toBe(false);
   });
 });
 

@@ -8,6 +8,7 @@
 // motivo. O Codex nunca pergunta pelo escritório (sem cartão de pergunta).
 import { ANSWER_OTHER_MAX, ASK_TOOL, checkAnswers } from '../../../shared/answers';
 import type { AgentInfo, AskQuestion, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../../shared/types';
+import { getAuth } from '../net/auth';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setText, setTitle } from './dom';
 import { formatClock, formatDuration } from './format';
@@ -95,6 +96,19 @@ export function focusPermission(ctx: UiContext, agentId: string): void {
 export function isLocalHostname(hostname: string): boolean {
   const name = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   return name === 'localhost' || name.endsWith('.localhost') || name === '::1' || /^127(?:\.\d{1,3}){3}$/.test(name);
+}
+
+/**
+ * Pode responder/mandar/editar por esta página? Máquina local OU sessão autenticada (modo remoto). O cliente não vê
+ * o endereço de origem: a barreira de verdade continua sendo o servidor (que responde 401/403).
+ */
+export function isClientPrivileged(hostname: string, authenticated: boolean): boolean {
+  return isLocalHostname(hostname) || authenticated;
+}
+
+/** `isClientPrivileged` para a página atual (hostname e sessão de agora). */
+export function isPrivilegedNow(): boolean {
+  return isClientPrivileged(location.hostname, getAuth().authenticated);
 }
 
 /** Pedido que se responde escolhendo (as perguntas do AskUserQuestion), não aprovando. O Codex nunca pergunta. */
@@ -484,7 +498,7 @@ export class PermissionCard {
 
   /** A página foi aberta pelo próprio computador (ou é o modo mock): dá para responder por aqui. */
   private isLocal(): boolean {
-    return this.ctx.store.mock || isLocalHostname(location.hostname);
+    return this.ctx.store.mock || isPrivilegedNow();
   }
 
   /** Sem como responder agora: enviando, já respondido ou página aberta de fora do computador. */

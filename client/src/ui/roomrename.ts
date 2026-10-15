@@ -2,9 +2,10 @@
 // O nome fica no servidor (POST /api/rooms/rename, model/room-aliases.ts) e vale para todas as abas; vazio volta ao
 // nome da pasta. Enter salva, Esc cancela, clicar fora salva. A gaveta da sala tem também um lápis ao lado do nome.
 import { isDemoId } from '../../../shared/timeline';
+import { reportUnauthorized } from '../net/auth';
 import type { UiContext } from './context';
 import { h, setText } from './dom';
-import { isLocalHostname } from './permission';
+import { isPrivilegedNow } from './permission';
 
 const NAME_MAX = 40;
 
@@ -20,7 +21,7 @@ export function canRenameRoom(ctx: UiContext, roomId: string): boolean {
     !ctx.store.mock &&
     !ctx.store.replaying &&
     !!ctx.store.snapshot?.meta.terminal &&
-    isLocalHostname(location.hostname)
+    isPrivilegedNow()
   );
 }
 
@@ -31,6 +32,7 @@ async function renameRequest(id: string, name: string): Promise<void> {
   } catch {
     throw new Error('o Habblaud não respondeu');
   }
+  if (res.status === 401) reportUnauthorized();
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `erro ${res.status}`);
 }
 

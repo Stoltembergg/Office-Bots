@@ -1,4 +1,5 @@
 // Configurações (popover): opções do escritório, avisos, modo demonstração e Sobre (versão).
+import { getAuth, logout } from '../net/auth';
 import type { UiComponent, UiContext } from './context';
 import { h, iconButton, setAttr, setHidden, setText } from './dom';
 import { ICONS } from './icons';
@@ -63,6 +64,7 @@ export class SettingsPopover implements UiComponent {
   private daylight: ReturnType<typeof segmented<UiPrefs['daylight']>>;
   private soundGroup: SoundSettingsGroup;
   private demoGroup: HTMLElement;
+  private sessionGroup: HTMLElement;
   private about: AboutGroup;
   private demoBusy = false;
   private anchor: HTMLElement | null = null;
@@ -116,6 +118,19 @@ export class SettingsPopover implements UiComponent {
       sw('demo', 'Modo demonstração', 'Coloca agentes fictícios no escritório, junto com os reais.', () => void this.toggleDemo()),
     );
 
+    // Modo remoto: quem entrou com a senha pode sair (volta para a tela de login).
+    this.sessionGroup = h(
+      'div',
+      { class: 'ui-set-group', hidden: true },
+      h('h3', { text: 'Sessão' }),
+      h(
+        'div',
+        { class: 'ui-set' },
+        h('span', { class: 'ui-set__label', text: 'Entrou com a senha' }),
+        h('button', { class: 'ui-btn', type: 'button', text: 'Sair', on: { click: () => void this.signOut() } }),
+      ),
+    );
+
     this.about = new AboutGroup(ctx);
 
     const close = iconButton(ICONS.close, 'Fechar configurações', () => this.hide(), 'ui-icon-btn--sm');
@@ -140,6 +155,7 @@ export class SettingsPopover implements UiComponent {
       ),
       this.soundGroup.el,
       this.demoGroup,
+      this.sessionGroup,
       this.about.el,
     );
     this.el.addEventListener('toggle', () => {
@@ -202,6 +218,8 @@ export class SettingsPopover implements UiComponent {
     this.daylight.set(p.daylight);
     this.soundGroup.render();
     setHidden(this.demoGroup, this.ctx.store.mock);
+    const auth = getAuth();
+    setHidden(this.sessionGroup, this.ctx.store.mock || !(auth.required && auth.authenticated));
     this.about.render();
 
     const notif = this.switches.get('browserNotifications')!;
@@ -224,6 +242,12 @@ export class SettingsPopover implements UiComponent {
     const state = await this.notifier.enableBrowserNotifications();
     this.ctx.updatePrefs({ browserNotifications: state === 'granted' });
     if (state === 'denied') this.ctx.announce('Notificações bloqueadas pelo navegador.');
+  }
+
+  private async signOut(): Promise<void> {
+    await logout();
+    // Recarrega: zera o estado da página e o boot mostra a tela de login.
+    location.reload();
   }
 
   private async toggleDemo(): Promise<void> {
