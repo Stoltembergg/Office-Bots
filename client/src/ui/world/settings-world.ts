@@ -2,8 +2,9 @@
 // resumo de privacidade, código do e-mail, login, esqueci a senha), lista de espera, personagem (o editor de aparência
 // da gaveta do agente, mais nome, traços e frase de apresentação), o cartão "Seu prédio" com Pausar/Retomar e "Ver o
 // que foi enviado" (building.ts), visibilidade do prédio, dispositivos e sair. Também a dica do tema em Aparência,
-// quando a escolha vai para o prédio. Fala com as rotas locais /api/world/* (net/world.ts); as regras puras estão em
-// world-model.ts.
+// quando a escolha vai para o prédio. Fase 6: "Conta e dados" (o aviso de inatividade, "Baixar meus dados" e "Excluir
+// conta" em três etapas: o que some e quando, a confirmação e o código do e-mail), o aviso da manutenção do mundo e o
+// da conta excluída. Fala com as rotas locais /api/world/* (net/world.ts); as regras puras estão em world-model.ts.
 //
 // O popover de Configurações chama render() a cada quadro sujo: o miolo só é refeito quando a tela muda (senão o que
 // foi digitado e o foco se perderiam); o status é buscado ao abrir o popover, depois de cada ação e quando o
@@ -24,6 +25,7 @@ import {
   type WorldVisibility,
 } from '../../net/world';
 import { BuildingCard, SentDialog } from './building';
+import { buildBlocked } from './blocked';
 import { TRAITS, TRAIT_IDS, type TraitId } from '../../../../shared/world/traits';
 import { AppearanceFields } from '../appearance-fields';
 import { createAvatar } from '../avatar';
@@ -35,16 +37,19 @@ import { INTRO_IDS, introLabel, isIntroId, type IntroId } from '../../../../shar
 import { parsePlayerName } from '../../../../shared/world/names-rules';
 import { PLAYER_NAME_LIMITS } from '../../../../shared/world/protocol';
 import {
+  APPEAL_EMAIL,
   characterProblem,
   codeLooksValid,
   DEFAULT_VISIBILITY,
   draftAppearance,
   emailLooksValid,
+  EXPORT_FILENAME,
   fullParts,
   initialWorldUi,
   nameProblemText,
   normalizeCode,
   normalizeEmail,
+  notifyInactivityOn,
   passwordProblem,
   passwordProblemText,
   themeGoesToWorld,
@@ -233,6 +238,8 @@ function visibilityText(key: VisibilitySwitch): { label: string; hint: string } 
       return { label: tr('Entrar no placar'), hint: tr('O prédio pode aparecer nos placares de tokens da cidade.') };
     case 'compactions':
       return { label: tr('Mostrar as compactações'), hint: tr('Quando um agente compacta o contexto, a lixeira da sala enche. Sai só o fato, nada do conteúdo.') };
+    case 'knocks':
+      return { label: tr('Avisar quando baterem na porta'), hint: tr('Quem estiver na porta do seu prédio pode bater; o aviso chega aqui no Habblaud, sem o nome de quem bateu.') };
   }
 }
 
@@ -399,14 +406,14 @@ export class WorldSettingsGroup {
     this.dispatch({ type: 'go', screen });
   }
 
-  private async refresh(): Promise<void> {
+  private async refresh(force = false): Promise<void> {
     const client = this.client;
     if (!client) return;
     const req = ++this.statusReq;
     const askedAt = this.themeClock;
     this.loading = true;
     this.stale = false;
-    const r = await client.status();
+    const r = await client.status(force);
     if (req !== this.statusReq) return;
     this.loading = false;
     if (r.ok) {
@@ -519,6 +526,10 @@ export class WorldSettingsGroup {
         return this.buildVisibility();
       case 'devices':
         return this.buildDevices();
+      case 'account':
+        return this.buildAccount();
+      case 'blocked':
+        return this.buildBlocked();
     }
   }
 
@@ -542,10 +553,13 @@ export class WorldSettingsGroup {
   private buildWelcome(): View {
     const create = h('button', { class: 'ui-btn ui-btn--primary', type: 'button', text: tr('Criar conta'), on: { click: () => this.go('register') } });
     const login = h('button', { class: 'ui-btn', type: 'button', text: tr('Já tenho conta'), on: { click: () => this.go('login') } });
+    // A conta acabou de ser excluída (aqui ou em outro computador): o aviso fica até entrar de novo.
+    const deleted = this.status?.lastError === 'account_deleted' ? para('ui-world__notice', worldErrorText('account_deleted', 'status')) : null;
     return {
       el: h(
         'div',
         { class: 'ui-world__stack' },
+        deleted,
         para('ui-world__lead', tr('Leve o seu escritório para uma cidade em pixel art: um prédio seu, aceso enquanto os agentes trabalham, e um personagem para passear e visitar os prédios de outras pessoas.')),
         this.privacyLine(),
         para('ui-set__hint', tr('O acesso é liberado aos poucos: quem cria a conta entra numa lista de espera.')),
@@ -769,20 +783,31 @@ export class WorldSettingsGroup {
       refresh: () => void this.refresh(),
       openSent: (opener) => void this.sent.open(opener),
       now: () => this.ctx.now(),
+      visitOwn: () => {
+        const go = this.ctx.visitOwnBuilding;
+        return go && this.src.meta()?.scene?.available === true ? () => go() : null;
+      },
+      accountId: () => this.status?.account?.id,
+      maintenance: () => this.status?.lastError === 'maintenance',
     });
+    // "Avisar quando alguém visitar" (o aviso do primeiro visitante de cada conexão; ui/world/world-chip.ts)
+    const notify = switchRow(tr('Avisar quando alguém visitar'), tr('Um aviso quando o primeiro visitante entra no seu prédio. Você vê só quantos estão lá dentro, nunca quem.'), () =>
+      this.ctx.updatePrefs({ worldVisitNotify: !this.ctx.prefs.worldVisitNotify }),
+    );
     let rev = -1;
     const sync = () => {
       if (rev !== this.statusRev) {
         rev = this.statusRev;
-        wrap.replaceChildren(...this.homeContent(card));
+        wrap.replaceChildren(...this.homeContent(card, notify.row));
       }
       card.sync();
+      setAttr(notify.btn, 'aria-checked', String(this.ctx.prefs.worldVisitNotify));
     };
     sync();
     return { el: wrap, sync };
   }
 
-  private homeContent(card: BuildingCard): Node[] {
+  private homeContent(card: BuildingCard, notifyRow: HTMLElement): Node[] {
     const s = this.status;
     const approved = this.ui.server === 'approved';
     const out: Node[] = [];
@@ -792,6 +817,10 @@ export class WorldSettingsGroup {
         approved ? tr('Acesso liberado!') : tr('Você está na lista de espera. Estamos liberando o acesso aos poucos e avisamos por e-mail quando chegar a sua vez.'),
       ),
     );
+    // O mundo em manutenção (503 `maintenance`): o prédio tenta de novo sozinho, com espera. Com o cartão "Seu prédio",
+    // é ele que diz (no lugar do "Reconectando"); sem ele (lista de espera), um aviso próprio.
+    const maintenance = s?.lastError === 'maintenance';
+    if (maintenance && !approved) out.push(para('ui-world__maint', worldErrorText('maintenance', 'status')));
     // Aprovado: o cartão "Seu prédio" (conexão, contagens, pausar, o que foi enviado). Na espera, o lote vazio.
     if (approved) out.push(card.el);
     else
@@ -848,9 +877,12 @@ export class WorldSettingsGroup {
     }
     const devices = s?.devices?.length;
     nav.append(this.navRow(tr('Dispositivos'), devices ? tr('{0} de 3', [devices]) : '', () => this.go('devices')));
+    if (player && approved) nav.append(this.navRow(tr('Bloqueados'), s?.blocked?.length ? String(s.blocked.length) : '', () => this.go('blocked')));
+    nav.append(this.navRow(tr('Conta e dados'), '', () => this.go('account')));
     out.push(nav);
+    if (approved && player) out.push(notifyRow);
 
-    if (s?.lastError) out.push(para('ui-world__warn', tr('Último problema com o mundo: {0}', [worldErrorText(s.lastError, 'status')])));
+    if (s?.lastError && !maintenance) out.push(para('ui-world__warn', tr('Último problema com o mundo: {0}', [worldErrorText(s.lastError, 'status')])));
 
     out.push(this.signOutRow());
     if (s?.account) out.push(para('ui-set__hint ui-world__email', tr('Conta: {0}', [s.account.emailMasked])));
@@ -1080,6 +1112,18 @@ export class WorldSettingsGroup {
     };
   }
 
+  /** Fase 5: quem a conta bloqueou, com Desbloquear (blocked.ts). A lista é relida do /v1/me ao abrir. */
+  private buildBlocked(): View {
+    const epoch = this.epoch;
+    return buildBlocked(screenHead(tr('Bloqueados'), () => this.go('home')), {
+      client: this.client,
+      list: () => this.status?.blocked,
+      refresh: () => this.refresh(true),
+      current: () => epoch === this.epoch,
+      announce: (t) => this.ctx.announce(t),
+    });
+  }
+
   private buildDevices(): View {
     const list = h('ul', { class: 'ui-world__devices' });
     const note = h('p', { class: 'ui-set__hint', text: tr('Carregando…') });
@@ -1161,4 +1205,184 @@ export class WorldSettingsGroup {
     });
     return h('li', { class: 'ui-set ui-world__device' }, text, btn);
   }
+
+  // ---------------------------------------------------------------- conta e dados (Fase 6)
+
+  /**
+   * "Conta e dados": o aviso de inatividade (com o personagem: vai na visibilidade), "Baixar meus dados" (o JSON da
+   * conta, uma vez por dia) e "Excluir conta" em três etapas. A tela é montada uma vez: o status relido no meio não apaga
+   * o código digitado; `sync` só acompanha o interruptor.
+   */
+  private buildAccount(): View {
+    const inactivity = this.inactivitySection();
+    const exportBox = this.exportSection();
+    const deletion = this.deletionSection();
+    return {
+      el: h(
+        'div',
+        { class: 'ui-world__stack' },
+        screenHead(tr('Conta e dados'), () => this.go('home')),
+        inactivity.el,
+        exportBox,
+        deletion,
+        para('ui-set__hint', tr('Dúvidas ou pedidos sobre os seus dados: {0}.', [APPEAL_EMAIL])),
+      ),
+      sync: inactivity.sync,
+    };
+  }
+
+  /** O interruptor do aviso por e-mail antes de retirar o prédio por inatividade. */
+  private inactivitySection(): { el: HTMLElement; sync(): void } {
+    let pending: boolean | null = null;
+    const error = h('p', { class: 'ui-world__error', role: 'alert', hidden: true });
+    const sw = switchRow(
+      tr('Avisar por e-mail antes de retirar meu prédio por inatividade'),
+      tr('Sem notícias deste Habblaud por 7 dias, o prédio some do mapa e, 30 dias depois, é retirado. O e-mail chega 3 dias antes da retirada.'),
+      () => void toggle(),
+    );
+    const noPlayer = para('ui-set__hint', tr('O aviso de inatividade fica disponível depois de criar o personagem.'));
+    const sync = () => {
+      const player = this.status?.player;
+      setHidden(sw.row, !player);
+      setHidden(noPlayer, !!player);
+      setAttr(sw.btn, 'aria-checked', String(pending ?? notifyInactivityOn(player?.visibility)));
+      sw.btn.disabled = pending !== null;
+    };
+    const toggle = async () => {
+      const client = this.client;
+      const player = this.status?.player;
+      if (!client || !player || pending !== null) return;
+      const next = !notifyInactivityOn(player.visibility);
+      pending = next;
+      setHidden(error, true);
+      sync();
+      const epoch = this.epoch;
+      const r = await client.saveVisibility({ ...DEFAULT_VISIBILITY, ...player.visibility, notifyInactivity: next });
+      if (epoch !== this.epoch) return;
+      pending = null;
+      if (!r.ok) {
+        setText(error, worldErrorText(r.code, 'inactivity'));
+        setHidden(error, false);
+      } else {
+        // Até o status chegar, o interruptor fica no que foi salvo.
+        const p = this.status?.player;
+        if (p) p.visibility = { ...p.visibility, notifyInactivity: next };
+        void this.refresh();
+      }
+      sync();
+    };
+    sync();
+    return { el: h('section', { class: 'ui-world__acct' }, h('h4', { class: 'ui-world__acct-title', text: tr('Avisos') }), sw.row, noPlayer, error), sync };
+  }
+
+  /** "Baixar meus dados": pede o JSON ao servidor local e salva como habblaud-world-dados.json. */
+  private exportSection(): HTMLElement {
+    const btn = h('button', { class: 'ui-btn', type: 'button', text: tr('Baixar meus dados') });
+    const note = h('p', { class: 'ui-set__hint', role: 'status', hidden: true });
+    const error = h('p', { class: 'ui-world__error', role: 'alert', hidden: true });
+    btn.addEventListener('click', async () => {
+      const client = this.client;
+      if (!client || btn.disabled) return;
+      btn.disabled = true;
+      setAttr(btn, 'aria-busy', 'true');
+      setHidden(error, true);
+      setHidden(note, true);
+      const epoch = this.epoch;
+      const r = await client.exportData();
+      if (epoch !== this.epoch) return;
+      btn.disabled = false;
+      setAttr(btn, 'aria-busy', null);
+      if (!r.ok) {
+        setText(error, worldErrorText(r.code, 'export'));
+        setHidden(error, false);
+        return;
+      }
+      saveFile(this.el, r.data, EXPORT_FILENAME);
+      setText(note, tr('Pronto: o arquivo {0} foi para a pasta de downloads.', [EXPORT_FILENAME]));
+      setHidden(note, false);
+    });
+    return h(
+      'section',
+      { class: 'ui-world__acct' },
+      h('h4', { class: 'ui-world__acct-title', text: tr('Seus dados') }),
+      para(
+        'ui-set__hint',
+        tr('Um arquivo JSON com o que o Habblaud World guarda da sua conta: e-mail, datas, personagem, visibilidade, dispositivos, prédio, likes dados, bloqueios e denúncias feitas. Dá para baixar uma vez por dia.'),
+      ),
+      h('div', { class: 'ui-world__actions' }, btn),
+      note,
+      error,
+    );
+  }
+
+  /** "Excluir conta" em três etapas: o que some e quando; a confirmação (manda o código); o código do e-mail. */
+  private deletionSection(): HTMLElement {
+    const box = h('div', { class: 'ui-world__stack' });
+    const email = () => this.status?.account?.emailMasked ?? '';
+    const explain = () => {
+      const next = h('button', { class: 'ui-btn', type: 'button', text: tr('Excluir conta…'), on: { click: () => show(confirm()) } });
+      return [
+        para('ui-set__hint', tr('Excluir a conta tira você do Habblaud World:')),
+        h(
+          'ul',
+          { class: 'ui-world__list' },
+          h('li', {}, h('strong', { text: tr('Na hora:') }), ' ', tr('o prédio e o perfil somem do mundo, e este computador sai da conta.')),
+          h('li', {}, h('strong', { text: tr('Em 7 dias:') }), ' ', tr('a conta, o personagem, os likes dados e recebidos, os bloqueios, as denúncias feitas e os dispositivos são apagados do banco.')),
+          h('li', {}, h('strong', { text: tr('Em até 30 dias:') }), ' ', tr('somem também dos backups.')),
+        ),
+        para('ui-set__hint', tr('Se quiser guardar uma cópia, baixe os seus dados antes.')),
+        h('div', { class: 'ui-world__actions' }, next),
+      ];
+    };
+    const confirm = () => {
+      const form = new Form(tr('Mandar o código'), () => void send(), tr('Mandando…'));
+      form.submit.classList.add('is-danger');
+      const send = async () => {
+        const r = await this.run(form, 'delete', (c) => c.requestAccountDeletion());
+        if (r?.ok) show(code());
+      };
+      form.el.append(
+        para('ui-world__warn', tr('Tem certeza? O prédio e o perfil saem do mundo assim que você digitar o código.')),
+        para('ui-set__hint', ...rich(tr('Para confirmar, mandamos um código de 6 dígitos para o e-mail da conta ({0}).'), [h('strong', { class: 'ui-world__email', text: email() })])),
+        form.error,
+        h('div', { class: 'ui-world__actions' }, form.submit, h('button', { class: 'ui-btn', type: 'button', text: tr('Cancelar'), on: { click: () => show(explain()) } })),
+      );
+      return [form.el];
+    };
+    const code = () => {
+      const field = codeField();
+      const form = new Form(tr('Excluir a conta'), () => void submit(), tr('Excluindo…'));
+      form.submit.classList.add('is-danger');
+      const submit = async () => {
+        if (!codeLooksValid(field.input.value)) return form.setError(tr('Digite os 6 dígitos do código.'), field.input);
+        const r = await this.run(form, 'delete', (c) => c.confirmAccountDeletion({ code: normalizeCode(field.input.value) }), field.input);
+        if (!r?.ok) return;
+        this.ctx.announce(worldErrorText('account_deleted', 'status'));
+        void this.refresh();
+      };
+      const resend = this.resendButton(form, (c) => c.requestAccountDeletion());
+      form.el.append(
+        para('ui-world__lead', ...rich(tr('Mandamos um código de 6 dígitos para {0}. Digite o código para excluir a conta.'), [h('strong', { class: 'ui-world__email', text: email() })])),
+        this.demoCodeHint() ?? '',
+        field.label,
+        form.error,
+        h('div', { class: 'ui-world__actions' }, form.submit, resend.el, h('button', { class: 'ui-btn', type: 'button', text: tr('Cancelar'), on: { click: () => show(explain()) } })),
+      );
+      requestAnimationFrame(() => field.input.isConnected && field.input.focus());
+      return [form.el];
+    };
+    const show = (nodes: (Node | string)[]) => box.replaceChildren(...nodes);
+    show(explain());
+    return h('section', { class: 'ui-world__acct ui-world__acct--danger' }, h('h4', { class: 'ui-world__acct-title', text: tr('Excluir conta') }), box);
+  }
+}
+
+/** Salva um texto como arquivo (o link temporário fica dentro da seção, para nada fora dela receber o clique). */
+function saveFile(host: HTMLElement, text: string, filename: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = h('a', { hidden: true, attrs: { href: url, download: filename } });
+  host.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

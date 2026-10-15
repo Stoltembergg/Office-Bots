@@ -56,8 +56,10 @@ import { WorldClient } from './world/client';
 import { createWorldRoutes } from './world/http';
 import { WorldService } from './world/service';
 import { WorldSettingsStore } from './world/settings';
+import { OwnerSocial } from './world/social';
 import { BuildingTokens } from './world/tokens';
 import { BuildingUplink } from './world/uplink';
+import { WorldViewer } from './world/viewer';
 
 const config = loadConfig();
 const startedAt = Date.now();
@@ -93,6 +95,8 @@ updates.load();
 // sai do computador); HABBLAUD_WORLD=0 esconde tudo (rotas 404 e nada na interface).
 const worldStore = new WorldSettingsStore(join(config.dataDir, 'world.json'));
 if (config.world.enabled && config.world.url) worldStore.load();
+// O social leve do dono (world/social.ts): likes do dia, "enquanto você estava fora", batidas na porta e bloqueados.
+const worldSocial = config.world.enabled ? new OwnerSocial({ session: () => worldStore.get()?.deviceId, onChange: () => late.office?.markDirty() }) : undefined;
 const world = config.world.enabled
   ? new WorldService({
       config: config.world,
@@ -100,6 +104,7 @@ const world = config.world.enabled
       store: worldStore,
       client: config.world.url ? new WorldClient({ baseUrl: config.world.url, version: config.version }) : undefined,
       onChange: () => late.office?.markDirty(),
+      social: worldSocial,
     })
   : undefined;
 const accounts = new AccountsService({
@@ -188,10 +193,21 @@ const worldUplink =
         tokens: () => worldTokens.read(),
         lastFile: join(config.dataDir, 'world-last-uplink.json'),
         onGoodbye: (reason) => world.goodbye(reason),
+        onLeft: () => world.leftElsewhere(),
         onChange: () => office.markDirty(),
       })
     : undefined;
 if (world && worldUplink) world.attachUplink(worldUplink);
+// A cena Mundo (world/viewer.ts): a cidade pela mesma conexão do prédio, só com a cena aberta no navegador.
+const worldViewer = worldUplink ? new WorldViewer() : undefined;
+if (worldUplink && worldViewer) {
+  worldViewer.attach(worldUplink);
+  worldUplink.attachCity(worldViewer);
+}
+if (worldUplink && worldSocial) {
+  worldSocial.attach(worldUplink);
+  worldUplink.attachOwner(worldSocial);
+}
 // Terminal: só existe com bind local (ver terminalOffReason em config.ts).
 // Cada agente com o parser da ferramenta dele (o do Claude Code por padrão).
 const terminals = config.terminal
@@ -399,7 +415,7 @@ const api = createApiHandler({
   stats,
   updates,
   remote: config.remote ? { is: isRemoteRequest, allows: (f) => config.remote!.allow.has(f) } : undefined,
-  world: world ? createWorldRoutes(world) : undefined,
+  world: world ? createWorldRoutes(world, worldViewer, worldSocial) : undefined,
 });
 
 const server = http.createServer();
@@ -583,6 +599,7 @@ function shutdown(signal: string): void {
   messages?.stop();
   ptys?.stopAll();
   updates.stop();
+  worldViewer?.stop();
   worldUplink?.stop();
   world?.stop();
   names.flush();

@@ -17,7 +17,10 @@
 // guard (Host, Origin, JSON) e por http/app.ts, que só entrega aqui pela porta local com Host local (a porta do celular
 // recebe 403, nem com login). Aqui: tudo o que age pela conta exige a trava do terminal (bind local); sem
 // HABBLAUD_WORLD_URL, 409 `not_configured`; os corpos são conferidos antes de ir ao servidor do mundo, e os erros dele
-// voltam como {error: {code}} com o mesmo status.
+// voltam como {error: {code}} com o mesmo status. A cena Mundo (stream e comandos) fica em viewer.ts; o stream é um GET
+// que põe o personagem na rua, então só abre pela própria página (sem `Origin` de outro site nem Sec-Fetch-Site
+// cross-site/same-site), como a guarda já faz com os POST. A exportação dos dados também é um GET com efeito (gasta a
+// cota do dia no servidor do mundo) e devolve dados pessoais: a mesma regra. Excluir a conta pede o código do e-mail.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseAppearanceParts } from '../../shared/appearance';
 import { tr } from '../../shared/i18n';
@@ -29,10 +32,14 @@ import { parsePlayerTraits } from '../../shared/world/traits';
 import { HttpError, readJson, sendJson } from '../http/app';
 import { isWorldLocale, parseVisibility, type WorldResult } from './client';
 import type { WorldService } from './service';
+import { socialRoutes, type OwnerSocial } from './social';
+import type { WorldViewer } from './viewer';
 
 /** Corpo máximo das rotas do mundo (o maior é o personagem). */
 const MAX_BODY = 16 * 1024;
 const REVOKE_ROUTE = /^\/api\/world\/devices\/([^/]+)\/revoke$/;
+/** Nome do arquivo de "Baixar meus dados". */
+export const EXPORT_FILENAME = 'habblaud-world-dados.json';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Method = 'GET' | 'POST' | 'PUT';
@@ -115,9 +122,27 @@ function character(body: Record<string, unknown>): PlayerInput {
   return { name: name.name, look: body.look, parts, traits, intro: body.intro };
 }
 
+/**
+ * O stream veio da própria página do Habblaud? O EventSource de outro site manda `Origin` (e o navegador marca
+ * Sec-Fetch-Site): a guarda só confere a origem dos POST, e abrir a cena tem efeito (o personagem entra na rua).
+ */
+export function sameOriginRequest(req: IncomingMessage): boolean {
+  const site = req.headers['sec-fetch-site'];
+  if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  try {
+    return new URL(origin).host.toLowerCase() === String(req.headers.host ?? '').trim().toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 /** Devolve o handler das rotas /api/world/* (o filtro de porta e Host fica em http/app.ts). */
-export function createWorldRoutes(service: WorldService): (req: IncomingMessage, res: ServerResponse, url: URL) => void {
+export function createWorldRoutes(service: WorldService, viewer?: WorldViewer, social?: OwnerSocial): (req: IncomingMessage, res: ServerResponse, url: URL) => void {
   const routes: Record<string, { method: Method; account: boolean; run: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void> }> = {
+    // O social leve (Fase 5, social.ts): resumo visto e desbloquear, pela conexão do prédio.
+    ...(social ? socialRoutes(social) : {}),
     '/api/world/status': {
       method: 'GET',
       account: false,
@@ -190,7 +215,7 @@ export function createWorldRoutes(service: WorldService): (req: IncomingMessage,
       account: true,
       run: async (req, res) => {
         const v = parseVisibility(await readBody(req));
-        if (!v) throw new BodyError(422, 'invalid', tr('esperado {mode: "live" ou "discreet", closed, hideCountry, tokensVisible, leaderboard, compactions}'));
+        if (!v) throw new BodyError(422, 'invalid', tr('esperado {mode: "live" ou "discreet", closed, hideCountry, tokensVisible, leaderboard, compactions, notifyInactivity?, knocks?}'));
         sendOutcome(res, await service.setVisibility(v));
       },
     },
@@ -209,7 +234,7 @@ export function createWorldRoutes(service: WorldService): (req: IncomingMessage,
         sendOutcome(res, service.setTheme(b.theme));
       },
     },
-    // "Sair do mundo": fecha o uplink e espera o servidor do mundo retirar o prédio antes de responder.
+    // "Sair do mundo": para o envio do pacote e espera o servidor do mundo retirar o prédio antes de responder.
     '/api/world/leave': {
       method: 'POST',
       account: true,
@@ -218,7 +243,7 @@ export function createWorldRoutes(service: WorldService): (req: IncomingMessage,
         sendOutcome(res, await service.leave());
       },
     },
-    // Pausar fecha o uplink antes de responder.
+    // Pausar para o envio do pacote antes de responder (a conexão só continua com a cena Mundo aberta).
     '/api/world/pause': {
       method: 'POST',
       account: true,
@@ -232,7 +257,75 @@ export function createWorldRoutes(service: WorldService): (req: IncomingMessage,
       account: true,
       run: async (req, res) => {
         await readBody(req);
-        sendOutcome(res, service.resume());
+        sendOutcome(res, await service.resume());
+      },
+    },
+    // "Voltar ao mundo" depois de sair: responde depois do POST /v1/me/building/join (sem ele, nada muda).
+    '/api/world/join': {
+      method: 'POST',
+      account: true,
+      run: async (req, res) => {
+        await readBody(req);
+        sendOutcome(res, await service.join());
+      },
+    },
+    // A cena Mundo: o SSE da cidade (viewer.ts). Abrir o primeiro stream manda `view` ao servidor do mundo.
+    '/api/world/stream': {
+      method: 'GET',
+      account: true,
+      run: async (req, res) => {
+        if (!viewer) throw new BodyError(409, 'not_configured', tr('Habblaud World desligado: defina HABBLAUD_WORLD_URL'));
+        if (!sameOriginRequest(req)) throw new BodyError(403, 'local_only', tr('a cena Mundo só abre pela própria página do Habblaud'));
+        if (req.method === 'HEAD') {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' });
+          return void res.end();
+        }
+        const r = viewer.open(req, res);
+        if (!r.ok) sendError(res, r.status, r.code, undefined, r.retryAfter);
+      },
+    },
+    // Os comandos do jogador ({stream, cmds}): até 5 lotes por segundo por stream, só os da cena.
+    '/api/world/cmd': {
+      method: 'POST',
+      account: true,
+      run: async (req, res) => {
+        const body = await readBody(req);
+        if (!viewer) throw new BodyError(409, 'not_configured', tr('Habblaud World desligado: defina HABBLAUD_WORLD_URL'));
+        const r = viewer.command(body);
+        if (!r.ok) return sendError(res, r.status, r.code, undefined, r.retryAfter);
+        sendJson(res, 202, r.data);
+      },
+    },
+    // "Excluir conta", primeira etapa: o servidor do mundo manda o código ao e-mail da conta.
+    '/api/world/delete-account': {
+      method: 'POST',
+      account: true,
+      run: async (req, res) => {
+        await readBody(req);
+        const r = await service.requestDeletion();
+        sendOutcome(res, r.ok ? { ok: true, status: 202, data: {} } : r);
+      },
+    },
+    // "Excluir conta" com o código: só responde depois de fechar o prédio e apagar o world.json.
+    '/api/world/delete-account/confirm': {
+      method: 'POST',
+      account: true,
+      run: async (req, res) => sendOutcome(res, await service.confirmDeletion(code((await readBody(req)).code))),
+    },
+    // "Baixar meus dados": o JSON da conta como anexo. Só pela própria página (gasta a cota do dia); HEAD não pede nada.
+    '/api/world/export': {
+      method: 'GET',
+      account: true,
+      run: async (req, res) => {
+        if (!sameOriginRequest(req)) throw new BodyError(403, 'local_only', tr('os dados da conta só saem pela própria página do Habblaud'));
+        if (req.method === 'HEAD') {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+          return void res.end();
+        }
+        const r = await service.exportData();
+        if (!r.ok) return sendError(res, r.status, r.code, undefined, r.retryAfter);
+        res.setHeader('Content-Disposition', `attachment; filename="${EXPORT_FILENAME}"`);
+        sendJson(res, 200, r.data);
       },
     },
     // "Ver o que foi enviado": o pacote exato da última remessa, os bytes e a resposta do servidor ({} se nada).

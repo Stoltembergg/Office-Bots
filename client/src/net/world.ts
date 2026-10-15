@@ -5,7 +5,12 @@
 //
 // Fase 2 (prédio no mundo): `building` em meta.world e no status, GET /api/world/last-uplink (a última remessa, para
 // "Ver o que foi enviado"), POST /api/world/pause, /resume e /leave e PUT /api/world/theme. Os tipos do prédio vêm
-// de shared/world/api.ts (os mesmos do servidor local).
+// de shared/world/api.ts (os mesmos do servidor local). Fase 3: POST /api/world/join ("Voltar ao mundo") e
+// `meta.world.scene` (o botão Mundo); a cena fala com o servidor local por net/world-stream.ts. Fase 5 (social leve):
+// likes do dia, batidas na porta e o "Enquanto você estava fora" no prédio, os bloqueados no status, "Avisar quando
+// baterem na porta" (`knocks`) na visibilidade e POST /api/world/summary/seen e /unblock. Fase 6: excluir a conta
+// (POST /api/world/delete-account e /confirm), baixar os dados (GET /api/world/export), o aviso de inatividade na
+// visibilidade, o id da conta no status e o selo "não verificado" do prédio.
 import type { AppearanceParts } from '../../../shared/appearance';
 import type { Locale } from '../../../shared/i18n';
 import type { OfficeSnapshot } from '../../../shared/types';
@@ -13,6 +18,7 @@ import {
   isWorldThemeChoice,
   WORLD_KNOWN_ERROR_CODES,
   WORLD_THEME_CHOICES,
+  type WorldBlockedPlayer,
   type WorldBuildingMeta,
   type WorldBuildingStatus,
   type WorldBuildingStop,
@@ -24,7 +30,8 @@ import {
 import type { TraitId } from '../../../shared/world/traits';
 import type { IntroId } from '../../../shared/world/intro';
 import { parsePlayerName, playerNameKey } from '../../../shared/world/names-rules';
-import { GOODBYE_REASONS, UPLINK_ACK_ERRORS, type UplinkAckError, type WorldUplink } from '../../../shared/world/protocol';
+import { GOODBYE_REASONS, UPLINK_ACK_ERRORS, type AwaySummary, type UplinkAckError, type WorldUplink } from '../../../shared/world/protocol';
+import { parseAwaySummary, summaryHasNews } from '../../../shared/world/scene';
 import { seasonalThemeFor } from '../world/api';
 import { emailLooksValid, passwordProblem, traitsValid, DEFAULT_VISIBILITY } from '../ui/world/world-model';
 
@@ -33,7 +40,7 @@ export type WorldAccess = 'waiting' | 'approved';
 
 // Os tipos do prédio são os do servidor local (shared/world/api.ts); a interface os importa daqui.
 export { WORLD_THEME_CHOICES };
-export type { WorldBuildingMeta, WorldBuildingStatus, WorldBuildingStop, WorldLastUplink, WorldThemeChoice, WorldUplinkAck } from '../../../shared/world/api';
+export type { WorldBlockedPlayer, WorldBuildingMeta, WorldBuildingStatus, WorldBuildingStop, WorldLastUplink, WorldThemeChoice, WorldUplinkAck } from '../../../shared/world/api';
 
 /** OfficeSnapshot.meta.world: o que a interface precisa para decidir se o World aparece (e o prédio, na Fase 2). */
 export type WorldMeta = NonNullable<OfficeSnapshot['meta']['world']>;
@@ -45,6 +52,10 @@ export interface WorldVisibility {
   tokensVisible: boolean;
   leaderboard: boolean;
   compactions: boolean;
+  /** Aviso por e-mail antes de retirar o prédio por inatividade; ausente = o padrão da conta (ligado). */
+  notifyInactivity?: boolean;
+  /** Avisar quando baterem na porta do prédio (Fase 5, opt-in). */
+  knocks: boolean;
 }
 
 export interface WorldPlayer {
@@ -75,7 +86,8 @@ export interface WorldStatus {
   available: boolean;
   configured: boolean;
   state: WorldServerState;
-  account?: { emailMasked: string; access: WorldAccess };
+  /** `id`: o id da conta no mundo, quando o servidor local já sabe (vai no assunto do recurso por e-mail). */
+  account?: { emailMasked: string; access: WorldAccess; id?: string };
   player?: WorldPlayer;
   devices?: WorldDevice[];
   /** Último erro da conexão com o mundo (código), se houver. */
@@ -84,6 +96,8 @@ export interface WorldStatus {
   building?: WorldBuildingStatus;
   /** Tema guardado para o prédio (PUT /api/world/theme); ausente = 'auto'. */
   theme?: WorldThemeChoice;
+  /** Quem a conta bloqueou (Fase 5): Configurações › Habblaud World › Bloqueados. */
+  blocked?: WorldBlockedPlayer[];
 }
 
 export interface WorldCharacterInput {
@@ -104,7 +118,8 @@ export type WorldErrorCode = WorldKnownErrorCode | 'offline' | 'forbidden';
 export type WorldResult<T = null> = { ok: true; data: T } | { ok: false; code: WorldErrorCode; status: number };
 
 export interface WorldClient {
-  status(): Promise<WorldResult<WorldStatus>>;
+  /** `refresh`: o servidor local relê /v1/me antes de responder (a lista de bloqueados, por exemplo). */
+  status(refresh?: boolean): Promise<WorldResult<WorldStatus>>;
   register(body: { email: string; password: string; locale: Locale }): Promise<WorldResult>;
   verify(body: { email: string; code: string }): Promise<WorldResult>;
   login(body: { email: string; password: string }): Promise<WorldResult>;
@@ -118,14 +133,26 @@ export interface WorldClient {
   revokeDevice(id: string): Promise<WorldResult>;
   /** A última remessa; `null` = nada saiu deste computador ainda. */
   lastUplink(): Promise<WorldResult<WorldLastUplink | null>>;
-  /** Para o envio na hora (o servidor local fecha a conexão antes de responder): o prédio apaga. */
+  /** Para o envio na hora (antes da resposta; a conexão só fica para a cena Mundo aberta): o prédio apaga. */
   pause(): Promise<WorldResult<{ paused: boolean }>>;
-  /** Volta a enviar: o prédio acende de novo (depois de sair do mundo, um prédio novo, em outro lote). */
+  /** Volta a enviar: o prédio acende de novo. */
   resume(): Promise<WorldResult<{ paused: boolean }>>;
-  /** "Sair do mundo": o servidor local fecha a conexão e o servidor do mundo retira o prédio antes da resposta. */
+  /** "Voltar ao mundo" depois de sair: o servidor do mundo aceita a volta e o prédio novo nasce em outro lote. */
+  join(): Promise<WorldResult>;
+  /** "Sair do mundo": o servidor local para o envio e o servidor do mundo retira o prédio antes da resposta. */
   leave(): Promise<WorldResult>;
   /** O tema escolhido em Aparência também vale para o prédio. */
   setTheme(theme: WorldThemeChoice): Promise<WorldResult>;
+  /** "Excluir conta", primeira etapa: o código de confirmação vai ao e-mail da conta. */
+  requestAccountDeletion(): Promise<WorldResult>;
+  /** "Excluir conta" com o código: a conta sai do mundo e este computador sai da conta. */
+  confirmAccountDeletion(body: { code: string }): Promise<WorldResult>;
+  /** "Baixar meus dados": o JSON da conta, já formatado para salvar (uma vez por dia). */
+  exportData(): Promise<WorldResult<string>>;
+  /** O dono viu o "Enquanto você estava fora" (Fase 5). */
+  summarySeen(): Promise<WorldResult>;
+  /** Desbloqueia um jogador (Fase 5; precisa da conexão com o mundo). */
+  unblock(playerId: string): Promise<WorldResult>;
 }
 
 // ------------------------------------------------------------------ leitura defensiva
@@ -140,6 +167,7 @@ export function readWorldMeta(snap: OfficeSnapshot | null | undefined): WorldMet
   const out: WorldMeta = { enabled: w.enabled, configured: w.configured === true, state };
   const building = parseBuildingMeta(w.building);
   if (building) out.building = building;
+  if (isObject(w.scene) && typeof w.scene.available === 'boolean') out.scene = { available: w.scene.available };
   return out;
 }
 
@@ -187,6 +215,11 @@ export function parseBuildingMeta(v: unknown): WorldBuildingMeta | undefined {
   if (at) b.lastUplinkAt = at;
   if (v.left === true) b.left = true;
   if (v.stopped === true) b.stopped = true;
+  if (typeof v.visitors === 'number' && Number.isInteger(v.visitors) && v.visitors >= 0) b.visitors = Math.min(v.visitors, 999);
+  // Fase 5: likes do dia, batidas desde que o Habblaud abriu e se há um resumo não visto.
+  if (typeof v.likesToday === 'number' && Number.isInteger(v.likesToday) && v.likesToday >= 0) b.likesToday = v.likesToday;
+  if (count(v.knocks) > 0) b.knocks = count(v.knocks);
+  if (v.awaySummary === true) b.awaySummary = true;
   return b;
 }
 
@@ -199,7 +232,17 @@ export function parseBuilding(v: unknown): WorldBuildingStatus | undefined {
   const ack = parseAckState(v.lastAck);
   if (ack) st.lastAck = ack;
   if ((STOPS as readonly unknown[]).includes(v.stopped)) st.stopped = v.stopped as WorldBuildingStop;
+  if (v.unverified === true) st.unverified = true;
+  const summary = parseAwaySummary(v.summary);
+  if (summary && summaryHasNews(summary)) st.summary = summary;
+  if (typeof v.code === 'string' && /^HB-[2-9A-HJKMNP-TV-Z]{4}$/.test(v.code)) st.code = v.code;
   return st;
+}
+
+/** `blocked` do status: `[{id, name}]` (o que está torto fica de fora). */
+export function parseBlockedList(v: unknown): WorldBlockedPlayer[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((p): p is WorldBlockedPlayer => isObject(p) && typeof p.id === 'string' && !!p.id && typeof p.name === 'string').map((p) => ({ id: p.id, name: p.name }));
 }
 
 /** O prédio do snapshot como o cartão usa antes do primeiro status (o motivo de uma parada só vem no status). */
@@ -235,7 +278,10 @@ export function parseWorldStatus(v: unknown): WorldStatus | null {
   if (!isObject(v) || !STATES.includes(v.state as WorldServerState)) return null;
   const out: WorldStatus = { available: v.available !== false, configured: v.configured === true, state: v.state as WorldServerState };
   const acc = v.account;
-  if (isObject(acc) && typeof acc.emailMasked === 'string') out.account = { emailMasked: acc.emailMasked, access: acc.access === 'approved' ? 'approved' : 'waiting' };
+  if (isObject(acc) && typeof acc.emailMasked === 'string') {
+    out.account = { emailMasked: acc.emailMasked, access: acc.access === 'approved' ? 'approved' : 'waiting' };
+    if (typeof acc.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(acc.id)) out.account.id = acc.id;
+  }
   const p = v.player;
   if (isObject(p) && typeof p.name === 'string' && isObject(p.parts) && Array.isArray(p.traits)) {
     out.player = {
@@ -251,6 +297,8 @@ export function parseWorldStatus(v: unknown): WorldStatus | null {
   const building = parseBuilding(v.building);
   if (building) out.building = building;
   if (isWorldThemeChoice(v.theme)) out.theme = v.theme;
+  const blocked = parseBlockedList(v.blocked);
+  if (blocked) out.blocked = blocked;
   return out;
 }
 
@@ -303,8 +351,8 @@ export class HttpWorldApi implements WorldClient {
     return r.ok ? { ok: true, data: null } : r;
   }
 
-  async status(): Promise<WorldResult<WorldStatus>> {
-    const r = await this.call<unknown>('GET', '/status');
+  async status(refresh = false): Promise<WorldResult<WorldStatus>> {
+    const r = await this.call<unknown>('GET', refresh ? '/status?refresh=1' : '/status');
     if (!r.ok) return r;
     const s = parseWorldStatus(r.data);
     return s ? { ok: true, data: s } : { ok: false, code: 'unknown', status: 200 };
@@ -361,8 +409,28 @@ export class HttpWorldApi implements WorldClient {
   leave() {
     return this.done(this.call('POST', '/leave'));
   }
+  join() {
+    return this.done(this.call('POST', '/join'));
+  }
   setTheme(theme: WorldThemeChoice) {
     return this.done(this.call('PUT', '/theme', { theme }));
+  }
+  requestAccountDeletion() {
+    return this.done(this.call('POST', '/delete-account'));
+  }
+  confirmAccountDeletion(body: { code: string }) {
+    return this.done(this.call('POST', '/delete-account/confirm', body));
+  }
+  async exportData(): Promise<WorldResult<string>> {
+    const r = await this.call<unknown>('GET', '/export');
+    if (!r.ok) return r;
+    return isObject(r.data) ? { ok: true, data: `${JSON.stringify(r.data, null, 2)}\n` } : { ok: false, code: 'unknown', status: 200 };
+  }
+  summarySeen() {
+    return this.done(this.call('POST', '/summary/seen'));
+  }
+  unblock(playerId: string) {
+    return this.done(this.call('POST', '/unblock', { playerId }));
   }
 
   /** POST /pause e /resume → WorldStatus; vale o `building.paused` dele (sem o campo: o que foi pedido). */
@@ -391,8 +459,43 @@ interface FakeBuilding {
   left?: true;
   /** O "mundo" parou o prédio (goodbye), até retomar. */
   stopped?: WorldBuildingStop;
+  /** O "mundo" marcou o prédio como "não verificado". */
+  unverified?: true;
   last: WorldLastUplink | null;
+  /** Quando acendeu (as visitas de mentira começam alguns segundos depois; os likes do dia sobem 1 por minuto). */
+  since: number;
+  /** Visitantes agora, fixados por `setVisitors` (sem isso: a demonstração da visita, pelo relógio). */
+  visitors?: number;
+  /** O social leve (Fase 5): o código, o resumo até ser visto e os bloqueados (nomes inventados). */
+  code: string;
+  summary?: AwaySummary;
+  blocked: WorldBlockedPlayer[];
+  /** Quando "Avisar quando baterem na porta" foi ligado (a 1ª batida chega 8 s depois, e outra a cada 45 s). */
+  knocksOn?: number;
 }
+
+/** Visitas de mentira no prédio da demonstração: ninguém nos primeiros segundos, depois 1 e, um pouco depois, 2. */
+export function fakeVisitorsAt(ms: number): number {
+  return ms < 8_000 ? 0 : ms < 20_000 ? 1 : 2;
+}
+
+/** O "Enquanto você estava fora" do falso: visitas, likes e carimbos, sem quem. */
+export const FAKE_SUMMARY: Readonly<AwaySummary> = {
+  since: '2026-10-14',
+  visits: 5,
+  likes: 12,
+  stamps: [
+    { stampId: 'visited', count: 2 },
+    { stampId: 'coffee', count: 1 },
+    { stampId: 'rocket', count: 1 },
+  ],
+};
+
+/** Bloqueados do falso (nomes inventados). */
+const FAKE_BLOCKED: readonly WorldBlockedPlayer[] = [
+  { id: 'p_spam', name: 'Spam Bot 3000' },
+  { id: 'p_troll', name: 'Troll da Esquina' },
+];
 
 interface FakeAccount {
   email: string;
@@ -403,6 +506,10 @@ interface FakeAccount {
   devices: WorldDevice[];
   /** O prédio: nasce com a conta aprovada e com personagem. */
   building?: FakeBuilding;
+  /** "Excluir conta" pedido (o código é FAKE_CODE). */
+  deleteRequested?: boolean;
+  /** Exportações dos dados (a segunda recebe 429, como a de verdade, uma por dia). */
+  exports?: number;
 }
 
 /**
@@ -486,6 +593,8 @@ export class FakeWorldApi implements WorldClient {
   private theme: WorldThemeChoice = 'auto';
   /** Código com que o "mundo" recusa as remessas (null: aceita). */
   private rejectCode: UplinkAckError | null = null;
+  /** O lastError do status (a conta excluída deixa `account_deleted` até entrar de novo). */
+  private lastError: WorldErrorCode | null = null;
 
   constructor(opts: FakeWorldOptions = {}) {
     this.delayMs = opts.delayMs ?? 450;
@@ -524,15 +633,28 @@ export class FakeWorldApi implements WorldClient {
     const meta: WorldMeta = { enabled: this.configured, configured: this.configured, state: this.state() };
     const b = this.buildingOf(this.current());
     if (b) {
-      const { lastAck: _ack, stopped, ...building } = b;
+      // o resumo e o código só no status (local), como o de verdade: aqui, só se há um resumo não visto
+      const { lastAck: _ack, stopped, summary, code: _code, ...building } = b;
       meta.building = stopped ? { ...building, stopped: true } : building;
+      if (summary) meta.building.awaySummary = true;
     }
+    // A cena Mundo do modo demonstração (FakeWorldStream) existe com a conta liberada e o personagem criado.
+    if (b) meta.scene = { available: true };
     return meta;
   }
 
   /** Tema do prédio em vigor (o escolhido, antes de resolver o automático). */
   worldTheme(): WorldThemeChoice {
     return this.theme;
+  }
+
+  /** Visitantes no prédio de mentira (testes e capturas); null volta à demonstração pelo relógio. */
+  setVisitors(n: number | null): void {
+    const b = this.current()?.building;
+    if (!b) return;
+    if (n === null) delete b.visitors;
+    else b.visitors = Math.max(0, Math.floor(n));
+    this.changed();
   }
 
   /** O "mundo" passa a recusar as remessas com este código (null: volta a aceitar); manda uma remessa na hora. */
@@ -549,6 +671,23 @@ export class FakeWorldApi implements WorldClient {
     if (!b || b.paused) return;
     b.connected = false;
     b.stopped = reason;
+    this.changed();
+  }
+
+  /** O "mundo" marca (ou desmarca) o prédio da conta como "não verificado". */
+  markUnverified(on: boolean): void {
+    const b = this.current()?.building;
+    if (!b) return;
+    if (on) b.unverified = true;
+    else delete b.unverified;
+    this.changed();
+  }
+
+  /** O "mundo" entra (ou sai) em manutenção: o status traz `maintenance` e o prédio fica sem conexão até acabar. */
+  setMaintenance(on: boolean): void {
+    const b = this.current()?.building;
+    this.lastError = on ? 'maintenance' : null;
+    if (b && !b.paused && !b.stopped) b.connected = !on;
     this.changed();
   }
 
@@ -591,7 +730,7 @@ export class FakeWorldApi implements WorldClient {
   /** Acende o prédio da conta aprovada e com personagem, com a primeira remessa (o uplink de verdade faz isso). */
   private ensureBuilding(acc: FakeAccount): void {
     if (acc.building || acc.access !== 'approved' || !acc.player) return;
-    acc.building = { connected: true, paused: false, last: null };
+    acc.building = { connected: true, paused: false, last: null, code: 'HB-4F2K', summary: structuredClone(FAKE_SUMMARY), blocked: [...FAKE_BLOCKED], since: this.now() };
     this.sendUplink(acc);
   }
 
@@ -617,6 +756,18 @@ export class FakeWorldApi implements WorldClient {
     }
     if (b.left) out.left = true;
     if (b.stopped) out.stopped = b.stopped;
+    // visitantes: só aceso e aberto a visitas (fechado, o mundo não manda nem o 0)
+    if (b.connected && !b.paused && !b.left && !acc?.player?.visibility.closed) out.visitors = b.visitors ?? fakeVisitorsAt(this.now() - b.since);
+    if (b.unverified) out.unverified = true;
+    // Fase 5: 3 likes hoje e mais um por minuto; batidas com "Avisar quando baterem na porta" ligado.
+    const now = this.now();
+    out.likesToday = 3 + Math.floor(Math.max(0, now - b.since) / 60_000);
+    if (b.knocksOn !== undefined && acc.player?.visibility.knocks && b.connected) {
+      const knocks = Math.floor((now - b.knocksOn - 8_000) / 45_000) + 1;
+      if (knocks > 0) out.knocks = knocks;
+    }
+    if (b.summary) out.summary = structuredClone(b.summary);
+    out.code = b.code;
     return out;
   }
 
@@ -678,8 +829,10 @@ export class FakeWorldApi implements WorldClient {
         status.devices = structuredClone(acc.devices);
         const building = this.buildingOf(acc);
         if (building) status.building = building;
+        if (acc.building) status.blocked = structuredClone(acc.building.blocked);
       }
       if (this.theme !== 'auto') status.theme = this.theme;
+      if (this.lastError) status.lastError = this.lastError;
       return { ok: true, data: status };
     }, false);
   }
@@ -700,6 +853,7 @@ export class FakeWorldApi implements WorldClient {
       if (!acc || body.code !== FAKE_CODE) return FakeWorldApi.fail('invalid_code');
       acc.verified = true;
       this.session = { email: acc.email, deviceId: this.addDevice(acc).id };
+      this.lastError = null;
       return FakeWorldApi.ok();
     });
   }
@@ -712,6 +866,7 @@ export class FakeWorldApi implements WorldClient {
       if (!acc || acc.password !== body.password) return FakeWorldApi.fail('invalid_credentials', 401);
       if (!acc.verified) return FakeWorldApi.fail('email_not_verified', 403);
       this.session = { email, deviceId: this.addDevice(acc).id };
+      this.lastError = null;
       return FakeWorldApi.ok();
     });
   }
@@ -784,9 +939,11 @@ export class FakeWorldApi implements WorldClient {
     return this.reply(() => {
       const acc = this.current();
       if (!acc?.player) return FakeWorldApi.fail('invalid', 422);
+      const was = acc.player.visibility.knocks;
       acc.player.visibility = { ...body };
       if (body.hideCountry) delete acc.player.country;
       else acc.player.country = 'BR';
+      if (acc.building && body.knocks && !was) acc.building.knocksOn = this.now();
       return FakeWorldApi.ok();
     });
   }
@@ -833,8 +990,8 @@ export class FakeWorldApi implements WorldClient {
       const b = acc.building;
       if (!b) return FakeWorldApi.fail('no_player', 409);
       b.paused = paused;
-      // Como o de verdade: pausar fecha a conexão; retomar (também depois de sair do mundo ou de uma parada)
-      // reconecta e manda o pacote inteiro.
+      // Como o de verdade: pausar apaga o prédio (o selo deixa de mostrar "no mundo"); retomar (também depois de sair
+      // do mundo ou de uma parada) reconecta e manda o pacote inteiro.
       b.connected = !paused;
       if (!paused) {
         delete b.left;
@@ -842,6 +999,24 @@ export class FakeWorldApi implements WorldClient {
       }
       this.sendUplink(acc);
       return { ok: true, data: { paused } };
+    });
+  }
+
+  /** "Voltar ao mundo": como retomar, mas só faz sentido depois de sair (sem ter saído, nada muda). */
+  join(): Promise<WorldResult> {
+    return this.reply(() => {
+      const acc = this.current();
+      if (!acc) return FakeWorldApi.fail('not_logged_in', 401);
+      const b = acc.building;
+      if (!b) return FakeWorldApi.fail('no_player', 409);
+      if (b.left) {
+        delete b.left;
+        delete b.stopped;
+        b.paused = false;
+        b.connected = true;
+        this.sendUplink(acc);
+      }
+      return FakeWorldApi.ok();
     });
   }
 
@@ -865,6 +1040,74 @@ export class FakeWorldApi implements WorldClient {
       this.theme = theme;
       const acc = this.current();
       if (acc?.building?.connected) this.sendUplink(acc);
+      return FakeWorldApi.ok();
+    });
+  }
+
+  requestAccountDeletion(): Promise<WorldResult> {
+    return this.reply(() => {
+      const acc = this.current();
+      if (!acc) return FakeWorldApi.fail('not_logged_in', 401);
+      acc.deleteRequested = true;
+      return FakeWorldApi.ok();
+    }, false);
+  }
+
+  /** Com o código: a conta some (e o tema, como o world.json apagado), e o status fica `account_deleted`. */
+  confirmAccountDeletion(body: { code: string }): Promise<WorldResult> {
+    return this.reply(() => {
+      const acc = this.current();
+      if (!acc) return FakeWorldApi.fail('not_logged_in', 401);
+      if (!acc.deleteRequested || body.code !== FAKE_CODE) return FakeWorldApi.fail('invalid_code');
+      this.accounts.delete(acc.email);
+      this.session = null;
+      this.theme = 'auto';
+      this.lastError = 'account_deleted';
+      return FakeWorldApi.ok();
+    });
+  }
+
+  summarySeen(): Promise<WorldResult> {
+    return this.reply(() => {
+      const b = this.current()?.building;
+      if (!b) return FakeWorldApi.fail('not_logged_in', 401);
+      delete b.summary;
+      return FakeWorldApi.ok();
+    });
+  }
+
+  exportData(): Promise<WorldResult<string>> {
+    return this.reply(() => {
+      const acc = this.current();
+      if (!acc) return FakeWorldApi.fail('not_logged_in', 401);
+      acc.exports = (acc.exports ?? 0) + 1;
+      if (acc.exports > 1) return FakeWorldApi.fail('rate_limited', 429);
+      // O formato de WorldExport (protocol.ts), só com dados de mentira.
+      const data = {
+        format: 'habblaud-world-export',
+        version: 1,
+        exportedAt: new Date(this.now()).toISOString(),
+        account: { email: acc.email, access: acc.access, notifyInactivity: acc.player?.visibility.notifyInactivity !== false },
+        player: acc.player ?? null,
+        visibility: acc.player?.visibility ?? null,
+        devices: acc.devices.map((d) => ({ label: d.label, createdAt: d.createdAt, lastSeenAt: d.lastSeenAt, revokedAt: null })),
+        building: acc.building ? { floors: acc.building.last?.uplink.floors.length ?? 0, likes: 0 } : null,
+        likesGiven: [],
+        blocks: [],
+        reportsMade: [],
+        stampsReceived: [],
+      };
+      return { ok: true, data: `${JSON.stringify(data, null, 2)}\n` };
+    }, false);
+  }
+
+  /** Como o de verdade: o `unblock` vai pela conexão com o mundo (pausado e sem a cidade aberta, não dá). */
+  unblock(playerId: string): Promise<WorldResult> {
+    return this.reply(() => {
+      const b = this.current()?.building;
+      if (!b) return FakeWorldApi.fail('not_logged_in', 401);
+      if (!b.connected) return FakeWorldApi.fail('not_connected', 409);
+      b.blocked = b.blocked.filter((p) => p.id !== playerId);
       return FakeWorldApi.ok();
     });
   }

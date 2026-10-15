@@ -15,14 +15,25 @@ import {
   HAIR_STYLES,
   INTRO_IDS,
   LOCALES,
+  NOTICE_IDS,
   PLAYER_NAME_LIMITS,
   REPORT_REASONS,
+  STAMP_IDS,
+  CITY_GOAL_IDS,
   TOP_STYLES,
   TRAIT_CLASHES,
   TRAIT_IDS,
+  UPLINK_ACK_ERRORS,
   UPLINK_LIMITS,
+  VISIBILITY_DEFAULTS,
+  WORLD_ERROR_CODES,
   WORLD_LOCALES,
   type AppearanceParts,
+  type DeleteConfirmRequest,
+  type MeBuilding,
+  type Visibility,
+  type WorldBuildingPublic,
+  type WorldExport,
   type WorldAgentStatus,
   type WorldTheme,
   type WorldUplink,
@@ -207,5 +218,44 @@ describe('listas do protocolo', () => {
     expect([...WORLD_LOCALES]).toEqual(UI_LOCALES.map((l) => l.id));
     expect(GOODBYE_REASONS).toEqual(expect.arrayContaining(['waiting', 'unauthorized', 'banned', 'suspended', 'update', 'no_player']));
     expect(PLAYER_NAME_LIMITS).toEqual({ min: 3, max: 20 });
+  });
+
+  it('Fases 3 a 5: os ids dos avisos (o `text` do notice) e o `left` do ack, só acrescentados', () => {
+    expect([...NOTICE_IDS]).toEqual([
+      'ignored', 'invalid', 'rate_limited', 'view_required', 'not_found', 'street_left', 'chunk_full', 'afk', 'server_restart', 'left',
+      // Fase 4 (a porta de um prédio): só no fim.
+      'too_far', 'closed', 'blocked', 'full',
+      // Fase 5 (social leve): só no fim.
+      'daily_limit', 'already_done', 'reported', 'blocked_ok', 'stamped',
+    ]);
+    for (const id of NOTICE_IDS) expect(id).toMatch(/^[a-z]+(_[a-z]+)*$/);
+    // Os códigos da Fase 2 continuam na mesma ordem; `left` (Fase 3) e `implausible` (Fase 6) entram no fim.
+    expect([...UPLINK_ACK_ERRORS]).toEqual(['schema', 'limits', 'name_pool', 'parts', 'ids', 'rate', 'internal', 'left', 'implausible']);
+  });
+
+  it('Fase 5: 8 carimbos, 3 metas da cidade, os 6 motivos de denúncia e "bater na porta" desligado por padrão', () => {
+    const unique = (l: readonly string[]) => new Set(l).size === l.length;
+    expect([...STAMP_IDS]).toEqual(['visited', 'nice_building', 'keep_going', 'coffee', 'wave', 'star', 'heart', 'rocket']);
+    expect([...CITY_GOAL_IDS]).toEqual(['agent_hours_10k', 'agent_hours_50k', 'agent_hours_100k']);
+    expect([...REPORT_REASONS]).toEqual(['offensive_name', 'impersonation', 'harassment', 'greeting_spam', 'fake_building', 'other']);
+    for (const l of [STAMP_IDS, CITY_GOAL_IDS]) expect(unique(l)).toBe(true);
+    for (const id of [...STAMP_IDS, ...CITY_GOAL_IDS]) expect(id).toMatch(/^[a-z0-9]+(_[a-z0-9]+)*$/);
+    expect(VISIBILITY_DEFAULTS.knocks).toBe(false);
+  });
+
+  it('Fase 6: `deleted` no goodbye, `maintenance` nos erros, `implausible` no ack, o aviso de inatividade e o selo "não verificado", só acrescentados', () => {
+    expect([...GOODBYE_REASONS]).toEqual(['deploy', 'other-device', 'banned', 'suspended', 'waiting', 'update', 'unauthorized', 'no_player', 'deleted']);
+    expect(WORLD_ERROR_CODES).toContain('maintenance');
+    expect(UPLINK_ACK_ERRORS.at(-1)).toBe('implausible');
+    // Opcionais: um corpo sem eles continua valendo, e o padrão da visibilidade não muda.
+    const v: Visibility = { ...VISIBILITY_DEFAULTS };
+    expect('notifyInactivity' in v).toBe(false);
+    const b: Pick<WorldBuildingPublic, 'unverified'> & Pick<MeBuilding, 'unverified'> = {};
+    expect(b.unverified).toBeUndefined();
+    // O pedido de exclusão e o arquivo "Baixar meus dados" (WorldExport) também são do protocolo.
+    const del: DeleteConfirmRequest = { code: '123456' };
+    expect(del.code).toHaveLength(6);
+    const exp: Pick<WorldExport, 'format' | 'version'> = { format: 'habblaud-world-export', version: 1 };
+    expect(exp.version).toBe(1);
   });
 });
