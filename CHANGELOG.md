@@ -10,6 +10,15 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Cursor no escritório
+
+- **Agentes do Cursor:** o agente do editor e o `cursor-agent` entram no escritório pelos hooks do Cursor, com o selo
+  **CURSOR**: chegam na primeira mensagem, mostram comandos, edições e ferramentas MCP, ficam ociosos no fim da vez e
+  saem no `sessionEnd` (ou depois de 30 min parados). `npm run cursor:install` acrescenta o hook em
+  `~/.cursor/hooks.json` (com cópia; os outros hooks ficam); `npm run cursor:status` e `npm run cursor:uninstall`.
+  Só metadados saem do Cursor (nunca a saída dos comandos nem o conteúdo dos arquivos). `HABBLAUD_CURSOR=0` desliga.
+  Sem terminal nem mensagens para eles por enquanto.
+
 ### Habblaud World (em desenvolvimento, desligado por padrão)
 
 A base do Habblaud World, a cidade online onde cada Habblaud vira um prédio. Sem `HABBLAUD_WORLD_URL` o recurso fica

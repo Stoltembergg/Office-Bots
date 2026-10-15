@@ -1480,6 +1480,9 @@ export const FR: Readonly<Record<string, string>> = {
 
   // server/codex/http.ts
   "Eventos do Codex: falha ao aplicar um evento ({0}).": "Événements Codex : échec de l'application d'un événement ({0}).",
+  "Eventos do Cursor: falha ao aplicar um evento ({0}).": "Événements Cursor : échec de l'application d'un événement ({0}).",
+  "eventos do Cursor só são aceitos pelo próprio computador (http://localhost ou http://127.0.0.1)": "les événements Cursor ne sont acceptés que depuis cet ordinateur (http://localhost ou http://127.0.0.1)",
+  "Parou com erro": "Arrêté avec une erreur",
 
   // server/config.ts
   "HABBLAUD_BIND não chegou ao container, então a porta pode estar exposta na rede": "HABBLAUD_BIND n'est pas arrivé jusqu'au conteneur, le port peut donc être exposé sur le réseau",
