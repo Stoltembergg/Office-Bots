@@ -2,6 +2,7 @@
 // `look` apenas enviesa as probabilidades de estilos; nada é exclusivo de um look, exceto barba ('m').
 import { ACCESSORIES, BOTTOM_STYLES, FACIAL_HAIR, HAIR_STYLES, PART_KEYS, TOP_STYLES, type AppearanceParts, type PartKey } from '../../../../shared/appearance';
 import { mulberry32 } from '../../../../shared/hash';
+import { tr } from '../../../../shared/i18n';
 import type { Accessory, Appearance, HairStyle, TopStyle } from '../api';
 import { tr } from '../../../../shared/i18n';
 

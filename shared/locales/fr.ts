@@ -2,6 +2,11 @@
 // As lacunas {0}, {1}... (e as nomeadas, como {sala}) precisam aparecer na tradução, em qualquer ordem.
 // Chave ausente = o texto fica em PT. `npm run i18n:check` lista os textos sem tradução e as chaves que sobraram.
 export const FR: Readonly<Record<string, string>> = {
+  // client/src/art/character/appearance.ts
+  "Não combina com este cabelo": "Ne va pas avec ces cheveux",
+  "Não combina com o boné ou o gorro": "Ne va pas avec la casquette ou le bonnet",
+  "Não combina com o laço": "Ne va pas avec le nœud",
+
   // client/src/main.ts
   "Escritório virtual em pixel art que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.": "Bureau virtuel en pixel art qui montre, en temps réel, ce que font vos agents Claude Code.",
 
@@ -1382,6 +1387,7 @@ export const FR: Readonly<Record<string, string>> = {
   "versão {0}{1}": "version {0}{1}",
   " (esta pasta: {0}; npm run mod:install ou npm run docker:up atualiza)": " (ce dossier : {0} ; npm run mod:install ou npm run docker:up le met à jour)",
   "carrega {0} de {1}": "charge {0} depuis {1}",
+  "erro: {0}": "erreur : {0}",
   "esta pasta": "ce dossier",
   "! nome antigo ainda registrado: {0}; npm run mod:install troca pelo habblaud": "! ancien nom encore enregistré : {0} ; npm run mod:install le remplace par habblaud",
   "! tap de statusline antigo ainda instalado junto com o mod: npm run mod:install tira (ou npm run usage:uninstall)": "! ancienne dérivation de statusline encore installée avec le mod : npm run mod:install la retire (ou npm run usage:uninstall)",

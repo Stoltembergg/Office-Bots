@@ -1,6 +1,7 @@
 // Testes das partes puras do módulo de arte (sem DOM): aparência, templates, personagens, móveis,
 // pisos, paredes, ícones, temas e os desenhos por quadro (com um contexto falso).
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { setLocale } from '../../../shared/i18n';
 import { ACCESSORIES, BOTTOM_STYLES, FACIAL_HAIR, HAIR_STYLES, PART_KEYS, TOP_STYLES } from '../../../shared/appearance';
 import { FURNITURE, TILE, type Accessory, type Appearance, type Dir, type FloorKind, type FurnitureKind, type HairStyle, type HeldItem, type Pose, type ScreenMode, type TopStyle, type WallPattern } from './api';
 import { appearanceFromSeed, appearanceKey, editorConflict, editorOptions, fitToOptions } from './character/appearance';
@@ -907,6 +908,25 @@ describe('editor do personagem (arte)', () => {
     expect(editorConflict({ ...a, accessory: 'beanie' }, 'hairStyle', 'mohawk')).toMatch(/gorro/);
     expect(editorConflict({ ...a, accessory: 'bow' }, 'hairStyle', 'bald')).toMatch(/laço/);
     expect(editorConflict({ ...a, accessory: 'none' }, 'hairStyle', 'bald')).toBeUndefined();
+  });
+
+  describe('motivo da combinação desabilitada, em cada idioma', () => {
+    afterEach(() => setLocale('pt-BR'));
+
+    it.each([
+      ['pt-BR', 'Não combina com este cabelo', 'Não combina com o boné ou o gorro', 'Não combina com o laço'],
+      ['en', "Doesn't go with this hair", "Doesn't go with the cap or the beanie", "Doesn't go with the bow"],
+      ['es', 'No combina con este cabello', 'No combina con la gorra o el gorro', 'No combina con el lazo'],
+      ['fr', 'Ne va pas avec ces cheveux', 'Ne va pas avec la casquette ou le bonnet', 'Ne va pas avec le nœud'],
+    ] as const)('%s', (locale, hair, capOrBeanie, bow) => {
+      const a = appearanceFromSeed(1);
+      setLocale(locale);
+      expect(editorConflict({ ...a, hairStyle: 'afro' }, 'accessory', 'cap')).toBe(hair);
+      expect(editorConflict({ ...a, hairStyle: 'buzz' }, 'accessory', 'bow')).toBe(hair);
+      expect(editorConflict({ ...a, accessory: 'beanie' }, 'hairStyle', 'mohawk')).toBe(capOrBeanie);
+      expect(editorConflict({ ...a, accessory: 'bow' }, 'hairStyle', 'bald')).toBe(bow);
+      expect(editorConflict({ ...a, accessory: 'none' }, 'hairStyle', 'bald')).toBeUndefined();
+    });
   });
 
   it('fitToOptions: depois de trocar o estilo, a cor fora da paleta nova cai na primeira dela', () => {

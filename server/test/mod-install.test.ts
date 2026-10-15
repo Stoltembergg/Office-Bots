@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { setLocale } from '../../shared/i18n';
 import { modHint } from '../../scripts/docker-up';
 import { hookCommand, hookEntry } from '../../scripts/hooks-install';
 import {
@@ -379,6 +380,22 @@ describe('mod-install.ts (funções puras)', () => {
       '! tap de statusline antigo ainda instalado junto com o mod: npm run mod:install tira (ou npm run usage:uninstall)',
       '! disableAllHooks está ligado no settings.json desta conta: nenhum mod (nem hook) roda',
     ]);
+  });
+
+  describe('status de um plugin com erros, em cada idioma', () => {
+    afterEach(() => setLocale('pt-BR'));
+
+    it.each([
+      ['pt-BR', 'erro: boom; bang'],
+      ['en', 'error: boom; bang'],
+      ['es', 'error: boom; bang'],
+      ['fr', 'erreur : boom; bang'],
+    ] as const)('%s', (locale, expected) => {
+      setLocale(locale);
+      const state = stateOf([plugin(MOD_PLUGIN, { errors: ['boom', 'bang'] })]);
+      const lines = describeStatus(state, {}, { root: ROOT, version: '0.2.0', home: '/h', sameDir: same });
+      expect(lines.find((l) => l.startsWith('habblaud: '))).toMatch(new RegExp(`, ${expected}$`));
+    });
   });
 
   it('parseArgs', () => {
