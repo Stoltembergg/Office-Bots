@@ -13,6 +13,7 @@ import {
   handlerFor,
   HOOK_SCRIPT,
   hookCommand,
+  hookCommandWindows,
   installState,
   isOurHandler,
   nodeMajor,
@@ -53,6 +54,24 @@ describe('codex-install.ts (funções puras)', () => {
     expect(isOurHandler({ command: 'orca-hook perm' })).toBe(false);
     expect(scriptPathOf(CMD)).toBe('/repo/habblaud/mod/habblaud-codex/hook.mjs');
     expect(scriptPathOf("node '/a/it'\\''s/habblaud-codex/hook.mjs'")).toBe("/a/it's/habblaud-codex/hook.mjs");
+  });
+
+  it('Windows: commandWindows com barras normais e aspas duplas; Node escolhido sem aspas (com espaço, o do PATH)', () => {
+    const hook = 'C:\\Users\\Ana Maria\\habblaud\\mod\\habblaud-codex\\hook.mjs';
+    expect(hookCommandWindows(hook)).toBe('node "C:/Users/Ana Maria/habblaud/mod/habblaud-codex/hook.mjs"');
+    expect(hookCommandWindows(hook, 'C:\\nodejs\\node.exe')).toBe('C:/nodejs/node.exe "C:/Users/Ana Maria/habblaud/mod/habblaud-codex/hook.mjs"');
+    expect(hookCommandWindows(hook, 'C:\\Program Files\\nodejs\\node.exe')).toBe('node "C:/Users/Ana Maria/habblaud/mod/habblaud-codex/hook.mjs"');
+    const win = hookCommandWindows(hook);
+    expect(handlerFor('PreToolUse', CMD, 25, win)).toEqual({ type: 'command', command: CMD, commandWindows: win, async: true, timeout: 5 });
+    expect(isOurHandler({ command: CMD, commandWindows: win })).toBe(true);
+    // Instalação anterior sem o commandWindows: no Windows fica desatualizada e o install a troca no mesmo lugar.
+    const before = planInstall(ORCA, CMD, 25);
+    if (before.action !== 'install') throw new Error('esperava install');
+    expect(installState(before.file, CMD, 25, win).outdated).toEqual([...EVENTS]);
+    const after = planInstall(before.file, CMD, 25, win);
+    if (after.action !== 'install') throw new Error('esperava install');
+    expect(installState(after.file, CMD, 25, win).ok).toEqual([...EVENTS]);
+    expect(after.file.hooks).toMatchObject({ PermissionRequest: [ORCA.hooks.PermissionRequest[0], ORCA.hooks.PermissionRequest[1], { hooks: [handlerFor('PermissionRequest', CMD, 25, win)] }] });
   });
 
   it('install: acrescenta no FIM de cada evento, sem matcher; grupos alheios e o resto do arquivo intactos; idempotente', () => {

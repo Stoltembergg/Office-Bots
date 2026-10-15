@@ -169,6 +169,12 @@ sair e o que nunca sai está em [`docs/world/privacidade.md`](docs/world/privaci
   `docs/screenshots/world-predio.png`, `world-enviado.png`, `world-cidade.png`, `world-cartao.png`, `world-visita.png`,
   `world-visita-painel.png`, `world-social.png` e `world-praca.png`.
 
+### Corrigido
+
+- Codex no Windows: o `npm run codex:install` grava também o `commandWindows` de cada hook (`node "C:/…/hook.mjs"`),
+  que o shell do Windows entende. Antes, o comando com aspas simples não rodava lá. O `codex:status` passa a
+  conferir esse campo, e o Node dos hooks é procurado direto no PATH (no Windows não há shell de login).
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
