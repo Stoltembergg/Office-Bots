@@ -18,6 +18,11 @@ export function isCodex(x: { provider?: Provider } | null | undefined): boolean 
   return x?.provider === 'codex';
 }
 
+/** Terminal ao vivo (SSE): Claude Code e Codex; Cursor fase 1 é só observação. */
+export function supportsLiveTerminal(provider: Provider): boolean {
+  return provider !== 'cursor';
+}
+
 /**
  * O id de conta tem cara de pasta do Codex (".codex", ".codex-trabalho", ".codex~2", "demo:.codex")? Só para quando a
  * conta já não está no snapshot (ex.: histórico, "Meu dia"): com a conta à mão, vale o `provider` dela.

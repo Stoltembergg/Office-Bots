@@ -12,6 +12,7 @@ import {
   PROVIDER_NAME,
   providerOf,
   showsProviderTag,
+  supportsLiveTerminal,
 } from './provider';
 
 describe('ferramenta (Claude Code, Codex ou Cursor)', () => {
@@ -19,6 +20,9 @@ describe('ferramenta (Claude Code, Codex ou Cursor)', () => {
     expect(PROVIDER_NAME.cursor).toBe('Cursor');
     expect(providerOf({ provider: 'cursor' })).toBe('cursor');
     expect(isCodex({ provider: 'cursor' })).toBe(false);
+    expect(supportsLiveTerminal('cursor')).toBe(false);
+    expect(supportsLiveTerminal('claude')).toBe(true);
+    expect(supportsLiveTerminal('codex')).toBe(true);
   });
 
   it('provider ausente = Claude Code', () => {

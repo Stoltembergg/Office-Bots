@@ -40,7 +40,7 @@ import {
 } from './model';
 import { isLocalHostname, PermissionCard } from './permission';
 import { canRenameRoom } from './roomrename';
-import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, providerOf } from './provider';
+import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, providerOf, supportsLiveTerminal } from './provider';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
@@ -499,7 +499,7 @@ class AgentView {
     const following = this.ctx.world.getOptions().followSelected;
     setAttr(this.followBtn, 'aria-pressed', String(following));
     this.followBtn.classList.toggle('is-on', following);
-    this.renderTerminalButton(!!live);
+    this.renderTerminalButton(!!live, provider);
 
     // Alerta.
     const waiting = a.status === 'waiting' && !!live;
@@ -624,6 +624,11 @@ class AgentView {
   }
 
   private renderTerminalButton(live: boolean, provider = providerOf(this.last)): void {
+    if (!supportsLiveTerminal(provider)) {
+      setHidden(this.termBtn, true);
+      return;
+    }
+    setHidden(this.termBtn, false);
     const available = !!this.ctx.store.snapshot?.meta.terminal;
     const open = this.terminal.agentId === this.id;
     // aria-disabled (e não disabled): o botão continua focável e a dica do porquê aparece no hover.
