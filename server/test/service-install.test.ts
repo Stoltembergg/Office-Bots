@@ -276,6 +276,27 @@ describe('service-install.ts: run', () => {
     expect(parseArgs(['install', '--port', '4851'])).toEqual({ command: 'install', dryRun: false, force: false, port: 4851 });
   });
 
+  it('SVC-03: unit nova com enable --now falhando é desfeita e o install seguinte liga tudo', () => {
+    answers['systemctl --user enable --now habblaud.service'] = { status: 1, stderr: 'Failed to enable unit: boom' };
+    expect(run(INSTALL, ctx)).toBe(1);
+    expect(existsSync(file)).toBe(false);
+    expect(calls[calls.length - 1]).toBe('systemctl --user daemon-reload');
+    answers = {};
+    calls.length = 0;
+    expect(run(INSTALL, ctx)).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(unitFor());
+    expect(calls).toContain('systemctl --user enable --now habblaud.service');
+  });
+
+  it('SVC-03: unit antiga nossa com restart falhando volta ao conteúdo anterior', () => {
+    const old = unitFor({ nodePath: '/antigo/node' });
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, old);
+    answers['systemctl --user restart habblaud.service'] = { status: 1, stderr: 'boom' };
+    expect(run(INSTALL, ctx)).toBe(1);
+    expect(readFileSync(file, 'utf8')).toBe(old);
+  });
+
   it('SVC-03: falha do systemctl mostra o stderr dele e sai com 1', () => {
     answers['systemctl --user enable --now habblaud.service'] = { status: 1, stderr: 'Failed to enable unit: boom' };
     expect(run(INSTALL, ctx)).toBe(1);
@@ -403,7 +424,7 @@ describe('service-install.ts: defaultExec e main', () => {
 
   it('main de verdade: opção desconhecida sai com 1 e não chama o systemd', () => {
     const root = resolve(__dirname, '..', '..');
-    const r = spawnSync(process.execPath, [join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), 'scripts/service-install.ts', '--bogus'], {
+    const r = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/service-install.ts', '--bogus'], {
       cwd: root,
       encoding: 'utf8',
       timeout: 60_000,

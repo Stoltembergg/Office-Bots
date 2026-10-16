@@ -245,6 +245,10 @@ function install(opts: RunOptions, ctx: RunContext, file: string, existing: stri
     const failed = systemctl(ctx, step);
     if (failed) {
       out(`✗ ${failed}`);
+      // Desfaz a gravação, para a próxima rodada não dizer "já instalado" sem ter ligado nada.
+      if (plan.action === 'update' && existing !== undefined) writeFileSync(file, existing);
+      else rmSync(file, { force: true });
+      systemctl(ctx, ['daemon-reload']); // melhor esforço
       return 1;
     }
   }
