@@ -10,6 +10,14 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Habblaud como serviço de usuário no Linux e no WSL (`npm run service:install`).** O escritório sobe com a sessão, sem
+  terminal aberto. O instalador grava `~/.config/systemd/user/habblaud.service` com o `node`, a pasta e o `PATH` da
+  máquina de quem instala (sem caminhos fixos), liga o serviço e não roda o build: antes, `npm run build`. Também há
+  `service:uninstall` e `service:status`. Não mexe em unidade feita à mão sem `--force`. Para subir no boot sem login,
+  rode `loginctl enable-linger $USER`; o instalador só avisa.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
