@@ -79,8 +79,8 @@ describe('service-install.ts: buildUnit', () => {
 
 describe('service-install.ts: unitDir e marca', () => {
   it('SVC-01: usa $XDG_CONFIG_HOME quando definido, senão ~/.config', () => {
-    expect(unitDir({ XDG_CONFIG_HOME: '/x/cfg' }, '/home/ana')).toBe('/x/cfg/systemd/user');
-    expect(unitDir({}, '/home/ana')).toBe('/home/ana/.config/systemd/user');
+    expect(unitDir({ XDG_CONFIG_HOME: '/x/cfg' }, '/home/ana')).toBe(join('/x/cfg', 'systemd', 'user'));
+    expect(unitDir({}, '/home/ana')).toBe(join('/home/ana', '.config', 'systemd', 'user'));
     expect(SERVICE_NAME).toBe('habblaud.service');
   });
 
