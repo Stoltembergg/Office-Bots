@@ -125,6 +125,8 @@ export interface AgentStats {
   linesRemoved?: number;
   /** Total de subagentes disparados por este agente. */
   subagents: number;
+  /** Vezes que a conversa foi compactada; ausente = nenhuma (ou o provedor não informa). */
+  compactions?: number;
 }
 
 export interface AgentInfo {

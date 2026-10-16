@@ -245,6 +245,7 @@ export const EN: Readonly<Record<string, string>> = {
   "Custo estimado": "Estimated cost",
   "Linhas": "Lines",
   "Subagentes disparados": "Subagents launched",
+  "Compactações": "Compactions",
   "Modelo": "Model",
   "Permissões": "Permissions",
   "Sessão": "Session",

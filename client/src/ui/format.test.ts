@@ -3,6 +3,7 @@ import {
   calendarDayDiff,
   clampPercent,
   compactDuration,
+  compactionsValue,
   FIVE_HOURS_MS,
   formatCountdown,
   formatDuration,
@@ -92,6 +93,18 @@ describe('números', () => {
     expect(formatUSD(1.234)).toBe('US$ 1,23');
     expect(formatUSD(0)).toBe('US$ 0,00');
     expect(formatInt(12345)).toBe('12.345');
+  });
+  it('compactionsValue mostra a partir de 1 (COMPACT-12)', () => {
+    expect(compactionsValue(1)).toBe('1');
+    expect(compactionsValue(2)).toBe('2');
+    expect(compactionsValue(12_345)).toBe('12.345');
+  });
+  it('compactionsValue esconde ausente, zero, negativo e não finito (COMPACT-13)', () => {
+    expect(compactionsValue(undefined)).toBeNull();
+    expect(compactionsValue(0)).toBeNull();
+    expect(compactionsValue(-1)).toBeNull();
+    expect(compactionsValue(Number.NaN)).toBeNull();
+    expect(compactionsValue(Number.POSITIVE_INFINITY)).toBeNull();
   });
   it('plural', () => {
     expect(plural(1, 'agente', 'agentes')).toBe('1 agente');

@@ -568,6 +568,8 @@ export class DemoSimulator {
       canMessage: true,
     };
     if (codex) info.provider = 'codex';
+    // Abertura: o 1º agente do Claude Code já foi compactado 2 vezes, para a gaveta mostrar a linha (sem gastar o sorteio).
+    if (!codex && warm && k === 0) info.stats.compactions = 2;
     const a: SimAgent = {
       info,
       project,

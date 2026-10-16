@@ -179,6 +179,12 @@ export function formatInt(n: number): string {
   return integerFmt.format(n);
 }
 
+/** Texto da linha "Compactações" da gaveta; `null` esconde a linha (ausente, 0, negativo ou não finito). */
+export function compactionsValue(n: number | undefined): string | null {
+  if (n === undefined || !Number.isFinite(n) || n < 1) return null;
+  return formatInt(n);
+}
+
 /** Custo em dólares: "US$ 1,23". */
 export function formatUSD(n: number): string {
   return usdFmt.format(n).replace(/ /g, ' ');

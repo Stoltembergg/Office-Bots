@@ -128,6 +128,40 @@ describe('parseLine — atividades', () => {
   });
 });
 
+describe('parseLine — compactações', () => {
+  it('COMPACT-01: conta cada fronteira, auto, manual e sem metadata', () => {
+    const s = createTranscriptState();
+    feed(s, [
+      L.system('compact_boundary', { compactMetadata: { trigger: 'auto' } }),
+      L.system('compact_boundary', { compactMetadata: { trigger: 'manual' } }),
+      L.system('compact_boundary'),
+    ]);
+    expect(s.stats.compactions).toBe(3);
+  });
+
+  it('COMPACT-02: conta com activities: false', () => {
+    const s = createTranscriptState();
+    const r = parseLine(s, L.system('compact_boundary', { compactMetadata: { trigger: 'auto' } }), { idPrefix: 'acc:1', now: T0, activities: false });
+    expect(s.stats.compactions).toBe(1);
+    expect(r.activities).toEqual([]);
+  });
+
+  it('COMPACT-03 e COMPACT-04: sem fronteira o campo não existe; outros subtipos e textos parecidos não contam', () => {
+    const s = createTranscriptState();
+    expect('compactions' in s.stats).toBe(false);
+    feed(s, [
+      L.system('api_error', { retryAttempt: 1 }),
+      L.system('turn_duration', { durationMs: 1000 }),
+      L.assistant([L.text('o subtipo compact_boundary aparece neste texto')], { msgId: 'm1' }),
+      'isto não é JSON compact_boundary',
+    ]);
+    expect('compactions' in s.stats).toBe(false);
+    // Só a fronteira de verdade conta (e as anteriores não deixaram resíduo).
+    feed(s, [L.system('compact_boundary')]);
+    expect(s.stats.compactions).toBe(1);
+  });
+});
+
 describe('parseLine — títulos, tarefas e números', () => {
   it('título: custom-title > agent-name > ai-title > último prompt', () => {
     const s = createTranscriptState();
@@ -397,6 +431,26 @@ describe('parseLine — sinais de shells', () => {
       tmp.cleanup();
     }
   });
+
+  it('COMPACT-07: scanPrefix sem keepActivities conta as fronteiras do começo do arquivo', async () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 's.jsonl');
+      const text = [
+        L.system('compact_boundary', { compactMetadata: { trigger: 'auto' } }),
+        L.assistant([L.tool('t1', 'Read', { file_path: '/p/a.ts' })], { msgId: 'p1' }),
+        L.system('compact_boundary', { compactMetadata: { trigger: 'manual' } }),
+      ]
+        .map((l) => `${l}\n`)
+        .join('');
+      writeFileSync(file, text);
+      const prefix = await scanPrefix(file, Buffer.byteLength(text), new Set());
+      expect(prefix.state.stats.compactions).toBe(2);
+      expect(prefix.state.stats.toolCalls).toBe(1);
+    } finally {
+      tmp.cleanup();
+    }
+  });
 });
 
 describe('janela final + prefixo em segundo plano', () => {
@@ -439,6 +493,48 @@ describe('janela final + prefixo em segundo plano', () => {
     } finally {
       tmp.cleanup();
     }
+  });
+
+  it('COMPACT-08: mescla as compactações do prefixo e da janela, uma vez cada', async () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 's.jsonl');
+      const prefixText = [
+        L.system('compact_boundary', { compactMetadata: { trigger: 'auto' } }),
+        L.assistant([L.tool('t1', 'Read', { file_path: '/p/a.ts' })], { msgId: 'p1' }),
+        L.system('compact_boundary', { compactMetadata: { trigger: 'manual' } }),
+      ]
+        .map((l) => `${l}\n`)
+        .join('');
+      const tailText = `${L.system('compact_boundary')}\n`;
+      writeFileSync(file, prefixText + tailText);
+      const end = Buffer.byteLength(prefixText);
+
+      const tail = new FileTail(file);
+      tail.offset = end;
+      const state = createTranscriptState({ trackPrefix: true });
+      for (const line of tail.read().lines) parseLine(state, line, { idPrefix: 'a', now: T0 });
+      expect(state.stats.compactions).toBe(1);
+
+      mergePrefix(state, (await scanPrefix(file, end, new Set(state.firstMsgIds))).state);
+      expect(state.stats.compactions).toBe(3);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it('COMPACT-03 e COMPACT-08: prefixo sem fronteira não cria nem altera o campo', () => {
+    const prefix = createTranscriptState();
+    feed(prefix, [L.assistant([L.tool('t1', 'Read', { file_path: '/p/a.ts' })], { msgId: 'p1' })]);
+
+    const comFronteira = createTranscriptState({ trackPrefix: true });
+    feed(comFronteira, [L.system('compact_boundary')]);
+    mergePrefix(comFronteira, prefix);
+    expect(comFronteira.stats.compactions).toBe(1);
+
+    const vazio = createTranscriptState({ trackPrefix: true });
+    mergePrefix(vazio, prefix);
+    expect('compactions' in vazio.stats).toBe(false);
   });
 
   it.each(['antes', 'depois'])('TaskCreate preserva a tarefa concluída do prefixo quando o resultado chega %s da mesclagem', (quando) => {

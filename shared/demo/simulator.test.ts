@@ -102,6 +102,19 @@ describe('DemoSimulator: Codex', () => {
     }
   });
 
+  it('o primeiro agente do Claude Code abre com 2 compactações; Codex, demais e subagentes não têm o campo (COMPACT-16)', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const snap = new DemoSimulator({ seed }, 1_000).snapshot(1_000);
+      const compactados = snap.agents.filter((a) => a.stats.compactions === 2);
+      expect(compactados).toHaveLength(1);
+      expect(compactados[0].kind).toBe('main');
+      expect(compactados[0].provider).toBeUndefined();
+      for (const a of snap.agents) {
+        if (a !== compactados[0]) expect(a.stats.compactions).toBeUndefined();
+      }
+    }
+  });
+
   it('determinístico: a mesma semente gera o mesmo escritório', () => {
     const run = () => {
       const sim = new DemoSimulator({ seed: 9, speed: 6, sessions: 6 }, 0);

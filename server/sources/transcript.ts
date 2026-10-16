@@ -687,6 +687,9 @@ class LineParser {
         return;
       }
       case 'compact_boundary':
+        // Fora do push: ele sai cedo sem activities, e o prefixo dos subagentes também conta.
+        this.s.stats.compactions = (this.s.stats.compactions ?? 0) + 1;
+        this.changed();
         this.push(SPECIAL.compact());
         return;
       case 'api_error':
@@ -750,6 +753,8 @@ const PREFIX_MARKERS = [
   // Shells em segundo plano: lançamento e término (para saber quais ainda rodam).
   '"backgroundTaskId"',
   '<task-notification>',
+  // Fronteira de compactação: conta no número da gaveta, mesmo na leitura sem atividades.
+  '"subtype":"compact_boundary"',
 ];
 
 function prefixRelevant(state: TranscriptState, line: string): boolean {
@@ -838,6 +843,7 @@ export function mergePrefix(state: TranscriptState, prefix: TranscriptState): vo
   state.stats.tokensIn += prefix.stats.tokensIn;
   state.stats.tokensOut += prefix.stats.tokensOut;
   state.stats.subagents += prefix.stats.subagents;
+  if (prefix.stats.compactions) state.stats.compactions = (state.stats.compactions ?? 0) + prefix.stats.compactions;
   if (!state.costSeen && prefix.costSeen) {
     state.costSeen = true;
     if (prefix.stats.costUSD !== undefined) state.stats.costUSD = prefix.stats.costUSD;
