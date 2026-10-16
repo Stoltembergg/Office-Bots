@@ -8,6 +8,10 @@ describe('procinfo', () => {
     const info = parseWindows('134360309381229341\r\nclaude\r\n');
     expect(info).toEqual({ startMs: 1_791_557_338_122, name: 'claude', fileTime: '134360309381229341' });
     expect(parseWindows('erro')).toBeUndefined();
+    // StartTime negado (processo do sistema): só o nome, e não passa por Claude.
+    const sys = parseWindows('-\r\nsvchost\r\n')!;
+    expect(sys.name).toBe('svchost');
+    expect(sameProcess({ startedAt: STARTED, procStart: '134360309381229341' }, sys)).toBe(false);
   });
 
   it('lê o lstart e o comando do ps', () => {

@@ -186,6 +186,12 @@ sair e o que nunca sai está em [`docs/world/privacidade.md`](docs/world/privaci
   `docs/screenshots/world-predio.png`, `world-enviado.png`, `world-cidade.png`, `world-cartao.png`, `world-visita.png`,
   `world-visita-painel.png`, `world-social.png` e `world-praca.png`.
 
+### Corrigido
+
+- Uma sessão que morreu sem limpar o registro (crash, terminal fechado, reinício do computador) não deixa mais uma
+  sala com o agente parado quando o PID dela é reaproveitado por outro processo (no Windows, muitas vezes um
+  `svchost`): o Habblaud confere o início real do processo contra o do registro.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
