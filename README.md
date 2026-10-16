@@ -309,7 +309,9 @@ npm run service:status      # unit, enabled at boot, running, and linger
 npm run service:uninstall   # turns it off and deletes the unit
 ```
 
-Options: `--port <n>` (a port other than 4747), `--dry-run` (shows the unit without writing it) and `--force` (replaces a `habblaud.service` you wrote by hand). The unit uses the `node` that ran the install, this folder and your `PATH` (so the server finds `claude` and `codex`). It does not set any variable from `.env`.
+Put options after `--`, e.g. `npm run service:install -- --port 5000`; without `--`, npm swallows `--force` and `--dry-run`.
+
+Options: `--port <n>` (a port other than 4747), `--dry-run` (shows the unit without writing it) and `--force` (replaces a `habblaud.service` you wrote by hand). The unit uses the `node` that ran the install, this folder and your `PATH` (so the server finds `claude` and `codex`). The unit does not set any variable from `.env` and does not inherit variables exported in your shell (e.g. `HABBLAUD_LANG` or `HABBLAUD_CLAUDE_DIRS` in `~/.bashrc`); for the port, use `--port`.
 
 > **Linger:** a user service stops when your last session closes. For it to start at boot and stay up without a login, run `loginctl enable-linger $USER` yourself (the installer only prints the hint).
 

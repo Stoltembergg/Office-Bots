@@ -318,7 +318,9 @@ npm run service:status      # si está activo al iniciar, en ejecución y el lin
 npm run service:uninstall   # lo desactiva y borra la unidad
 ```
 
-Opciones: `--port <n>` (un puerto distinto de 4747), `--dry-run` (muestra la unidad sin escribirla) y `--force` (reemplaza un `habblaud.service` escrito a mano). La unidad usa el `node` que ejecutó la instalación, esta carpeta y tu `PATH` (así el servidor encuentra `claude` y `codex`). No define ninguna variable del `.env`.
+Las opciones van después de `--`, por ejemplo `npm run service:install -- --port 5000`; sin el `--`, npm consume `--force` y `--dry-run`.
+
+Opciones: `--port <n>` (un puerto distinto de 4747), `--dry-run` (muestra la unidad sin escribirla) y `--force` (reemplaza un `habblaud.service` escrito a mano). La unidad usa el `node` que ejecutó la instalación, esta carpeta y tu `PATH` (así el servidor encuentra `claude` y `codex`). La unidad no define ninguna variable del `.env` y no hereda las variables exportadas en tu shell (p. ej. `HABBLAUD_LANG` o `HABBLAUD_CLAUDE_DIRS` en `~/.bashrc`); para el puerto, usa `--port`.
 
 > **Linger:** un servicio de usuario se detiene cuando cierras tu última sesión. Para que arranque con el sistema y siga activo sin iniciar sesión, ejecuta tú `loginctl enable-linger $USER` (el instalador solo muestra la sugerencia).
 

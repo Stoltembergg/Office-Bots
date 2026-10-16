@@ -307,7 +307,9 @@ npm run service:status      # se está ligado no boot, rodando e o linger
 npm run service:uninstall   # desliga o serviço e apaga a unidade
 ```
 
-Opções: `--port <n>` (outra porta que não a 4747), `--dry-run` (mostra a unidade sem gravar) e `--force` (troca um `habblaud.service` feito à mão). A unidade usa o `node` que rodou a instalação, esta pasta e o seu `PATH` (assim o servidor acha `claude` e `codex`). Ela não define nenhuma variável do `.env`.
+As opções vão depois de `--`, por exemplo `npm run service:install -- --port 5000`; sem o `--`, o npm consome `--force` e `--dry-run`.
+
+Opções: `--port <n>` (outra porta que não a 4747), `--dry-run` (mostra a unidade sem gravar) e `--force` (troca um `habblaud.service` feito à mão). A unidade usa o `node` que rodou a instalação, esta pasta e o seu `PATH` (assim o servidor acha `claude` e `codex`). A unidade não define nenhuma variável do `.env` e não herda variáveis exportadas no seu shell (ex.: `HABBLAUD_LANG` ou `HABBLAUD_CLAUDE_DIRS` no `~/.bashrc`); para a porta, use `--port`.
 
 > **Linger:** um serviço de usuário para quando a última sessão fecha. Para ele subir no boot e seguir ligado sem login, rode você mesmo `loginctl enable-linger $USER` (o instalador só mostra a dica).
 
