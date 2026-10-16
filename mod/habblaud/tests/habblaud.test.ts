@@ -293,3 +293,18 @@ describe('funções puras', () => {
     expect(statusText([])).toBeUndefined()
   })
 })
+
+// O idioma vem do ambiente do Claude Code, não do idioma do processo do servidor.
+describe('idioma do mod', () => {
+  test('HABBLAUD_LANG=en traduz o aviso e o resumo', async ($, on) => {
+    const w = world(on, {
+      env: { HOME: '/home/fulano', HABBLAUD_PORT: PORT, HABBLAUD_LANG: 'en' },
+      answer: () => summary([waiting('Valentina', 'shop', { waitingFor: 'approve a permission' })]),
+    })
+    await $.session.start(START)
+    await w.clock.advance(5_000)
+    expect(w.statuses.at(-1)).toBe('🏢 Valentina needs you in shop')
+    const out = await $.command.run(RUN)
+    expect(out.text).toBe('Habblaud 0.3.0 at http://localhost:4850\n7 agents · 3 working · 1 needs you\n✋ Valentina (shop): approve a permission')
+  })
+})

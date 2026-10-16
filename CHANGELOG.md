@@ -196,6 +196,14 @@ idiomas.
   `docs/screenshots/world-predio.png`, `world-enviado.png`, `world-cidade.png`, `world-cartao.png`, `world-visita.png`,
   `world-visita-painel.png`, `world-social.png` e `world-praca.png`.
 
+### Corrigido
+
+- Em inglês, espanhol e francês, trechos que ficavam em português passam a ser traduzidos: a contagem regressiva dos
+  cartões de uso ("em 4 h"), a dica dos itens do feed, o ranking das maiores esperas em "Meu dia", os contadores
+  filtrados do histórico de sessões e da lista de subagentes e o "com" / "e" das rodas da vida social.
+- O mod do Claude Code fala o idioma de `HABBLAUD_LANG` (no ambiente do Claude Code): o aviso embaixo do prompt, o
+  `/habblaud` e as mensagens de fora do ar. Sem a variável, continua em português.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo

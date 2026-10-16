@@ -1,6 +1,7 @@
 // Integração da vida social com a simulação (sem DOM): rodas que se formam sozinhas, quem é chamado
 // de volta ao trabalho, apostas, moedinhas pelo trabalho e quem espera shell.
 import { describe, expect, it } from 'vitest';
+import { setLocale } from '../../../../shared/i18n';
 import type { AgentInfo, OfficeSnapshot, RoomInfo } from '../../../../shared/types';
 import type { Appearance, ArtModule, RoomTheme } from '../../art/api';
 import { DEFAULT_WORLD_OPTIONS } from '../api';
@@ -236,4 +237,18 @@ describe('vida social', () => {
     expect(info.doing).toMatch(new RegExp(`^${KINDS.talk.emoji} ${KINDS.talk.label} com Caio`));
     expect(sim.social.info('ninguem')).toBeNull();
   });
+});
+
+it('traduz a companhia nas descrições da vida social', () => {
+  const sim = newSim();
+  const clock = { now: T0 };
+  sim.applySnapshot(snap(ROOMS, [agent('ana', '/a', 'idle'), agent('caio', '/b', 'idle'), agent('bia', '/a', 'idle')]), clock.now);
+  run(sim, clock, 0.3);
+  sim.social.force('tv', clock.now, ['ana', 'caio', 'bia']);
+  setLocale('en');
+  try {
+    expect(sim.social.doing('ana')).toMatch(/ with (?:Caio and Bia|Bia and Caio)/);
+  } finally {
+    setLocale('pt-BR');
+  }
 });
