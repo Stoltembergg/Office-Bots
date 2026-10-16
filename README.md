@@ -461,6 +461,11 @@ is busy, it goes in when the agent finishes what it's doing. Subagents and sessi
 - **Session history:** the clock in the top bar lists the sessions from the last 7 days across all accounts (up to 150), grouped
   by day, with search by title, project or account. An ended session opens in the terminal with the project, title and date in the
   header and "Session ended at …" at the bottom; a session that's still open opens the agent's live terminal.
+  Next to each ended session, **Copy resume command** copies a one-line command to your clipboard
+  (`cd <folder> && [CLAUDE_CONFIG_DIR=<account> ]claude --resume <id>`, or `codex resume <id>` for Codex) so you can
+  pick the conversation up in your own terminal. It only copies text: nothing is run, and it doesn't need `HABBLAUD_PTY`.
+  The button is for POSIX shells only (Linux, macOS, WSL), so a session whose folder is a Windows path (`C:\...`)
+  has no button, and neither does a session that's still open.
 
 Since the terminal (and the history) shows the whole conversation, it only exists when Habblaud is reachable **only from the
 computer it runs on** (the default), and it only opens through `http://localhost` or `http://127.0.0.1`. With the port open to the network

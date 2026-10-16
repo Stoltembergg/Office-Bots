@@ -7,10 +7,11 @@
 import { access } from '../net/access';
 import type { RecentSession } from '../../../shared/types';
 import type { UiComponent, UiContext } from './context';
-import { h, iconButton, setAttr, setHidden, setText, setTitle } from './dom';
+import { copyText, h, iconButton, setAttr, setHidden, setText, setTitle } from './dom';
 import { calendarDayDiff, formatClock, formatDateTime, normalizeSearch, plural, shortPath } from './format';
 import { ICONS } from './icons';
 import { isCodex } from './provider';
+import { resumeCommand } from './resume';
 import { sessionProjectName, TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
 import { createAccountChip, updateAccountChip } from './widgets';
 import { intlLocale, tr } from '../../../shared/i18n';
@@ -296,7 +297,7 @@ export class HistoryPopover implements UiComponent {
     setHidden(this.footEl, !this.sessions.length);
 
     // Refaz o DOM só quando o conteúdo muda (a lista é pequena: no máximo ~150 sessões).
-    const sig = JSON.stringify([days.map((d) => [d.key, d.label]), shown.map((s) => [s.account, s.sessionId, s.title, s.lastAt, s.open, s.agentId && !!this.ctx.agent(s.agentId)])]);
+    const sig = JSON.stringify([days.map((d) => [d.key, d.label]), shown.map((s) => [s.account, s.sessionId, s.title, s.lastAt, s.open, s.agentId && !!this.ctx.agent(s.agentId), resumeCommand(s, this.ctx.account(s.account)) ?? ''])]);
     if (sig === this.drawn) return;
     const focusedKey = (document.activeElement as HTMLElement | null)?.dataset?.session;
     this.drawn = sig;
@@ -310,7 +311,7 @@ export class HistoryPopover implements UiComponent {
     if (focusedKey) this.items().find((b) => b.dataset.session === focusedKey)?.focus();
   }
 
-  private item(s: RecentSession, now: number): HTMLButtonElement {
+  private item(s: RecentSession, now: number): HTMLElement {
     const account = this.ctx.account(s.account);
     const chip = createAccountChip('sm');
     updateAccountChip(chip, account, s.account, s.provider);
@@ -338,7 +339,49 @@ export class HistoryPopover implements UiComponent {
       this.hide();
       this.terminal.openSession(s, this.button);
     });
-    return btn;
+    // O botão de copiar é irmão do botão da linha (um <button> dentro de outro é inválido e quebra o foco).
+    const command = resumeCommand(s, account);
+    const row = h('div', { class: `ui-hist__row${command ? ' has-copy' : ''}` }, btn);
+    if (command) row.append(this.copyButton(row, command));
+    return row;
+  }
+
+  /** Copia o comando de retomada (só texto; nada é executado nem enviado ao servidor). Sem área de transferência, mostra o comando num campo selecionado. */
+  private copyButton(row: HTMLElement, command: string): HTMLButtonElement {
+    const label = tr('Copiar comando para retomar');
+    let timer: number | undefined;
+    const b = iconButton(
+      ICONS.copy,
+      label,
+      async () => {
+        const ok = await copyText(command);
+        window.clearTimeout(timer);
+        b.classList.toggle('is-done', ok);
+        b.innerHTML = ok ? ICONS.check : ICONS.copy;
+        setTitle(b, ok ? tr('Copiado!') : tr('Não foi possível copiar'));
+        if (ok) this.ctx.announce(tr('Copiado!'));
+        else this.showFallback(row, command);
+        timer = window.setTimeout(() => {
+          b.classList.remove('is-done');
+          b.innerHTML = ICONS.copy;
+          setTitle(b, label);
+        }, 1400);
+      },
+      'ui-icon-btn--sm ui-hist__copy',
+    );
+    return b;
+  }
+
+  private showFallback(row: HTMLElement, command: string): void {
+    let field = row.querySelector<HTMLInputElement>('.ui-hist__fallback');
+    if (!field) {
+      field = h('input', { class: 'ui-hist__fallback', type: 'text', attrs: { 'aria-label': tr('Comando para retomar a sessão') } });
+      field.readOnly = true;
+      row.append(field);
+    }
+    field.value = command;
+    field.focus();
+    field.select();
   }
 
   private items(): HTMLButtonElement[] {

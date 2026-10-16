@@ -5752,6 +5752,35 @@ button.ui-term__think:hover,
   background: var(--ui-bg-hover);
 }
 
+/* Linha do histórico com o botão de copiar o comando de retomada (irmão do botão da linha, nunca dentro dele). */
+.ui-hist__row {
+  position: relative;
+}
+
+.ui-hist__row.has-copy .ui-hist__item {
+  padding-right: 40px;
+}
+
+.ui-hist__copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.ui-hist__fallback {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% - 20px);
+  min-width: 0;
+  margin: 0 10px 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 6px;
+  background: var(--ui-bg-soft);
+  color: var(--ui-text);
+  font: 11px/1.3 monospace;
+}
+
 .ui-hist__text {
   display: flex;
   flex-direction: column;

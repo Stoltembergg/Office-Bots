@@ -437,6 +437,8 @@ export const EN: Readonly<Record<string, string>> = {
   "Ainda aberta: abre o terminal ao vivo do agente": "Still open: opens the agent's live terminal",
   "Encerrada: abre a conversa no terminal": "Ended: opens the conversation in the terminal",
   "última atividade {0} às {1}": "last activity {0} at {1}",
+  "Copiar comando para retomar": "Copy resume command",
+  "Comando para retomar a sessão": "Command to resume the session",
 
   // client/src/ui/hovertip.ts
   "há {0}": "{0} ago",
