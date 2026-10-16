@@ -115,7 +115,8 @@ export class NameStore {
       return { name: stored.name, look: stored.look };
     }
     const person = pickName(key, used);
-    this.remember(key, person);
+    // Nome trocado por conflito: a aparência guardada continua (é ela que reconhece o agente).
+    this.remember(key, person, stored?.seed !== undefined ? { seed: stored.seed, parts: stored.parts } : undefined);
     return person;
   }
 
@@ -183,10 +184,13 @@ export class NameStore {
     if (this.rooms.delete(roomId)) this.scheduleFlush();
   }
 
-  /** Nomes escolhidos para as salas (nome -> sala), sem a `exceptRoom`. */
-  reservedNames(exceptRoom?: string): Map<string, string> {
+  /** Nomes escolhidos para as salas (nome -> sala), sem a `exceptRoom` nem os da sessão `exceptOwner`. */
+  reservedNames(exceptRoom?: string, exceptOwner?: string): Map<string, string> {
     const out = new Map<string, string>();
-    for (const [roomId, c] of this.rooms) if (roomId !== exceptRoom) out.set(c.name, roomId);
+    for (const [roomId, c] of this.rooms) {
+      if (roomId === exceptRoom || (exceptOwner !== undefined && c.owner === exceptOwner)) continue;
+      out.set(c.name, roomId);
+    }
     return out;
   }
 

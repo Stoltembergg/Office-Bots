@@ -15,6 +15,9 @@ do meio (0.**3**.0).
 - **A conversa reaberta volta com o mesmo visual.** A aparência sorteada vinha do processo, então `claude --resume`
   (ou fechar e abrir a sessão) trazia o nome de volta, mas com outra cara. Agora a aparência fica guardada com o nome
   da sessão em `names.json`, inclusive a escolhida no editor, que não se perde quando outro agente da sala salva o dele.
+- **A sessão não perde mais o próprio nome por causa de um personagem que ela mesma salvou noutra sala** (ex.: num
+  worktree apagado depois). No reinício, o nome dela contava como ocupado e ela voltava com outro nome e sem o visual;
+  agora o personagem de uma sala nunca bloqueia a dona dele, e um nome trocado por conflito mantém a aparência.
 
 ## [1.0.3] - 2026-10-16
 

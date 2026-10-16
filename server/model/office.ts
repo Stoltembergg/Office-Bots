@@ -1030,7 +1030,9 @@ export class Office {
       used.add(r.info.name);
     }
     for (const a of this.demoSnap?.agents ?? []) used.add(a.name);
-    for (const n of this.deps.names.reservedNames().keys()) used.add(n);
+    // O personagem de uma sala não é "ocupado" para a sessão dona dele (ex.: a sessão que o salvou num worktree e
+    // voltou para a pasta principal): sem isso, ela perdia o próprio nome no reinício.
+    for (const n of this.deps.names.reservedNames(undefined, exceptSession).keys()) used.add(n);
     return used;
   }
 

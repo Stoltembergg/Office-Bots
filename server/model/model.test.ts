@@ -842,4 +842,21 @@ describe('Office: aparência por sessão', () => {
       tmp.cleanup();
     }
   });
+
+  it('a dona do personagem de outra sala (worktree que sumiu) mantém o nome e o visual no reinício', () => {
+    const names = new NameStore(null);
+    const a = makeOffice(names);
+    a.office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/wt', role: 'x', startedAt: a.now(), status: 'working' });
+    expect(a.office.setCharacter('acc:1', { name: 'Sakura', seed: 77, parts: { hairStyle: 'bob' } }).result).toBe('ok');
+    const b = makeOffice(names);
+    b.office.addMain({ id: 'acc:2', account: 'acc', sessionId: 's1', cwd: '/p/main', role: 'x', startedAt: b.now(), status: 'working' });
+    expect(b.office.get('acc:2')).toMatchObject({ name: 'Sakura', seed: 77, parts: { hairStyle: 'bob' } });
+  });
+
+  it('nome trocado por conflito mantém o visual guardado', () => {
+    const names = new NameStore(null);
+    names.remember('s1', { name: 'Ana', look: 'f' }, { seed: 99, parts: { hairStyle: 'bob' } });
+    names.assign('s1', new Set(['Ana']));
+    expect(names.appearance('s1')).toEqual({ seed: 99, parts: { hairStyle: 'bob' } });
+  });
 });
