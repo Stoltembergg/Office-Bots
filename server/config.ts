@@ -52,6 +52,12 @@ export interface ServerConfig {
   updateCheck: boolean;
   /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
   codex: boolean;
+  /**
+   * Canal paralelo de aprovação do Codex (sources/codex/appserver/service.ts: junta-se ao daemon do app-server que o
+   * TUI já subiu): o Codex ligado, fora do Docker, a trava do terminal e HABBLAUD_CODEX_APPSERVER sem desligar (ver
+   * codexAppServerOffReason).
+   */
+  codexAppServer: boolean;
   /** Segunda porta, com login, para o celular na rede local (http/remote.ts); ausente = desligada. */
   remote?: RemoteConfig;
   /** Por que o acesso remoto ficou desligado quando as variáveis estão incompletas. */
@@ -172,6 +178,21 @@ export function messagesOffReason(env: NodeJS.ProcessEnv, host: string, inDocker
 }
 
 /**
+ * Por que o canal paralelo de aprovação do Codex fica desligado (undefined = ligado). Ele responde pedidos do codex no
+ * terminal, então segue a trava do terminal; no Docker o daemon (socket AF_UNIX do host) não é alcançável; HABBLAUD_CODEX
+ * ou HABBLAUD_CODEX_APPSERVER com qualquer valor que não seja "ligado" (0, false, off...) desliga.
+ */
+export function codexAppServerOffReason(env: NodeJS.ProcessEnv, host: string, inDocker: boolean): string | undefined {
+  const codex = env.HABBLAUD_CODEX?.trim();
+  if (codex && !isTruthy(codex)) return `HABBLAUD_CODEX=${codex}`;
+  const flag = env.HABBLAUD_CODEX_APPSERVER?.trim();
+  if (flag && !isTruthy(flag)) return `HABBLAUD_CODEX_APPSERVER=${flag}`;
+  if (inDocker) return tr('no Docker o daemon do Codex (no host) não é alcançável');
+  const terminal = terminalOffReason(env, host, inDocker);
+  return terminal ? tr('mesma trava do terminal: {0}', [terminal]) : undefined;
+}
+
+/**
  * O servidor do Habblaud World quando HABBLAUD_WORLD_URL está ausente ou vazia: o World vem ligado por padrão, mas nada
  * sai do computador antes de a pessoa criar a conta e entrar (server/world/service.ts). HABBLAUD_WORLD=0 desliga tudo.
  */
@@ -249,6 +270,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    codexAppServer: codexAppServerOffReason(env, host, inDocker) === undefined,
     remote: remote.config,
     remoteWarning: remote.warning,
     world: parseWorldConfig(env, argv),

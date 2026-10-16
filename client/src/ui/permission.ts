@@ -6,6 +6,9 @@
 // Pedido do Codex (`provider: 'codex'`): o hook dele só espera alguns segundos e o terminal só mostra a aprovação
 // depois que você responder aqui ou o prazo acabar; não há "sempre permitir" nem "interromper", e recusar pede um
 // motivo. O Codex nunca pergunta pelo escritório (sem cartão de pergunta).
+// Pedido do canal paralelo do Codex (`mode: 'parallel'`, TUI ligado ao daemon): Aprovar, Aprovar nesta sessão (se o
+// canal oferecer) e Recusar (sem motivo: o app-server não leva texto), sem prazo nem "Responder no terminal"; vale
+// quem responder primeiro, e o cartão fecha quando o pedido é resolvido em outro lugar.
 import { access, isLoopbackHostname } from '../net/access';
 import { ANSWER_OTHER_MAX, ASK_TOOL, checkAnswers } from '../../../shared/answers';
 import type { AgentInfo, AskQuestion, PermissionAnswer, PermissionDecision, PermissionRequestInfo, PermissionSuggestionInfo } from '../../../shared/types';
@@ -44,6 +47,15 @@ export function expiryText(expiresAt: number, now: number, seconds = false): str
   return tr('volta ao terminal em {0}', [formatDuration(left)]);
 }
 
+/**
+ * Pedido do hook do Codex com o prazo vencido ("voltando ao terminal…"): o hook já desistiu e o terminal pede a
+ * aprovação, então o cartão não responde mais (o servidor recusaria). Claude Code (o hook dele pode voltar a esperar) e
+ * canal paralelo (sem prazo): nunca.
+ */
+export function codexHookExpired(p: Pick<PermissionRequestInfo, 'provider' | 'mode' | 'expiresAt'>, now: number): boolean {
+  return p.provider === 'codex' && p.mode !== 'parallel' && now >= p.expiresAt;
+}
+
 /** Aviso do cartão de um pedido do Codex. */
 export const CODEX_PERMISSION_NOTE = tr('No Codex, a aprovação só aparece no terminal depois que você responder aqui ou o prazo acabar.');
 
@@ -72,6 +84,27 @@ export function permissionOptions(p: Pick<PermissionRequestInfo, 'provider' | 's
     seconds: false,
     note: blocking ? tr('Este subagente roda em segundo plano: o terminal só mostra o pedido depois que você responder aqui ou escolher “Responder no terminal”.') : '',
   };
+}
+
+/** Dica do cartão de um pedido do canal paralelo do Codex. */
+export const PARALLEL_NOTE = tr('Vale quem responder primeiro: aqui ou no terminal');
+
+/** O que o cartão de um pedido 'parallel' oferece: os botões conforme as decisões do canal (sem prazo nem "Responder no terminal"). */
+export interface ParallelOptions {
+  /** Aprovar (accept). */
+  approve: boolean;
+  /** Aprovar nesta sessão (acceptForSession). */
+  session: boolean;
+  /** Recusar (decline), sem motivo. */
+  deny: boolean;
+  note: string;
+}
+
+/** undefined = o pedido não é do canal paralelo (vale permissionOptions). */
+export function parallelOptions(p: Pick<PermissionRequestInfo, 'mode' | 'decisions'>): ParallelOptions | undefined {
+  if (p.mode !== 'parallel') return undefined;
+  const d = p.decisions ?? [];
+  return { approve: d.includes('accept'), session: d.includes('acceptForSession'), deny: d.includes('decline'), note: PARALLEL_NOTE };
 }
 
 /** Agentes com pedido para responder, do pedido mais antigo para o mais recente. */
@@ -204,6 +237,8 @@ export class PermissionCard {
   private note: HTMLElement;
   private queue: HTMLElement;
   private approveBtn: HTMLButtonElement;
+  /** "Aprovar nesta sessão" (só no canal paralelo do Codex, quando ele oferece). */
+  private sessionBtn: HTMLButtonElement;
   private denyBtn: HTMLButtonElement;
   private terminalBtn: HTMLButtonElement;
   private always: HTMLElement;
@@ -215,6 +250,10 @@ export class PermissionCard {
   private denySubmit: HTMLButtonElement;
   /** O que o cartão oferece para o pedido atual (Claude Code ou Codex). */
   private opts: PermissionOptions = { always: false, interrupt: true, reasonRequired: false, seconds: false, note: '' };
+  /** Pedido do canal paralelo do Codex (undefined = os outros). */
+  private par: ParallelOptions | undefined;
+  /** Pedido do hook do Codex com o prazo vencido (codexHookExpired): os botões ficam desligados. */
+  private late = false;
   private status: HTMLElement;
   private remote: HTMLElement;
   /** Perguntas do AskUserQuestion, montadas uma vez por pedido (a seleção sobrevive aos snapshots). */
@@ -235,6 +274,17 @@ export class PermissionCard {
     this.remote = h('p', { class: 'ui-perm__note', hidden: true, text: tr('Para responder por aqui, abra o Habblaud por http://localhost (ou 127.0.0.1). Por enquanto, responda no terminal.') });
 
     this.approveBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--allow', type: 'button', on: { click: () => this.send({ behavior: 'allow' }) } }, tr('✓ Aprovar'));
+    this.sessionBtn = h(
+      'button',
+      {
+        class: 'ui-btn ui-perm__btn ui-perm__btn--allow',
+        type: 'button',
+        hidden: true,
+        title: tr('Aprovar agora e não perguntar de novo por pedidos iguais nesta sessão do Codex'),
+        on: { click: () => this.send({ behavior: 'allow', forSession: true }) },
+      },
+      tr('✓ Aprovar nesta sessão'),
+    );
     this.answerBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--allow', type: 'button', hidden: true, on: { click: () => this.sendAnswer() } }, tr('✓ Responder'));
     this.askForm = h('form', { class: 'ui-perm-ask', hidden: true, attrs: { 'aria-label': tr('Perguntas do agente') } });
     this.askForm.addEventListener('submit', (e) => {
@@ -242,7 +292,12 @@ export class PermissionCard {
       this.sendAnswer();
     });
     this.askForm.addEventListener('change', () => this.syncAnswer());
-    this.denyBtn = h('button', { class: 'ui-btn ui-perm__btn ui-perm__btn--deny', type: 'button', attrs: { 'aria-expanded': 'false' }, on: { click: () => this.toggleDeny() } }, tr('✕ Recusar…'));
+    // Canal paralelo do Codex: recusa direta (o app-server não leva motivo); nos outros, abre o formulário.
+    this.denyBtn = h(
+      'button',
+      { class: 'ui-btn ui-perm__btn ui-perm__btn--deny', type: 'button', attrs: { 'aria-expanded': 'false' }, on: { click: () => (this.par ? void this.send({ behavior: 'deny' }) : this.toggleDeny()) } },
+      tr('✕ Recusar…'),
+    );
     this.terminalBtn = h(
       'button',
       { class: 'ui-btn ui-perm__btn', type: 'button', title: tr('O Habblaud deixa este pedido de lado: vale o que você responder no terminal'), on: { click: () => this.send({ behavior: 'terminal' }) } },
@@ -299,7 +354,7 @@ export class PermissionCard {
       this.note,
       this.queue,
       this.remote,
-      h('div', { class: 'ui-perm__actions' }, this.approveBtn, this.answerBtn, this.denyBtn, this.terminalBtn),
+      h('div', { class: 'ui-perm__actions' }, this.approveBtn, this.sessionBtn, this.answerBtn, this.denyBtn, this.terminalBtn),
       this.always,
       this.denyForm,
       this.status,
@@ -325,7 +380,9 @@ export class PermissionCard {
     if (p.id !== this.id || agent.id !== this.agentId) this.reset(p.id, agent.id);
     setHidden(this.el, false);
     const now = this.ctx.now();
+    this.late = codexHookExpired(p, now);
     const opts = (this.opts = permissionOptions(p, agent));
+    const par = (this.par = parallelOptions(p));
     const codex = p.provider === 'codex';
     this.el.classList.toggle('is-codex', codex);
     const ask = isQuestionRequest(p);
@@ -338,13 +395,17 @@ export class PermissionCard {
     setText(this.title, ask ? (p.questions!.length > 1 ? tr('Perguntas para você') : tr('Pergunta para você')) : tr('Pede permissão'));
     const by = p.subagent ? tr(' · subagente {0}', [p.subagent]) : '';
     setText(this.what, ask ? tr('Aqui ou no terminal: vale a primeira resposta{0}', [by]) :`${p.icon} ${p.text}${by}`);
-    setText(this.timer, expiryText(p.expiresAt, now, opts.seconds));
-    setTitle(
-      this.timer,
-      codex
-        ? tr('Pedido feito às {0}. Sem resposta aqui até {1}, o Codex segue sem a decisão do escritório e pede a aprovação no terminal.', [formatClock(p.createdAt), formatClock(p.expiresAt)])
-        : tr('Pedido feito às {0}. Sem resposta aqui até {1}, o Habblaud devolve o pedido ao terminal.', [formatClock(p.createdAt), formatClock(p.expiresAt)]),
-    );
+    // Canal paralelo: sem prazo (o pedido espera aqui e no terminal ao mesmo tempo).
+    setHidden(this.timer, !!par);
+    if (!par) {
+      setText(this.timer, expiryText(p.expiresAt, now, opts.seconds));
+      setTitle(
+        this.timer,
+        codex
+          ? tr('Pedido feito às {0}. Sem resposta aqui até {1}, o Codex segue sem a decisão do escritório e pede a aprovação no terminal.', [formatClock(p.createdAt), formatClock(p.expiresAt)])
+          : tr('Pedido feito às {0}. Sem resposta aqui até {1}, o Habblaud devolve o pedido ao terminal.', [formatClock(p.createdAt), formatClock(p.expiresAt)]),
+      );
+    }
 
     // Pergunta: o formulário com as opções no lugar do título da ferramenta e da prévia dos argumentos.
     setHidden(this.tool, ask);
@@ -366,20 +427,37 @@ export class PermissionCard {
       }
     }
 
-    // Aviso: subagente em segundo plano (Claude Code) ou o terminal do Codex, que só pede depois do escritório.
-    setHidden(this.note, !opts.note);
-    setText(this.note, opts.note);
+    // Aviso: subagente em segundo plano (Claude Code), o terminal do Codex, que só pede depois do escritório, ou o canal
+    // paralelo (vale quem responder primeiro).
+    const note = par ? par.note : opts.note;
+    setHidden(this.note, !note);
+    setText(this.note, note);
     setHidden(this.queue, !p.queued);
     setText(this.queue, p.queued ? tr('+{0} {1} deste agente na fila', [p.queued, p.queued === 1 ? tr('pedido') : tr('pedidos')]) : '');
 
     setHidden(this.remote, this.isLocal());
     const busy = this.isBusy();
-    setHidden(this.approveBtn, ask);
+    // Canal paralelo: os botões que o canal oferece, sem "Responder no terminal" (o terminal já mostra o pedido).
+    setHidden(this.approveBtn, ask || (!!par && !par.approve));
+    setHidden(this.sessionBtn, !par?.session);
     setHidden(this.answerBtn, !ask);
-    for (const b of [this.approveBtn, this.denyBtn, this.terminalBtn]) b.disabled = busy;
+    setHidden(this.denyBtn, !!par && !par.deny);
+    setHidden(this.terminalBtn, !!par);
+    for (const b of [this.approveBtn, this.sessionBtn, this.denyBtn, this.terminalBtn]) b.disabled = busy;
     for (const el of this.askForm.querySelectorAll('input')) el.disabled = busy;
     if (ask) this.syncAnswer();
-    setTitle(this.denyBtn, ask ? tr('Não responder: o agente segue sem a resposta (com o motivo, se você escrever um)') : codex ? tr('Recusar com um motivo (o Codex pede um)') : '');
+    setText(this.denyBtn, par ? tr('✕ Recusar') : tr('✕ Recusar…'));
+    setTitle(this.approveBtn, par ? tr('Aprovar só este pedido') : '');
+    setTitle(
+      this.denyBtn,
+      par
+        ? tr('Recusar: o Codex não roda isto e segue o turno')
+        : ask
+          ? tr('Não responder: o agente segue sem a resposta (com o motivo, se você escrever um)')
+          : codex
+            ? tr('Recusar com um motivo (o Codex pede um)')
+            : '',
+    );
     setTitle(
       this.terminalBtn,
       codex ? tr('O Habblaud solta o pedido agora: o Codex mostra a aprovação no terminal') : tr('O Habblaud deixa este pedido de lado: vale o que você responder no terminal'),
@@ -399,7 +477,8 @@ export class PermissionCard {
     setAttr(this.reason, 'aria-label', opts.reasonRequired ? tr('Motivo da recusa (obrigatório)') : tr('Motivo da recusa (opcional)'));
     for (const el of this.denyForm.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement | HTMLInputElement>('button, textarea, input')) el.disabled = busy;
     this.syncDeny();
-    setAttr(this.denyBtn, 'aria-expanded', String(this.phase === 'deny'));
+    // A recusa do canal paralelo não abre formulário.
+    setAttr(this.denyBtn, 'aria-expanded', par ? null : String(this.phase === 'deny'));
     this.denyBtn.classList.toggle('is-on', this.phase === 'deny');
 
     if (this.pendingFocus === agent.id) {
@@ -474,7 +553,7 @@ export class PermissionCard {
       setText(this.status, error);
     } else {
       this.phase = 'sent';
-      const done = DONE[d.behavior];
+      const done = d.forSession ? tr('Aprovado nesta sessão') : DONE[d.behavior];
       setText(this.status, `${done}.`);
       this.ctx.announce(`${done}: ${this.ctx.agent(this.agentId)?.name ?? tr('agente')}.`);
     }
@@ -486,9 +565,9 @@ export class PermissionCard {
     return this.ctx.store.mock || access().permissions;
   }
 
-  /** Sem como responder agora: enviando, já respondido ou página aberta de fora do computador. */
+  /** Sem como responder agora: enviando, já respondido, prazo do hook do Codex vencido ou página aberta de fora do computador. */
   private isBusy(): boolean {
-    return this.phase === 'sending' || this.phase === 'sent' || !this.isLocal();
+    return this.phase === 'sending' || this.phase === 'sent' || this.late || !this.isLocal();
   }
 
   // ---------------------------------------------------------------- perguntas (AskUserQuestion)

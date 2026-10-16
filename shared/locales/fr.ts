@@ -2600,6 +2600,19 @@ export const FR: Readonly<Record<string, string>> = {
   "Sair deste aparelho": "Se déconnecter de cet appareil",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Met fin à la connexion ici (une copie du cookie cesse aussi de fonctionner). Pour revenir, connectez-vous avec votre nom d'utilisateur et votre mot de passe.",
 
+  // client/src/ui/permission.ts
+  "✓ Aprovar nesta sessão": "✓ Valider pour cette session",
+
+  // server/index.ts
+  "   Aprovação do codex no terminal pelo escritório: desligada ({0}).": "   Validation de codex dans le terminal depuis le bureau : désactivée ({0}).",
+  "   Aprovação do codex no terminal pelo escritório: pelo daemon do app-server, quando o codex o deixar no ar ({0}).": "   Validation de codex dans le terminal depuis le bureau : par le daemon de l'app-server, quand codex le laisse tourner ({0}).",
+
+  // server/sources/codex/appserver/service.ts
+  "Codex ({0}): a conexão com o app-server caiu ({1}); os pedidos voltam ao hook até reconectar.": "Codex ({0}) : la connexion à l'app-server est tombée ({1}) ; les demandes repassent par le hook jusqu'à la reconnexion.",
+  "Codex ({0}): o app-server não ficou pronto ({1}); os pedidos seguem com o hook e tento de novo.": "Codex ({0}) : l'app-server n'est pas prêt ({1}) ; les demandes continuent de passer par le hook et je réessaie.",
+  "o daemon não responde": "le daemon ne répond pas",
+  "o daemon não responde ({0})": "le daemon ne répond pas ({0})",
+
   // client/src/art/character/appearance.ts
   "Não combina com este cabelo": "Ne va pas avec cette coiffure",
   "Não combina com o boné ou o gorro": "Ne va pas avec la casquette ou le bonnet",

@@ -16,7 +16,7 @@ const MAX_OPTIONS = 6;
 
 /** Perguntas de um AskUserQuestion para exibir no escritório (mascaradas e cortadas, como o resto). */
 function askQuestions(raw: unknown): AskQuestion[] {
-  const clean = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? truncate(maskSecrets(v.slice(0, n * 4)), n) : '');
+  const clean = (v: unknown, n: number) => (typeof v === 'string' && v.trim() ? maskedCut(v, n) : '');
   const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
   // As posições contam no original (com as entradas inválidas): a resposta pelo escritório volta por elas.
   const qs = Array.isArray(raw) ? raw.slice(0, MAX_QUESTIONS) : [];
@@ -46,6 +46,31 @@ export function truncate(s: string, n: number): string {
   return one.length > n ? `${one.slice(0, Math.max(1, n - 1)).trimEnd()}…` : one;
 }
 
+/**
+ * Teto (em caracteres) do texto que passa pela máscara antes de qualquer corte visível. É alto e fixo de propósito: o
+ * que aparece na tela vem de muito além do tamanho visível (a máscara encolhe um token de 300 caracteres para 6 e os
+ * brancos colapsam), então um recorte "proporcional" ao tamanho visível deixaria um pedaço de token sem máscara.
+ */
+const MASK_CEILING = 16 * 1024;
+const BLANK = /\s/;
+
+/**
+ * Texto livre do agente até a tela: mascara os segredos ANTES de qualquer corte (um token cortado ao meio não casa com
+ * a máscara e o começo dele vazaria) e só então trunca para o tamanho visível `max`; sem `max`, devolve o texto
+ * mascarado inteiro. O recorte prévio só evita rodar as expressões sobre blocos enormes: acima do teto vai no último
+ * espaço em branco antes dele (não deixa um token pela metade no fim); sem nenhum espaço, corta no próprio teto.
+ */
+export function maskedCut(text: string, max?: number): string {
+  let head = text;
+  if (text.length > MASK_CEILING) {
+    let end = MASK_CEILING;
+    while (end > 0 && !BLANK.test(text[end])) end--;
+    head = text.slice(0, end > 0 ? end : MASK_CEILING);
+  }
+  const masked = maskSecrets(head);
+  return max === undefined ? masked : truncate(masked, max);
+}
+
 export function basename(p: string): string {
   const clean = p.replace(/[\\/]+$/, '');
   const i = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));
@@ -56,7 +81,7 @@ function domainOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
   } catch {
-    return truncate(url, 30);
+    return maskedCut(url, 30);
   }
 }
 
@@ -70,8 +95,8 @@ function make(kind: ActivityKind, icon: string, text: string, detail?: string): 
   return {
     kind,
     icon,
-    text: truncate(maskSecrets(text.slice(0, MAX_TEXT * 8)), MAX_TEXT),
-    ...(detail ? { detail: truncate(maskSecrets(detail.slice(0, MAX_DETAIL * 4)), MAX_DETAIL) } : {}),
+    text: maskedCut(text, MAX_TEXT),
+    ...(detail ? { detail: maskedCut(detail, MAX_DETAIL) } : {}),
   };
 }
 
@@ -90,8 +115,8 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|x-auth-token|private-token)(\s*:\s*)[^'"\n]+/gi, '$1$2***'],
   // Bearer/Basic/Token <valor> soltos.
   [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}/g, '$1 ***'],
-  // URL com usuário:senha.
-  [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/'"]+:)[^\s@/'"]+@/gi, '$1***@'],
+  // URL com usuário:senha. O esquema tem teto: sem ele, um texto longo como `a.b.c…` volta atrás a cada posição.
+  [/(\b[a-z][a-z0-9+.-]{0,31}:\/\/[^\s:@/'"]+:)[^\s@/'"]+@/gi, '$1***@'],
   // Webhook: o host fica, o caminho com o segredo sai.
   [/(\bhttps?:\/\/hooks\.slack\.com\/services\/)T[A-Z0-9]+\/B[A-Z0-9]+\/[A-Za-z0-9]+/gi, '$1***'],
   [/(\bhttps?:\/\/(?:discordapp|discord)\.com\/api\/webhooks\/)\d+\/[A-Za-z0-9_-]+/gi, '$1***'],
@@ -100,9 +125,11 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/((?:^|\s)(?:-u|--user)\s+['"]?[^\s:'"]+:)[^\s'"]+/g, '$1***'],
   // --token X, --password=X, --api-key X...
   [/((?:^|\s)--?(?:token|password|passwd|pass|secret|api-key|apikey|access-token|auth-token)(?:\s+|=))(['"]?)[^\s'"]+\2/gi, '$1$2***$2'],
-  // NOME_SENSIVEL=valor / "password": "valor" (GITHUB_TOKEN, DB_PASSWORD, client_secret, api_key...).
+  // NOME_SENSIVEL=valor / "password": "valor" (GITHUB_TOKEN, DB_PASSWORD, client_secret, api_key...). O prefixo do
+  // nome tem teto pelo mesmo motivo do esquema da URL; sem `\b` no começo, um nome mais longo que o teto ainda casa
+  // pelo fim (o prefixo preservado é o mesmo).
   [
-    /\b([A-Za-z0-9_.-]*?(?:token|secret|passw(?:or)?d|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|credentials?))(["']?\s*[=:]\s*)(["']?)([^\s"'&;|,}]+)\3/gi,
+    /([A-Za-z0-9_.-]{0,128}?(?:token|secret|passw(?:or)?d|pwd|api[_-]?key|access[_-]?key|private[_-]?key|_key|credentials?))(["']?\s*[=:]\s*)(["']?)([^\s"'&;|,}]+)\3/gi,
     '$1$2$3***$3',
   ],
   // Chaves com prefixo conhecido.
@@ -389,7 +416,7 @@ function describeHttp(args: string[]): string {
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host === '0.0.0.0' || host === '::1' || /^127\./.test(host)) {
     const path = `${url.port ? `:${url.port}` : ''}${url.pathname === '/' && !url.port ? '/' : url.pathname}`;
-    return `${url.pathname.startsWith('/api') ? tr('Testando a API local') : tr('Testando o servidor local')} (${truncate(path, 22)})`;
+    return `${url.pathname.startsWith('/api') ? tr('Testando a API local') : tr('Testando o servidor local')} (${maskedCut(path, 22)})`;
   }
   return tr('Chamando {0}', [host.replace(/^www\./, '')]);
 }
@@ -488,7 +515,7 @@ function describeWords(w: string[], depth: number): ActivityDescription | undefi
     const e = args.findIndex((a) => a === '-e' || a === '--regexp');
     const pat = e >= 0 ? args[e + 1] : positionals(args, GREP_VALUED)[0];
     const shown = pat?.replace(/\\\|/g, ' | ').replace(/\\([.()[\]{}+?*^$])/g, '$1');
-    return mk('search', '🔎', shown ? tr('Buscando “{0}”', [truncate(shown, 24)]) : tr('Buscando no código'));
+    return mk('search', '🔎', shown ? tr('Buscando “{0}”', [maskedCut(shown, 24)]) : tr('Buscando no código'));
   }
   if (/^(ls|find|tree|fd|du|df|eza|exa)$/.test(prog)) return mk('read', '📂', tr('Explorando pastas'));
   if (prog === 'cd' || prog === 'pushd') return mk('read', '📂', tr('Mudando de pasta'));
@@ -614,7 +641,7 @@ export function describeCommand(command: string, description?: string): Activity
   const detail = command.trim();
   let found: LineDescription = {};
   try {
-    found = describeLine(detail.slice(0, 8_000), 0);
+    found = describeLine(maskedCut(detail).slice(0, 8_000), 0);
   } catch {
     found = {}; // comando estranho demais para a heurística: cai no texto genérico
   }
@@ -672,10 +699,10 @@ export function describeTool(name: string, rawInput: unknown): ActivityDescripti
     case 'NotebookEdit':
       return make('edit', '📓', tr('Editando notebook {0}', [basename(file)]), file);
     case 'Glob':
-      return make('search', '🔎', tr('Procurando {0}', [truncate(str(input.pattern) || tr('arquivos'), 30)]), str(input.pattern));
+      return make('search', '🔎', tr('Procurando {0}', [maskedCut(str(input.pattern) || tr('arquivos'), 30)]), str(input.pattern));
     case 'Grep': {
       const pat = str(input.pattern);
-      return make('search', '🔎', pat ? tr('Buscando “{0}”', [truncate(pat, 26)]) : tr('Buscando no código'), pat);
+      return make('search', '🔎', pat ? tr('Buscando “{0}”', [maskedCut(pat, 26)]) : tr('Buscando no código'), pat);
     }
     case 'LS':
       return make('read', '📂', tr('Listando {0}', [basename(file) || tr('pasta')]), file);
@@ -692,7 +719,7 @@ export function describeTool(name: string, rawInput: unknown): ActivityDescripti
       return make('run', '🛑', tr('Parando um processo'));
     case 'WebSearch': {
       const q = str(input.query);
-      return make('web', '🌐', q ? tr('Pesquisando “{0}”', [truncate(q, 28)]) : tr('Pesquisando na web'), q);
+      return make('web', '🌐', q ? tr('Pesquisando “{0}”', [maskedCut(q, 28)]) : tr('Pesquisando na web'), q);
     }
     case 'WebFetch': {
       const url = str(input.url);
@@ -771,7 +798,7 @@ export function describeTool(name: string, rawInput: unknown): ActivityDescripti
 
 /** Atividade para um prompt do usuário. */
 export function describePrompt(text: string): ActivityDescription {
-  return make('prompt', '📨', tr('Nova tarefa: “{0}”', [truncate(text, 30)]), text);
+  return make('prompt', '📨', tr('Nova tarefa: “{0}”', [maskedCut(text, 30)]), text);
 }
 
 export function formatDuration(ms: number): string {
@@ -806,11 +833,11 @@ export function describeShellJob(name: string, rawInput: unknown): { label: stri
   const command = str(input.command).trim() || ws.trim();
   const description = str(input.description).trim();
   let label: string;
-  if (description) label = truncate(maskSecrets(description.slice(0, MAX_TEXT * 8)), MAX_TEXT);
+  if (description) label = maskedCut(description, MAX_TEXT);
   else if (kind === 'monitor') label = ws ? tr('Escutando {0}', [domainOf(ws)]) : tr('Monitorando um processo');
   else label = command ? describeCommand(command).text : tr('Comando no terminal');
   const out: { label: string; command?: string; kind: 'shell' | 'monitor' } = { label, kind };
-  if (command) out.command = truncate(maskSecrets(command.slice(0, MAX_DETAIL * 4)), MAX_DETAIL);
+  if (command) out.command = maskedCut(command, MAX_DETAIL);
   return out;
 }
 
@@ -825,8 +852,14 @@ export const SPECIAL = {
   think: (): ActivityDescription => make('think', '💭', tr('Pensando…')),
   respond: (text?: string): ActivityDescription => make('respond', '💬', tr('Escrevendo a resposta'), text),
   turnDone: (ms?: number): ActivityDescription => make('done', '✅', ms ? tr('Concluiu em {0}', [formatDuration(ms)]) : tr('Concluiu')),
+  /** Fim de um turno que terminou com erro (Codex: task_complete com `error`): ainda é a conclusão do turno, marcada como erro. */
+  turnFailed: (ms?: number, detail?: string): ActivityDescription & { error: true } => ({
+    ...make('done', '⚠️', ms ? tr('Concluiu com erro em {0}', [formatDuration(ms)]) : tr('Concluiu com erro'), detail),
+    error: true,
+  }),
   error: (tool?: string, detail?: string): ActivityDescription => make('error', '⚠️', tool ? tr('Erro em {0}', [tool]) : tr('Algo deu errado'), detail),
-  interrupted: (): ActivityDescription => make('wait', '✋', tr('Interrompido por você')),
+  /** `byYou: false` = quem interrompeu não foi você (ex.: o subagente do Codex abortado quando o pai encerra). */
+  interrupted: (byYou = true): ActivityDescription => make('wait', '✋', byYou ? tr('Interrompido por você') : tr('Interrompido')),
   compact: (): ActivityDescription => make('compact', '🧹', tr('Organizando a memória (compactando)')),
   waiting: (reason?: string): ActivityDescription => make('wait', '✋', reason ? tr('Precisa de você: {0}', [reason]) : tr('Precisa de você')),
   backgroundResult: (summary?: string): ActivityDescription => make('other', '📬', tr('Recebeu resultado em segundo plano'), summary),
@@ -851,6 +884,19 @@ export const SPECIAL = {
     return { ...make('run', '✅', fitLabel(tr('Shell terminou: '), label, took), detail), tool: SHELL_DONE_TOOL };
   },
 } as const;
+
+/** Ferramentas do Codex que rodam um comando no shell (hook, canal paralelo e demo). */
+const CODEX_COMMAND_TOOLS = new Set(['Bash', 'exec_command', 'shell', 'shell_command', 'local_shell', 'container.exec']);
+
+/**
+ * Espera de um pedido de aprovação do Codex, pelo tipo: comando, edição de arquivo (apply_patch) ou, para acesso à rede
+ * e o resto (MCP, request_permissions...), o "aprovar uma permissão" que o Claude Code já usa.
+ */
+export function codexApprovalReason(tool: string, network = false): string {
+  if (tool === 'apply_patch') return tr('aprovar uma edição');
+  if (CODEX_COMMAND_TOOLS.has(tool) && !network) return tr('aprovar um comando');
+  return tr('aprovar uma permissão');
+}
 
 /** Traduz o `waitingFor` do registro de sessões do Claude Code. */
 export function describeWaitingFor(raw: string | undefined): string {

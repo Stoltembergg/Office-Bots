@@ -73,7 +73,7 @@ function panel(feed: FeedItem[] = [], agents: AgentInfo[] = []) {
   const prefs = { hiddenAccounts: [] as string[] };
   let open = true;
   const ctx = {
-    store: { feed, snapshot, on: (_event: string, cb: typeof receive) => { receive = cb; } },
+    store: { feed, snapshot, on: (event: string, cb: typeof receive) => { if (event === 'feed') receive = cb; } },
     world: { onSocialEvent: (cb: typeof social) => { social = cb; } },
     prefs, agent: (id: string) => snapshot.agents.find((a) => a.id === id), account: () => undefined,
     invalidate: () => {}, togglePanel: () => {}, isPanelOpen: () => open,

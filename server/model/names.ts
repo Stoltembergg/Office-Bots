@@ -7,6 +7,7 @@ import { parseAppearanceParts, parseCharacterName, parseSeed, type AppearancePar
 import { pickName, type PersonName } from '../../shared/names';
 import { errMsg, log } from '../log';
 import { tr } from '../../shared/i18n';
+import { normalizeCwd } from './rooms';
 
 interface StoredName {
   name: string;
@@ -81,9 +82,14 @@ export class NameStore {
         }
       }
       const rooms = j.rooms && typeof j.rooms === 'object' && !Array.isArray(j.rooms) ? j.rooms : {};
-      for (const [roomId, v] of Object.entries(rooms)) {
+      for (const [key, v] of Object.entries(rooms)) {
         const c = parseStoredCharacter(v);
-        if (c) this.rooms.set(roomId, c);
+        if (!c) continue;
+        // Sala gravada antes de o id ser normalizado (drive minúsculo, \\?\, file://): passa para o id de hoje; se as
+        // duas grafias existirem, fica a usada por último. Um id já normalizado não muda.
+        const roomId = normalizeCwd(key);
+        const prev = this.rooms.get(roomId);
+        if (!prev || c.at > prev.at) this.rooms.set(roomId, c);
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn(tr('names.json ilegível ({0}); começando do zero.', [errMsg(err)]));

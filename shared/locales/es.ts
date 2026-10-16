@@ -2584,6 +2584,19 @@ export const ES: Readonly<Record<string, string>> = {
   "Sair deste aparelho": "Cerrar sesión en este dispositivo",
   "Encerra o login aqui (uma cópia do cookie também deixa de valer). Para voltar, entre com usuário e senha.": "Cierra el inicio de sesión aquí (una copia de la cookie también deja de valer). Para volver, entra con tu usuario y contraseña.",
 
+  // client/src/ui/permission.ts
+  "✓ Aprovar nesta sessão": "✓ Aprobar en esta sesión",
+
+  // server/index.ts
+  "   Aprovação do codex no terminal pelo escritório: desligada ({0}).": "   Aprobación del codex en la terminal desde la oficina: desactivada ({0}).",
+  "   Aprovação do codex no terminal pelo escritório: pelo daemon do app-server, quando o codex o deixar no ar ({0}).": "   Aprobación del codex en la terminal desde la oficina: por el daemon del app-server, cuando el codex lo deja en ejecución ({0}).",
+
+  // server/sources/codex/appserver/service.ts
+  "Codex ({0}): a conexão com o app-server caiu ({1}); os pedidos voltam ao hook até reconectar.": "Codex ({0}): la conexión con el app-server se cayó ({1}); las solicitudes vuelven al hook hasta que se reconecte.",
+  "Codex ({0}): o app-server não ficou pronto ({1}); os pedidos seguem com o hook e tento de novo.": "Codex ({0}): el app-server no quedó listo ({1}); las solicitudes siguen por el hook y lo intento de nuevo.",
+  "o daemon não responde": "el daemon no responde",
+  "o daemon não responde ({0})": "el daemon no responde ({0})",
+
   // client/src/art/character/appearance.ts
   "Não combina com este cabelo": "No combina con este pelo",
   "Não combina com o boné ou o gorro": "No combina con la gorra o el gorro",
