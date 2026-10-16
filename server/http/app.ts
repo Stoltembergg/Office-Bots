@@ -19,6 +19,7 @@ import type { SpawnService } from '../spawn/spawn';
 import { ATTACHMENT_BODY_MAX, parseAttachment, type AttachmentStore } from '../spawn/attachments';
 import type { SpawnFolder } from '../spawn/folders';
 import { AUDIO_BODY_MAX, type DictationService } from '../dictation/dictation';
+import type { PasteService } from '../paste/paste';
 import type { DeliveryIndex } from '../deliveries/deliveries';
 import type { FileFetcher } from '../deliveries/fetcher';
 import { HOST_WAIT_MS } from '../host-wait';
@@ -71,6 +72,8 @@ export interface ApiDeps {
   attachments?: AttachmentStore;
   /** Ditado (/api/dictation e, para o auxiliar do host, /api/host/dictation/*; dictation/dictation.ts). */
   dictation?: DictationService;
+  /** Print colado na caixa de mensagem (/api/paste e, para o auxiliar do host, /api/host/paste/*; paste/paste.ts). */
+  paste?: PasteService;
   /** Entregas (GET /api/deliveries e os anexos em /api/deliveries/file/:id; deliveries/deliveries.ts). */
   deliveries?: DeliveryIndex;
   /** Quem lê os arquivos das entregas (e, para o auxiliar do host, /api/host/files/*; deliveries/fetcher.ts). */
@@ -552,6 +555,27 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       } else methodNotAllowed(res, path === '/api/dictation' ? 'GET, POST' : 'GET');
       return true;
     }
+    if (path === '/api/paste' || path.startsWith('/api/paste/')) {
+      // Print colado na caixa de mensagem: grava um arquivo no computador, então a mesma trava das mensagens.
+      const paste = deps.paste;
+      if (!paste) sendJson(res, 403, { error: tr('colar print desligado') });
+      else if (!trusted(req, 'messages')) sendJson(res, 403, { error: denied(req, tr('colar print só funciona pelo próprio computador (http://localhost)')) });
+      else if (path === '/api/paste' && isRead) sendJson(res, 200, { available: paste.available() });
+      else if (path === '/api/paste' && method === 'POST') {
+        readJson(req, ATTACHMENT_BODY_MAX)
+          .then((body) => {
+            const r = paste.submit(body);
+            if ('paste' in r) return sendJson(res, 201, r.paste);
+            sendJson(res, r.error === 'invalid' ? 400 : r.error === 'too-many' ? 429 : 409, { error: r.reason });
+          })
+          .catch((err) => fail(res, err));
+      } else if (path !== '/api/paste' && isRead) {
+        const info = paste.get(decodeURIComponent(path.slice('/api/paste/'.length)));
+        if (info) sendJson(res, 200, info);
+        else sendJson(res, 404, { error: tr('print desconhecido') });
+      } else methodNotAllowed(res, path === '/api/paste' ? 'GET, POST' : 'GET');
+      return true;
+    }
     if (path === '/api/deliveries' || path.startsWith('/api/deliveries/')) {
       // Entregas mostram a resposta inteira e arquivos do agente: a mesma trava do terminal.
       const deliveries = deps.deliveries;
@@ -606,6 +630,26 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         readJson(req, 512 * 1024)
           .then((body) => {
             dictation.ack(body);
+            sendJson(res, 200, { ok: true });
+          })
+          .catch((err) => fail(res, err));
+      }
+      return true;
+    }
+    if (path === '/api/host/paste/poll' || path === '/api/host/paste/ack') {
+      // Só o auxiliar do host, pela porta local (nunca pela remota); fora do Docker, só pelo loopback.
+      const paste = deps.paste;
+      if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else if (!paste) sendJson(res, 403, { error: tr('colar print desligado') });
+      else if (!trusted(req) || (!deps.inDocker && !isLoopbackAddress(req.socket.remoteAddress))) {
+        sendJson(res, 403, { error: denied(req, tr('só o auxiliar do próprio computador')) });
+      } else if (path === '/api/host/paste/poll') {
+        req.resume();
+        hostWait(res, url, (ms, signal) => paste.pollWait(ms, signal)).then((list) => list && sendJson(res, 200, { pastes: list }), (err) => fail(res, err));
+      } else {
+        readJson(req, 64 * 1024)
+          .then((body) => {
+            paste.ack(body);
             sendJson(res, 200, { ok: true });
           })
           .catch((err) => fail(res, err));
