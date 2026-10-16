@@ -1177,6 +1177,8 @@ export const FR: Readonly<Record<string, string>> = {
   "Vendo {0} na TV": "Regarde {0} à la télé",
   " (a caminho)": " (en route)",
   " · valendo 🪙{0}": " · mise 🪙{0}",
+  " com {0}": " avec {0}",
+  "{0} e {1}": "{0} et {1}",
 
   // client/src/world/social/wallet.ts
   "Chegou ao escritório": "Arrivé au bureau",
