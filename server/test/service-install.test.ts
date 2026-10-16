@@ -1,10 +1,12 @@
 // Instalador do serviço systemd (scripts/service-install.ts): geração da unit e planos (funções puras).
 // Nada aqui chama o systemctl de verdade nem grava fora de pastas temporárias.
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildUnit,
+  defaultExec,
   isOurUnit,
   MARK,
   parseArgs,
@@ -56,6 +58,14 @@ describe('service-install.ts: buildUnit', () => {
     expect(unit).toContain('Environment="HABBLAUD_PORT=4851"\n');
     expect(unit).toContain('Description=Habblaud (escritório dos agentes) em http://localhost:4851\n');
     expect(buildUnit(OPTS)).not.toContain('HABBLAUD_PORT');
+  });
+
+  it('SVC-01: quebra de linha em caminho ou PATH é recusada', () => {
+    for (const k of ['nodePath', 'root', 'serverEntry', 'pathEnv'] as const) {
+      for (const nl of ['\n', '\r']) {
+        expect(() => buildUnit({ ...OPTS, [k]: `/a${nl}ExecStartPre=/bin/x` })).toThrow('quebra de linha');
+      }
+    }
   });
 
   it('SVC-01: caminhos com espaço, %, $, aspas e barra invertida saem escapados', () => {
@@ -216,8 +226,7 @@ describe('service-install.ts: run', () => {
 
   it('SVC-03: fora do Linux sai com 1, diz o motivo e não grava nada', () => {
     expect(run(INSTALL, { ...ctx, platform: 'darwin' })).toBe(1);
-    expect(text()).toContain('Linux');
-    expect(text()).toContain('darwin');
+    expect(text()).toBe('✗ Só há suporte ao systemd de usuário no Linux (inclui o WSL com systemd); darwin não é suportado ainda.');
     expect(existsSync(file)).toBe(false);
     expect(calls).toEqual([]);
   });
@@ -273,10 +282,50 @@ describe('service-install.ts: run', () => {
     expect(existsSync(file)).toBe(false);
   });
 
-  it('SVC-04: uninstall sem unit diz "não instalado" e não chama o systemctl', () => {
+  it('SVC-04: uninstall sem unit tenta desligar o serviço, ignora a falha e diz "não instalado"', () => {
+    answers['systemctl --user disable habblaud.service'] = { status: 1, stderr: 'Unit habblaud.service does not exist' };
     expect(run(UNINSTALL, ctx)).toBe(0);
     expect(text()).toContain('não instalado');
+    expect(text()).not.toContain('does not exist');
+    expect(calls).toEqual(['systemctl --user disable habblaud.service']);
+  });
+
+  it('SVC-04: uninstall com disable --now falhando sai com 1, mantém a unit e não recarrega', () => {
+    run(INSTALL, ctx);
+    calls.length = 0;
+    lines.length = 0;
+    answers['systemctl --user disable --now habblaud.service'] = { status: 1, stderr: 'falso: disable quebrou' };
+    expect(run(UNINSTALL, ctx)).toBe(1);
+    expect(text()).toContain('falso: disable quebrou');
+    expect(existsSync(file)).toBe(true);
+    expect(calls).not.toContain('systemctl --user daemon-reload');
+  });
+
+  it('SVC-04: uninstall com daemon-reload falhando sai com 1 e mostra a mensagem', () => {
+    run(INSTALL, ctx);
+    lines.length = 0;
+    answers['systemctl --user daemon-reload'] = { status: 1, stderr: 'falso: reload quebrou' };
+    expect(run(UNINSTALL, ctx)).toBe(1);
+    expect(text()).toContain('falso: reload quebrou');
+  });
+
+  it('SVC-02: instalar sem --port reaproveita a porta da unit e não chama o systemctl', () => {
+    expect(run({ ...INSTALL, port: 5000 }, ctx)).toBe(0);
+    calls.length = 0;
+    lines.length = 0;
+    expect(run(INSTALL, ctx)).toBe(0);
+    expect(readFileSync(file, 'utf8')).toContain('Environment="HABBLAUD_PORT=5000"\n');
     expect(calls).toEqual([]);
+    expect(text()).toContain('já instalado');
+  });
+
+  it('SVC-04: linger desconhecido mostra "desconhecido" e não sugere enable-linger', () => {
+    run(INSTALL, ctx);
+    lines.length = 0;
+    answers['loginctl show-user ana --property=Linger'] = { status: 0, stdout: '' };
+    expect(run(STATUS, ctx)).toBe(0);
+    expect(text()).toContain('linger: desconhecido');
+    expect(text()).not.toContain('enable-linger');
   });
 
   it('SVC-04: uninstall de unit sem a marca não toca sem --force', () => {
@@ -330,5 +379,24 @@ describe('service-install.ts: run', () => {
   it('SVC-04: status sem unit diz que não está instalado e sai com 0', () => {
     expect(run(STATUS, ctx)).toBe(0);
     expect(text()).toContain('não instalado');
+  });
+});
+
+describe('service-install.ts: defaultExec e main', () => {
+  it('comando inexistente devolve status null e stderr preenchido', () => {
+    const r = defaultExec('/caminho/que/nao/existe-xyz', []);
+    expect(r.status).toBeNull();
+    expect(r.stderr).not.toBe('');
+  });
+
+  it('main de verdade: opção desconhecida sai com 1 e não chama o systemd', () => {
+    const root = resolve(__dirname, '..', '..');
+    const r = spawnSync(process.execPath, [join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), 'scripts/service-install.ts', '--bogus'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    expect(r.status).toBe(1);
+    expect(`${r.stdout}${r.stderr}`).toContain('opção desconhecida');
   });
 });

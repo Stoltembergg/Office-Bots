@@ -2233,6 +2233,7 @@ export const EN: Readonly<Record<string, string>> = {
   "já existe uma unit {0} que não foi gerada por este instalador; nada foi alterado (use --force para trocá-la)": "a unit {0} already exists that this installer did not generate; nothing was changed (use --force to replace it)",
   "ligado (o serviço sobe no boot e segue sem login)": "on (the service starts at boot and stays up without login)",
   "não instalado": "not installed",
+  "caminho ou PATH com quebra de linha não pode entrar na unit": "a path or PATH with a line break cannot go into the unit",
   "systemctl --user {0} falhou: {1}": "systemctl --user {0} failed: {1}",
   "unit atualizada (novo caminho do Habblaud, do node ou das opções)": "unit updated (new Habblaud path, node or options)",
   "unit criada": "unit created",

@@ -50,8 +50,14 @@ export function quoteWord(s: string): string {
   return `"${escapeSpecifiers(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+class FatalError extends Error {}
+
 /** O texto da unit para estes caminhos. */
 export function buildUnit(o: UnitOptions): string {
+  // Uma quebra de linha num caminho ou no PATH quebraria a unit em linhas novas (injeção de diretivas).
+  if ([o.nodePath, o.root, o.serverEntry, o.pathEnv].some((v) => /[\r\n]/.test(v))) {
+    throw new FatalError(tr('caminho ou PATH com quebra de linha não pode entrar na unit'));
+  }
   // No ExecStart o `$` expande variáveis; `$$` é o `$` literal.
   const exec = [o.nodePath, o.serverEntry].map((w) => quoteWord(w.replace(/\$/g, () => '$$'))).join(' ');
   const env = [`PATH=${o.pathEnv}`, ...(o.port ? [`HABBLAUD_PORT=${o.port}`] : [])].map((e) => `Environment=${quoteWord(e)}`);
@@ -152,8 +158,6 @@ export interface RunContext {
   exec: (cmd: string, args: string[]) => ExecResult;
 }
 
-class FatalError extends Error {}
-
 export function parseArgs(argv: string[]): RunOptions | 'help' {
   let command: RunOptions['command'] | undefined;
   let dryRun = false;
@@ -174,8 +178,8 @@ export function parseArgs(argv: string[]): RunOptions | 'help' {
   return { command, dryRun, force, port };
 }
 
-function defaultExec(cmd: string, args: string[]): ExecResult {
-  const r = spawnSync(cmd, args, { encoding: 'utf8' });
+export function defaultExec(cmd: string, args: string[]): ExecResult {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 15_000 });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr || r.error?.message || '' };
 }
 
@@ -253,6 +257,8 @@ function uninstall(opts: RunOptions, ctx: RunContext, file: string, existing: st
   const { out } = ctx;
   const plan = planUninstall(existing, opts.force);
   if (plan.action === 'none') {
+    // Sem arquivo, o serviço ainda pode estar ligado (unit apagada à mão): tenta desligar e ignora a falha.
+    if (!opts.dryRun) systemctl(ctx, ['disable', SERVICE_NAME]);
     out(`= ${plan.message}`);
     return 0;
   }
@@ -305,7 +311,9 @@ export function run(opts: RunOptions, ctx: RunContext): number {
   }
   const file = join(unitDir(ctx.env, ctx.home), SERVICE_NAME);
   const existing = readUnit(file);
-  const wanted = buildUnit({ nodePath: ctx.nodePath, root: ctx.root, serverEntry: ctx.serverEntry, pathEnv: ctx.env.PATH ?? '', port: opts.port });
+  // Instalar de novo sem --port mantém a porta que a unit já tem, em vez de voltar ao padrão.
+  const port = opts.port ?? (opts.command === 'install' && existing !== undefined ? portOf(existing) : undefined);
+  const wanted = buildUnit({ nodePath: ctx.nodePath, root: ctx.root, serverEntry: ctx.serverEntry, pathEnv: ctx.env.PATH ?? '', port });
   if (opts.command === 'install') return install(opts, ctx, file, existing, wanted);
   if (opts.command === 'uninstall') return uninstall(opts, ctx, file, existing);
   return status(ctx, file, existing);
