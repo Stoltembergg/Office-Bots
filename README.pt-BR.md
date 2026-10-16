@@ -296,6 +296,23 @@ Sem HTTPS a porta remota não sobe; `HABBLAUD_REMOTE_INSECURE_HTTP=1` força HTT
 rede). No modo Node: `HABBLAUD_REMOTE_PORT` e `HABBLAUD_REMOTE_HOST` (padrão `0.0.0.0:4748`) e
 `HABBLAUD_REMOTE_TLS_DIR` (padrão `~/.habblaud/remote-tls/server`).
 
+### Rodar como serviço (Linux e WSL)
+
+No Linux, ou no WSL com systemd ligado, o Habblaud pode rodar como serviço de usuário: o escritório sobe com a sessão, sem terminal aberto. Antes, rode `npm run build` (o serviço usa o `dist/`, igual ao `npm start`).
+
+```bash
+npm run build
+npm run service:install     # grava ~/.config/systemd/user/habblaud.service e liga o serviço
+npm run service:status      # se está ligado no boot, rodando e o linger
+npm run service:uninstall   # desliga o serviço e apaga a unidade
+```
+
+Opções: `--port <n>` (outra porta que não a 4747), `--dry-run` (mostra a unidade sem gravar) e `--force` (troca um `habblaud.service` feito à mão). A unidade usa o `node` que rodou a instalação, esta pasta e o seu `PATH` (assim o servidor acha `claude` e `codex`). Ela não define nenhuma variável do `.env`.
+
+> **Linger:** um serviço de usuário para quando a última sessão fecha. Para ele subir no boot e seguir ligado sem login, rode você mesmo `loginctl enable-linger $USER` (o instalador só mostra a dica).
+
+**Depois de um `git pull`:** o serviço continua com o `dist/` antigo. Rode `npm install`, `npm run build` e `systemctl --user restart habblaud`.
+
 ### Atualizar
 
 A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. A cada 6 horas o
