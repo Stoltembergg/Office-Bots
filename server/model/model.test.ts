@@ -797,3 +797,49 @@ describe('Office: personagem do projeto', () => {
     expect(names.character('/p/api')?.owner).toBe('s2b');
   });
 });
+
+describe('Office: aparência por sessão', () => {
+  it('a mesma conversa reaberta noutro processo volta com o mesmo visual', () => {
+    const names = new NameStore(null);
+    const a = makeOffice(names);
+    a.office.addMain({ id: 'acc:111', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: a.now(), status: 'working' });
+    const before = a.office.get('acc:111')!;
+    const b = makeOffice(names);
+    b.office.addMain({ id: 'acc:222', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: b.now(), status: 'working' });
+    const after = b.office.get('acc:222')!;
+    expect(after.name).toBe(before.name);
+    expect(after.seed).toBe(before.seed);
+  });
+
+  it('o visual salvo no editor fica com a sessão mesmo depois que outro agente da sala salva o dele', () => {
+    const names = new NameStore(null);
+    const a = makeOffice(names);
+    a.office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: a.now(), status: 'working' });
+    a.office.addMain({ id: 'acc:2', account: 'acc', sessionId: 's2', cwd: '/p/a', role: 'x', startedAt: a.now(), status: 'working' });
+    expect(a.office.setCharacter('acc:1', { name: 'Sakura', seed: 1234, parts: {} }).result).toBe('ok');
+    expect(a.office.setCharacter('acc:2', { name: 'Naruto', seed: 5678, parts: {} }).result).toBe('ok');
+    const b = makeOffice(names);
+    b.office.addMain({ id: 'acc:9', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: b.now(), status: 'working' });
+    expect(b.office.get('acc:9')).toMatchObject({ name: 'Sakura', seed: 1234 });
+  });
+
+  it('names.json guarda e relê a aparência', () => {
+    const tmp = tempDir();
+    try {
+      const file = join(tmp.dir, 'names.json');
+      const a = new NameStore(file);
+      a.remember('s1', { name: 'Ana', look: 'f' }, { seed: 42, parts: { hairStyle: 'bob' } });
+      a.remember('s2', { name: 'Bia', look: 'f' });
+      a.flush();
+      const b = new NameStore(file);
+      b.load();
+      expect(b.appearance('s1')).toEqual({ seed: 42, parts: { hairStyle: 'bob' } });
+      expect(b.get('s1')).toEqual({ name: 'Ana', look: 'f' });
+      // Nome de versão anterior (sem aparência): continua valendo, e a aparência fica para a chegada.
+      expect(b.appearance('s2')).toBeUndefined();
+      expect(b.get('s2')).toEqual({ name: 'Bia', look: 'f' });
+    } finally {
+      tmp.cleanup();
+    }
+  });
+});

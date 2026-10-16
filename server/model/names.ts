@@ -11,7 +11,16 @@ import { tr } from '../../shared/i18n';
 interface StoredName {
   name: string;
   look: 'f' | 'm';
+  /** Aparência da sessão (seed e peças do editor): a mesma conversa reaberta noutro processo volta igual. */
+  seed?: number;
+  parts?: AppearanceParts;
   at: number;
+}
+
+/** Aparência guardada de uma sessão. */
+export interface SessionLook {
+  seed: number;
+  parts?: AppearanceParts;
 }
 
 /**
@@ -77,7 +86,14 @@ export class NameStore {
       const j = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<NamesFile>;
       for (const [key, v] of Object.entries(j.names ?? {})) {
         if (v && typeof v.name === 'string' && (v.look === 'f' || v.look === 'm')) {
-          this.names.set(key, { name: v.name, look: v.look, at: typeof v.at === 'number' ? v.at : 0 });
+          const s: StoredName = { name: v.name, look: v.look, at: typeof v.at === 'number' ? v.at : 0 };
+          const seed = parseSeed(v.seed);
+          if (seed !== null) {
+            s.seed = seed;
+            const parts = v.parts === undefined ? undefined : parseAppearanceParts(v.parts);
+            if (parts && Object.keys(parts).length) s.parts = parts;
+          }
+          this.names.set(key, s);
         }
       }
       const rooms = j.rooms && typeof j.rooms === 'object' && !Array.isArray(j.rooms) ? j.rooms : {};
@@ -103,15 +119,43 @@ export class NameStore {
     return person;
   }
 
-  /** Associa `person` a mais uma chave (ex.: a sessão nova depois de um /clear). */
-  remember(key: string, person: PersonName): void {
-    this.names.set(key, { name: person.name, look: person.look, at: this.now() });
+  /** Associa `person` (e, se vier, a aparência) a mais uma chave (ex.: a sessão nova depois de um /clear). */
+  remember(key: string, person: PersonName, look?: SessionLook): void {
+    const s: StoredName = { name: person.name, look: person.look, at: this.now() };
+    if (look) {
+      s.seed = look.seed;
+      if (look.parts && Object.keys(look.parts).length) s.parts = { ...look.parts };
+    }
+    this.names.set(key, s);
     this.scheduleFlush();
   }
 
   get(key: string): PersonName | undefined {
     const s = this.names.get(key);
     return s ? { name: s.name, look: s.look } : undefined;
+  }
+
+  /** Aparência guardada da sessão `key` (undefined = nunca guardada: nomes de versões anteriores). */
+  appearance(key: string): SessionLook | undefined {
+    const s = this.names.get(key);
+    if (!s || s.seed === undefined) return undefined;
+    return s.parts ? { seed: s.seed, parts: { ...s.parts } } : { seed: s.seed };
+  }
+
+  /** Guarda a aparência da sessão `key` (que já tem nome). */
+  setAppearance(key: string, look: SessionLook): void {
+    const s = this.names.get(key);
+    if (!s) return;
+    s.seed = look.seed;
+    if (look.parts && Object.keys(look.parts).length) s.parts = { ...look.parts };
+    else delete s.parts;
+    s.at = this.now();
+    this.scheduleFlush();
+  }
+
+  /** Esquece o nome e a aparência da sessão `key` ("Voltar ao sorteio"). */
+  forget(key: string): void {
+    if (this.names.delete(key)) this.scheduleFlush();
   }
 
   // ---------------------------------------------------------------- personagem de cada sala (projeto)
