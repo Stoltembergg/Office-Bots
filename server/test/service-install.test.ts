@@ -1,7 +1,24 @@
 // Instalador do serviço systemd (scripts/service-install.ts): geração da unit e planos (funções puras).
 // Nada aqui chama o systemctl de verdade nem grava fora de pastas temporárias.
-import { describe, expect, it } from 'vitest';
-import { buildUnit, isOurUnit, MARK, planInstall, planUninstall, SERVICE_NAME, unitDir, type UnitOptions } from '../../scripts/service-install';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  buildUnit,
+  isOurUnit,
+  MARK,
+  parseArgs,
+  planInstall,
+  planUninstall,
+  run,
+  SERVICE_NAME,
+  unitDir,
+  type ExecResult,
+  type RunContext,
+  type RunOptions,
+  type UnitOptions,
+} from '../../scripts/service-install';
+import { tempDir } from './fixtures';
 
 const OPTS: UnitOptions = {
   nodePath: '/usr/bin/node',
@@ -94,5 +111,224 @@ describe('service-install.ts: planUninstall', () => {
     expect(p.action).toBe('skip');
     expect(p.message).toContain('--force');
     expect(planUninstall(manual, true).action).toBe('remove');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// run(): pasta de units temporária e systemctl/loginctl falsos (nunca toca o systemd de verdade)
+// ---------------------------------------------------------------------------------------------
+
+describe('service-install.ts: run', () => {
+  let tmp: ReturnType<typeof tempDir>;
+  let calls: string[];
+  let lines: string[];
+  let answers: Record<string, Partial<ExecResult> | (() => Partial<ExecResult>)>;
+  let file: string;
+  let ctx: RunContext;
+
+  const INSTALL: RunOptions = { command: 'install', dryRun: false, force: false };
+  const UNINSTALL: RunOptions = { command: 'uninstall', dryRun: false, force: false };
+  const STATUS: RunOptions = { command: 'status', dryRun: false, force: false };
+
+  beforeEach(() => {
+    tmp = tempDir('habblaud-service-');
+    calls = [];
+    lines = [];
+    answers = {};
+    const root = join(tmp.dir, 'projeto');
+    mkdirSync(join(root, 'dist', 'server'), { recursive: true });
+    writeFileSync(join(root, 'dist', 'server', 'index.js'), '');
+    file = join(tmp.dir, 'cfg', 'systemd', 'user', SERVICE_NAME);
+    ctx = {
+      platform: 'linux',
+      env: { XDG_CONFIG_HOME: join(tmp.dir, 'cfg'), PATH: '/usr/local/bin:/usr/bin' },
+      home: tmp.dir,
+      user: 'ana',
+      nodePath: '/usr/bin/node',
+      root,
+      serverEntry: join(root, 'dist', 'server', 'index.js'),
+      out: (l) => lines.push(l),
+      exec: (cmd, args) => {
+        const key = [cmd, ...args].join(' ');
+        calls.push(key);
+        const a = answers[key];
+        const given = typeof a === 'function' ? a() : a;
+        const dflt: ExecResult = { status: 0, stdout: cmd === 'loginctl' ? 'Linger=no\n' : '', stderr: '' };
+        return { ...dflt, ...given };
+      },
+    };
+  });
+  afterEach(() => tmp.cleanup());
+
+  const unitFor = (o: Partial<UnitOptions> = {}): string =>
+    buildUnit({ nodePath: ctx.nodePath, root: ctx.root, serverEntry: ctx.serverEntry, pathEnv: ctx.env.PATH ?? '', ...o });
+  const text = (): string => lines.join('\n');
+
+  it('SVC-02: sem unit grava a unit esperada, recarrega, liga e avisa do linger sem rodá-lo', () => {
+    expect(run(INSTALL, ctx)).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(unitFor());
+    expect(calls).toEqual([
+      'systemctl --user show-environment',
+      'systemctl --user daemon-reload',
+      'systemctl --user enable --now habblaud.service',
+      'loginctl show-user ana --property=Linger',
+    ]);
+    expect(text()).toContain('loginctl enable-linger ana');
+    expect(calls.some((c) => c.includes('enable-linger'))).toBe(false);
+  });
+
+  it('SVC-02: com o linger ligado não há aviso', () => {
+    answers['loginctl show-user ana --property=Linger'] = { stdout: 'Linger=yes\n' };
+    expect(run(INSTALL, ctx)).toBe(0);
+    expect(text()).not.toContain('enable-linger');
+  });
+
+  it('SVC-02: instalar de novo sem mudança não grava nem chama o systemctl', () => {
+    run(INSTALL, ctx);
+    calls.length = 0;
+    lines.length = 0;
+    const before = readFileSync(file, 'utf8');
+    expect(run(INSTALL, ctx)).toBe(0);
+    expect(calls).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    expect(text()).toContain('já instalado');
+  });
+
+  it('SVC-02: unit nossa diferente (outro node) é regravada e o serviço reinicia', () => {
+    run(INSTALL, ctx);
+    calls.length = 0;
+    expect(run(INSTALL, { ...ctx, nodePath: '/outro/node' })).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(unitFor({ nodePath: '/outro/node' }));
+    expect(calls.slice(0, 4)).toEqual([
+      'systemctl --user show-environment',
+      'systemctl --user daemon-reload',
+      'systemctl --user enable habblaud.service',
+      'systemctl --user restart habblaud.service',
+    ]);
+  });
+
+  it('SVC-02: --dry-run mostra a unit e não grava nem chama o systemctl', () => {
+    expect(run({ ...INSTALL, dryRun: true }, ctx)).toBe(0);
+    expect(existsSync(file)).toBe(false);
+    expect(calls).toEqual([]);
+    expect(text()).toContain(unitFor());
+  });
+
+  it('SVC-03: fora do Linux sai com 1, diz o motivo e não grava nada', () => {
+    expect(run(INSTALL, { ...ctx, platform: 'darwin' })).toBe(1);
+    expect(text()).toContain('Linux');
+    expect(text()).toContain('darwin');
+    expect(existsSync(file)).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('SVC-03: sem dist/server/index.js sai com 1, manda rodar o build e não grava nada', () => {
+    expect(run(INSTALL, { ...ctx, serverEntry: join(ctx.root, 'dist', 'server', 'nada.js') })).toBe(1);
+    expect(text()).toContain('npm run build');
+    expect(existsSync(file)).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('SVC-03: systemd de usuário que não responde sai com 1, cita o WSL e não grava nada', () => {
+    answers['systemctl --user show-environment'] = { status: 1, stderr: 'Failed to connect to bus' };
+    expect(run(INSTALL, ctx)).toBe(1);
+    expect(text()).toContain('systemd=true');
+    expect(text()).toContain('/etc/wsl.conf');
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it('SVC-03: unit sem a marca não é tocada sem --force', () => {
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, '[Unit]\nDescription=feita à mão\n');
+    expect(run(INSTALL, ctx)).toBe(1);
+    expect(readFileSync(file, 'utf8')).toBe('[Unit]\nDescription=feita à mão\n');
+    expect(text()).toContain('--force');
+    expect(calls).toEqual([]);
+    expect(run({ ...INSTALL, force: true }, ctx)).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(unitFor());
+  });
+
+  it('SVC-03: --port fora de 1..65535 falha com a faixa válida', () => {
+    for (const bad of ['0', '65536', 'abc', '4747.5']) expect(() => parseArgs(['install', '--port', bad])).toThrow(/1 e 65535/);
+    expect(parseArgs(['install', '--port', '4851'])).toEqual({ command: 'install', dryRun: false, force: false, port: 4851 });
+  });
+
+  it('SVC-03: falha do systemctl mostra o stderr dele e sai com 1', () => {
+    answers['systemctl --user enable --now habblaud.service'] = { status: 1, stderr: 'Failed to enable unit: boom' };
+    expect(run(INSTALL, ctx)).toBe(1);
+    expect(text()).toContain('Failed to enable unit: boom');
+  });
+
+  it('SVC-04: uninstall desliga, apaga a unit e só depois recarrega', () => {
+    run(INSTALL, ctx);
+    calls.length = 0;
+    let existedAtReload: boolean | undefined;
+    answers['systemctl --user daemon-reload'] = () => {
+      existedAtReload = existsSync(file);
+      return {};
+    };
+    expect(run(UNINSTALL, ctx)).toBe(0);
+    expect(calls).toEqual(['systemctl --user disable --now habblaud.service', 'systemctl --user daemon-reload']);
+    expect(existedAtReload).toBe(false);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it('SVC-04: uninstall sem unit diz "não instalado" e não chama o systemctl', () => {
+    expect(run(UNINSTALL, ctx)).toBe(0);
+    expect(text()).toContain('não instalado');
+    expect(calls).toEqual([]);
+  });
+
+  it('SVC-04: uninstall de unit sem a marca não toca sem --force', () => {
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, '[Unit]\nDescription=feita à mão\n');
+    expect(run(UNINSTALL, ctx)).toBe(1);
+    expect(existsSync(file)).toBe(true);
+    expect(calls).toEqual([]);
+    expect(run({ ...UNINSTALL, force: true }, ctx)).toBe(0);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it('SVC-04: uninstall --dry-run não apaga nem chama o systemctl', () => {
+    run(INSTALL, ctx);
+    calls.length = 0;
+    expect(run({ ...UNINSTALL, dryRun: true }, ctx)).toBe(0);
+    expect(existsSync(file)).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  it('SVC-04: status mostra a unit, is-enabled, is-active e o linger', () => {
+    run(INSTALL, ctx);
+    lines.length = 0;
+    answers['systemctl --user is-enabled habblaud.service'] = { stdout: 'enabled\n' };
+    answers['systemctl --user is-active habblaud.service'] = { stdout: 'active\n' };
+    answers['loginctl show-user ana --property=Linger'] = { stdout: 'Linger=yes\n' };
+    expect(run(STATUS, ctx)).toBe(0);
+    const t = text();
+    expect(t).toContain('habblaud.service');
+    expect(t).toContain('gerada por este instalador');
+    expect(t).toContain('is-enabled): enabled');
+    expect(t).toContain('is-active): active');
+    expect(t).toContain('linger: ligado');
+    expect(t).not.toContain('difere');
+  });
+
+  it('SVC-04: status avisa quando a unit difere da que o install geraria agora (outro node)', () => {
+    run(INSTALL, ctx);
+    lines.length = 0;
+    expect(run(STATUS, { ...ctx, nodePath: '/outro/node' })).toBe(0);
+    expect(text()).toContain('npm run service:install');
+  });
+
+  it('SVC-04: status não acusa diferença numa unit instalada com --port', () => {
+    run({ ...INSTALL, port: 4851 }, ctx);
+    lines.length = 0;
+    expect(run(STATUS, ctx)).toBe(0);
+    expect(text()).not.toContain('difere');
+  });
+
+  it('SVC-04: status sem unit diz que não está instalado e sai com 0', () => {
+    expect(run(STATUS, ctx)).toBe(0);
+    expect(text()).toContain('não instalado');
   });
 });
