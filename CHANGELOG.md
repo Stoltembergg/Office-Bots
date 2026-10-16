@@ -212,6 +212,12 @@ idiomas.
   `docs/screenshots/world-predio.png`, `world-enviado.png`, `world-cidade.png`, `world-cartao.png`, `world-visita.png`,
   `world-visita-painel.png`, `world-social.png` e `world-praca.png`.
 
+### Corrigido
+
+- Sessão que entra num worktree (ou noutra pasta) depois de começar: o escritório segue o arquivo da conversa que está
+  sendo gravado, e não uma cópia antiga da mesma sessão na pasta nova. Antes, o terminal e a atividade do agente
+  ficavam parados no passado. O Habblaud confere a cada 15 s se outro arquivo da sessão passou a ser o mais recente.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
