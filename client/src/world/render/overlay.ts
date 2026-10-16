@@ -108,6 +108,7 @@ type Item = Bubble | Label;
 const CODEX_CHIP_BG = '#161b26';
 /** Selo "CODEX" das etiquetas: discreto (vidro claro), sem a cor de ninguém. */
 const CODEX_BADGE = 'CODEX';
+const OPENCODE_BADGE = 'OPEN';
 
 /** Octógono "em degrau" (um quadrado de cantos cortados, como um pixel arredondado). */
 function steppedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, s: number): void {
@@ -869,21 +870,22 @@ export class Overlay {
   // =================================================================== etiquetas
 
   /** Larguras das partes da etiqueta. O selo "CODEX" (como o "SUB") só aparece fora do modo compacto. */
-  private labelWidth(l: Label): { nameW: number; chipW: number; badgeW: number; codexW: number } {
+  private labelWidth(l: Label): { nameW: number; chipW: number; badgeW: number; providerW: number } {
     const ch = l.ch;
     const acc = this.sim.accounts.get(ch.info.account);
     const nameW = this.measure(LABEL_FONT, ch.info.name);
     const chipW = acc ? 13 : 0;
     const visitor = ch === this.sim.visitor;
     const badgeW = visitor ? this.measure(BADGE_FONT, visitorBadge()) + 7 : ch.info.kind === 'sub' && !l.compact ? this.measure(BADGE_FONT, 'SUB') + 7 : 0;
-    const codexW = ch.info.provider === 'codex' && !l.compact ? this.measure(BADGE_FONT, CODEX_BADGE) + 7 : 0;
-    return { nameW, chipW, badgeW, codexW };
+    const providerBadge = ch.info.provider === 'codex' ? CODEX_BADGE : ch.info.provider === 'opencode' ? OPENCODE_BADGE : '';
+    const providerW = providerBadge && !l.compact ? this.measure(BADGE_FONT, providerBadge) + 7 : 0;
+    return { nameW, chipW, badgeW, providerW };
   }
 
   /** Posiciona a etiqueta: nos pés (ou acima da cabeça); se colidir, tenta o outro lado. */
   private placeLabel(l: Label): boolean {
-    const { nameW, chipW, badgeW, codexW } = this.labelWidth(l);
-    const w = Math.round(nameW + 10 + chipW + (badgeW ? badgeW + 3 : 0) + (codexW ? codexW + 3 : 0));
+    const { nameW, chipW, badgeW, providerW } = this.labelWidth(l);
+    const w = Math.round(nameW + 10 + chipW + (badgeW ? badgeW + 3 : 0) + (providerW ? providerW + 3 : 0));
     const h = LABEL_H;
     const x = Math.round(this.sx(l.head.x) - w / 2);
     const below = Math.round(this.sy(l.head.feetY) + 3);
@@ -908,7 +910,7 @@ export class Overlay {
     const acc = this.sim.accounts.get(ch.info.account);
     const sub = ch.info.kind === 'sub';
     const codex = ch.info.provider === 'codex' || acc?.provider === 'codex';
-    const { nameW, chipW, badgeW, codexW } = this.labelWidth(l);
+    const { nameW, chipW, badgeW, providerW } = this.labelWidth(l);
     const { x, y, w, h } = l;
     const selected = sel.agent === ch.id;
     ctx.fillStyle = selected ? 'rgba(18,96,140,0.95)' : ch.mode === 'wait' ? 'rgba(120,78,0,0.92)' : 'rgba(22,26,38,0.82)';
@@ -963,14 +965,14 @@ export class Overlay {
       ctx.arc(x + w - 3, y + 3, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (codexW) {
+    if (providerW) {
       ctx.fillStyle = 'rgba(255,255,255,0.16)';
       ctx.beginPath();
-      ctx.roundRect(cx, y + 3, codexW, h - 6, 3);
+      ctx.roundRect(cx, y + 3, providerW, h - 6, 3);
       ctx.fill();
       ctx.font = BADGE_FONT;
       ctx.fillStyle = '#e8ecf5';
-      ctx.fillText(CODEX_BADGE, cx + 3.5, y + h / 2 + 0.5);
+      ctx.fillText(ch.info.provider === 'opencode' ? OPENCODE_BADGE : CODEX_BADGE, cx + 3.5, y + h / 2 + 0.5);
     }
   }
 }

@@ -1,9 +1,18 @@
 # Habblaud — para agentes de IA / for AI agents
 
-O Habblaud é um escritório virtual em pixel art que mostra, em tempo real, o que os agentes do Claude Code e do Codex
+O Habblaud é um escritório virtual em pixel art que mostra, em tempo real, o que os agentes do Claude Code, do Codex e do OpenCode
 estão fazendo: servidor Node sem dependências de runtime (`server/`), página no navegador (`client/`) e código comum
 (`shared/`). Todo texto visível passa por `tr('texto em PT')`, com as traduções em `shared/locales/` (`npm run
 i18n:check`), e toda mudança visível entra em "Não lançado" no `CHANGELOG.md`. O resto está no `CONTRIBUTING.md`.
+
+## Trabalho no repositório
+
+- Leia o contrato da fonte envolvida em `server/sources/` antes de editar. A integração OpenCode v2 fica em
+  `server/sources/opencode/` e consulta apenas a API local autenticada; sessões antigas não são presença ativa.
+- Para mudanças de código, rode `npm run typecheck`, os testes afetados e `npm run build`. Antes de abrir PR, rode
+  `npm test`, `npm run i18n:check` e `git diff --check`.
+- Não coloque credenciais ou dados de sessões nos testes, logs, commits ou PRs. Use respostas sintéticas nos testes.
+- Registre limites reais da implementação no PR; não apresente um servidor OpenCode ocioso como agente em trabalho.
 
 ## AVISO — Habblaud World: dados verdadeiros
 

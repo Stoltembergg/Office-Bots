@@ -77,6 +77,13 @@ function input(rooms: RoomInfo[], agents: AgentInfo[], extra: Partial<Projection
 
 const agentsOf = (u: WorldUplink) => u.floors.flatMap((f) => f.agents);
 
+it('does not send OpenCode agents to a World protocol that only accepts Claude and Codex', () => {
+  const ids = new FakeIds();
+  const u = project(input([room('/p')], [agent('open:ses_1', '/p', { provider: 'opencode' })]), ids, NOW);
+  expect(u.floors).toEqual([]);
+  expect(ids.calls).toEqual([]);
+});
+
 /** Todos os números do JSON (para conferir que nada parece horário nem vaza contadores). */
 function numbersIn(v: unknown, out: number[] = []): number[] {
   if (typeof v === 'number') out.push(v);

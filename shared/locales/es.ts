@@ -2,6 +2,12 @@
 // As lacunas {0}, {1}... (e as nomeadas, como {sala}) precisam aparecer na tradução, em qualquer ordem.
 // Chave ausente = o texto fica em PT. `npm run i18n:check` lista os textos sem tradução e as chaves que sobraram.
 export const ES: Readonly<Record<string, string>> = {
+  "Agente do {0}": "Agente de {0}",
+  "Agente principal (OpenCode)": "Agente principal (OpenCode)",
+  "Subagente (OpenCode)": "Subagente (OpenCode)",
+  "falha ao consultar OpenCode": "error al consultar OpenCode",
+  "Permissão pendente no OpenCode": "Permiso pendiente en OpenCode",
+  "Abra o Claude Code{0}, o Codex ou o OpenCode em qualquer projeto e veja seu agente chegar.": "Abre Claude Code{0}, Codex u OpenCode en cualquier proyecto y verás llegar a tu agente.",
   // client/src/main.ts
   "Escritório virtual em pixel art que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.": "Oficina virtual en pixel art que muestra, en tiempo real, lo que están haciendo tus agentes de Claude Code.",
 

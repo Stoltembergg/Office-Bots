@@ -52,6 +52,10 @@ export interface ServerConfig {
   updateCheck: boolean;
   /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
   codex: boolean;
+  /** OpenCode v2 local API; opt-in and loopback only. */
+  opencodeUrl?: string;
+  /** OpenCode v2 server password, used only server-side. */
+  opencodePassword?: string;
   /** Segunda porta, com login, para o celular na rede local (http/remote.ts); ausente = desligada. */
   remote?: RemoteConfig;
   /** Por que o acesso remoto ficou desligado quando as variáveis estão incompletas. */
@@ -82,6 +86,19 @@ export interface WorldConfig {
 
 export function isTruthy(v: string | undefined): boolean {
   return !!v && /^(1|true|yes|sim|on)$/i.test(v.trim());
+}
+
+/** OpenCode credentials must never be sent to a network host or through a URL. */
+export function parseOpenCodeUrl(raw: string | undefined): string | undefined {
+  if (!raw?.trim()) return undefined;
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== 'http:' || !isLoopbackBind(url.hostname) || !url.port ||
+        url.username || url.password || url.search || url.hash || url.pathname !== '/') return undefined;
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Sobe a partir de `from` até achar o package.json do projeto. */
@@ -249,6 +266,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    opencodeUrl: parseOpenCodeUrl(env.HABBLAUD_OPENCODE_URL),
+    opencodePassword: env.HABBLAUD_OPENCODE_PASSWORD,
     remote: remote.config,
     remoteWarning: remote.warning,
     world: parseWorldConfig(env, argv),
