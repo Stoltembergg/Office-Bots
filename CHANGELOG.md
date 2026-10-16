@@ -212,6 +212,12 @@ idiomas.
   `docs/screenshots/world-predio.png`, `world-enviado.png`, `world-cidade.png`, `world-cartao.png`, `world-visita.png`,
   `world-visita-painel.png`, `world-social.png` e `world-praca.png`.
 
+### Corrigido
+
+- O `npm run remote:setup` não falha mais com `EXDEV: cross-device link not permitted` quando a pasta temporária do
+  sistema fica noutro disco (`/tmp` em tmpfs, como no Ubuntu do WSL): a CA e o certificado do servidor são gerados
+  dentro de `~/.habblaud/remote-tls`, e o `npm run docker:up` refaz o certificado do mesmo jeito.
+
 ## [0.11.0] - 2026-10-13
 
 Para atualizar: `git pull` e `npm run docker:up` (ele também atualiza o mod do Habblaud nas contas). O acesso pelo
