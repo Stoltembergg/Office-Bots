@@ -257,8 +257,6 @@ function uninstall(opts: RunOptions, ctx: RunContext, file: string, existing: st
   const { out } = ctx;
   const plan = planUninstall(existing, opts.force);
   if (plan.action === 'none') {
-    // Sem arquivo, o serviço ainda pode estar ligado (unit apagada à mão): tenta desligar e ignora a falha.
-    if (!opts.dryRun) systemctl(ctx, ['disable', SERVICE_NAME]);
     out(`= ${plan.message}`);
     return 0;
   }

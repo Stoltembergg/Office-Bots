@@ -187,6 +187,20 @@ describe('service-install.ts: run', () => {
     expect(calls.some((c) => c.includes('enable-linger'))).toBe(false);
   });
 
+  it('SVC-02: loginctl falhando não avisa do linger e a unit é gravada', () => {
+    answers['loginctl show-user ana --property=Linger'] = { status: 1, stdout: 'Linger=no\n', stderr: 'boom' };
+    expect(run(INSTALL, ctx)).toBe(0);
+    expect(text()).not.toContain('enable-linger');
+    expect(readFileSync(file, 'utf8')).toBe(unitFor());
+  });
+
+  it('SVC-02: loginctl com saída vazia não avisa do linger e a unit é gravada', () => {
+    answers['loginctl show-user ana --property=Linger'] = { status: 0, stdout: '' };
+    expect(run(INSTALL, ctx)).toBe(0);
+    expect(text()).not.toContain('enable-linger');
+    expect(readFileSync(file, 'utf8')).toBe(unitFor());
+  });
+
   it('SVC-02: com o linger ligado não há aviso', () => {
     answers['loginctl show-user ana --property=Linger'] = { stdout: 'Linger=yes\n' };
     expect(run(INSTALL, ctx)).toBe(0);
@@ -282,12 +296,10 @@ describe('service-install.ts: run', () => {
     expect(existsSync(file)).toBe(false);
   });
 
-  it('SVC-04: uninstall sem unit tenta desligar o serviço, ignora a falha e diz "não instalado"', () => {
-    answers['systemctl --user disable habblaud.service'] = { status: 1, stderr: 'Unit habblaud.service does not exist' };
+  it('SVC-04: uninstall sem unit não chama systemctl e diz "não instalado"', () => {
     expect(run(UNINSTALL, ctx)).toBe(0);
     expect(text()).toContain('não instalado');
-    expect(text()).not.toContain('does not exist');
-    expect(calls).toEqual(['systemctl --user disable habblaud.service']);
+    expect(calls).toEqual([]);
   });
 
   it('SVC-04: uninstall com disable --now falhando sai com 1, mantém a unit e não recarrega', () => {
