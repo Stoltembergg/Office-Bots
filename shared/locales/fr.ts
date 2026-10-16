@@ -297,6 +297,7 @@ export const FR: Readonly<Record<string, string>> = {
   "1 nova": "1 nouveau",
   "{0} novas": "{0} nouveaux",
   "Nenhum evento das contas selecionadas.": "Aucun événement pour les comptes sélectionnés.",
+  "filtrado": "filtré",
   "Sem {0} (filtro da barra lateral)": "Sans {0} (filtre de la barre latérale)",
   "Recolher feed ( ] )": "Replier le fil ( ] )",
   "Abrir feed ( ] )": "Ouvrir le fil ( ] )",
