@@ -298,6 +298,23 @@ Without HTTPS the remote port doesn't start; `HABBLAUD_REMOTE_INSECURE_HTTP=1` f
 in the clear on the network). In Node mode: `HABBLAUD_REMOTE_PORT` and `HABBLAUD_REMOTE_HOST` (default
 `0.0.0.0:4748`) and `HABBLAUD_REMOTE_TLS_DIR` (default `~/.habblaud/remote-tls/server`).
 
+### Running as a service (Linux and WSL)
+
+On Linux, or on WSL with systemd on, Habblaud can run as a user service, so the office comes up with your session without a terminal open. Run `npm run build` first: the service runs `dist/`, the same as `npm start`.
+
+```bash
+npm run build
+npm run service:install     # writes ~/.config/systemd/user/habblaud.service and turns it on
+npm run service:status      # unit, enabled at boot, running, and linger
+npm run service:uninstall   # turns it off and deletes the unit
+```
+
+Options: `--port <n>` (a port other than 4747), `--dry-run` (shows the unit without writing it) and `--force` (replaces a `habblaud.service` you wrote by hand). The unit uses the `node` that ran the install, this folder and your `PATH` (so the server finds `claude` and `codex`). It does not set any variable from `.env`.
+
+> **Linger:** a user service stops when your last session closes. For it to start at boot and stay up without a login, run `loginctl enable-linger $USER` yourself (the installer only prints the hint).
+
+**After `git pull`:** the service keeps running the old `dist/`. Run `npm install`, `npm run build` and `systemctl --user restart habblaud`.
+
 ### Updating
 
 The version in use shows up in the top bar, next to "Connected", and in **Settings › About**. Every 6 hours
