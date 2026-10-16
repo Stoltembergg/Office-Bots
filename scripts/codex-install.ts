@@ -16,7 +16,8 @@
 // Em <pasta>/hooks.json ({description?, hooks: {<Evento>: [{matcher?, hooks: [handler]}]}}) só mudam as listas dos
 // eventos acima: entra, no FIM da lista de cada um, um grupo sem matcher com o handler
 // {type: "command", command: 'node "<Habblaud>/mod/habblaud-codex/hook.mjs"', ...}. O resto do arquivo fica como
-// está. Antes de gravar, uma cópia vai para hooks.json.habblaud-backup-<data>.
+// está. Antes de gravar, uma cópia vai para hooks.json.habblaud-backup-<data>. No Windows o handler leva também o
+// commandWindows (ver hookCommandWindows), que o Codex usa lá no lugar do command.
 //
 // Confiança: o Codex só roda um hook novo ou alterado depois que você o aprova em /hooks, e guarda essa aprovação
 // (config.toml, [hooks.state."<hooks.json>:<evento>:<grupo>:<handler>"].trusted_hash) pela POSIÇÃO do grupo e por um
@@ -82,6 +83,18 @@ export function hookCommand(scriptPath: string, nodeBin?: string): string {
   return `${nodeBin ? quotePath(nodeBin) : 'node'} ${quotePath(scriptPath)}`;
 }
 
+/**
+ * O comando do hook no Windows (o commandWindows do handler). Lá o Codex não roda o command por um shell POSIX: as
+ * aspas simples que o quotePath põe num caminho com `\` viram parte do caminho e o hook nunca roda. `node "<hook>"`,
+ * com barras normais, funciona no cmd, no PowerShell e no Git Bash. Um Node escolhido entra sem aspas quando o
+ * caminho não tem espaço (no `cmd /c`, um comando que começa com aspas perde as aspas); com espaço, fica o `node`.
+ */
+export function hookCommandWindows(scriptPath: string, nodeBin?: string): string {
+  const slashes = (p: string) => p.replace(/\\/g, '/');
+  const node = nodeBin && !/\s/.test(nodeBin) ? slashes(nodeBin) : 'node';
+  return `${node} "${slashes(scriptPath)}"`;
+}
+
 /** Major de uma versão como `node --version` imprime ("v24.17.0" → 24). */
 export function nodeMajor(version: string | undefined): number | undefined {
   const m = /^v?(\d+)\./.exec(version?.trim() ?? '');
@@ -109,11 +122,15 @@ export function permissionTimeout(waitS: number): number {
   return waitS + PERMISSION_SLACK_S;
 }
 
-/** O handler do Habblaud para um evento, como o Codex o lê em hooks.<Evento>[].hooks[]. */
-export function handlerFor(event: string, command: string, waitS: number): Rec {
-  if (event === 'PermissionRequest') return { type: 'command', command, timeout: permissionTimeout(waitS), statusMessage: STATUS_MESSAGE };
-  if (event === 'SessionEnd') return { type: 'command', command, timeout: SESSION_END_TIMEOUT_S };
-  return { type: 'command', command, async: true, timeout: OBSERVE_TIMEOUT_S };
+/**
+ * O handler do Habblaud para um evento, como o Codex o lê em hooks.<Evento>[].hooks[]. `windowsCommand`: o
+ * commandWindows (só no Windows, ver hookCommandWindows).
+ */
+export function handlerFor(event: string, command: string, waitS: number, windowsCommand?: string): Rec {
+  const base: Rec = { type: 'command', command, ...(windowsCommand ? { commandWindows: windowsCommand } : {}) };
+  if (event === 'PermissionRequest') return { ...base, timeout: permissionTimeout(waitS), statusMessage: STATUS_MESSAGE };
+  if (event === 'SessionEnd') return { ...base, timeout: SESSION_END_TIMEOUT_S };
+  return { ...base, async: true, timeout: OBSERVE_TIMEOUT_S };
 }
 
 export function isOurHandler(h: unknown): boolean {
@@ -197,14 +214,14 @@ function removeAt(list: unknown[], positions: Array<{ g: number; h: number }>): 
  * Plano de instalação para um hooks.json já lido (não grava nada). Evento sem o Habblaud: um grupo novo no FIM da
  * lista. Com ele: o handler é trocado no MESMO lugar se mudou (caminho do repositório, espera); cópias repetidas saem.
  */
-export function planInstall(file: Settings, command: string, waitS: number): PlanAction {
+export function planInstall(file: Settings, command: string, waitS: number, windowsCommand?: string): PlanAction {
   const parsed = hooksOf(file);
   if (typeof parsed === 'string') return { action: 'skip', message: parsed };
   const hooks: Rec = { ...parsed };
   const added: string[] = [];
   const updated: string[] = [];
   for (const event of EVENTS) {
-    const handler = handlerFor(event, command, waitS);
+    const handler = handlerFor(event, command, waitS, windowsCommand);
     let list = [...((hooks[event] as unknown[] | undefined) ?? [])];
     const found = ourPositions(list);
     if (!found.length) {
@@ -274,7 +291,7 @@ export interface InstallState {
 }
 
 /** O que está instalado num hooks.json (para o status). */
-export function installState(file: Settings, command: string, waitS: number): InstallState {
+export function installState(file: Settings, command: string, waitS: number, windowsCommand?: string): InstallState {
   const parsed = hooksOf(file);
   const hooks = typeof parsed === 'string' ? {} : parsed;
   const state: InstallState = { ok: [], outdated: [], missing: [], paths: [] };
@@ -289,7 +306,7 @@ export function installState(file: Settings, command: string, waitS: number): In
     const h = rec((group.hooks as unknown[])[found[0].h])!;
     const path = typeof h.command === 'string' ? scriptPathOf(h.command) : undefined;
     if (path && !state.paths.includes(path)) state.paths.push(path);
-    (canonical(h) === canonical(handlerFor(event, command, waitS)) && found.length === 1 ? state.ok : state.outdated).push(event);
+    (canonical(h) === canonical(handlerFor(event, command, waitS, windowsCommand)) && found.length === 1 ? state.ok : state.outdated).push(event);
   }
   return state;
 }
@@ -344,6 +361,8 @@ export interface RunContext {
   nodeProbe?: (bin: string | undefined) => string | undefined;
   /** Candidatos a Node quando o do shell de login é antigo. */
   nodeCandidates?: readonly string[];
+  /** Plataforma onde o Codex roda os hooks (padrão: a deste processo); no Windows entra o commandWindows. */
+  platform?: NodeJS.Platform;
 }
 
 class FatalError extends Error {}
@@ -440,6 +459,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       out(tr('! O shell de login (onde o Codex roda os hooks) tem {0} e não achei um Node {1}+: os hooks podem falhar. Use --node <caminho de um Node {2}+>.', [login, MIN_NODE_MAJOR, MIN_NODE_MAJOR]));
   }
   const command = hookCommand(ctx.hookPath, nodeBin);
+  const windowsCommand = (ctx.platform ?? process.platform) === 'win32' ? hookCommandWindows(ctx.hookPath, nodeBin) : undefined;
   let failures = 0;
   let changed = 0;
   const approve = new Set<string>();
@@ -454,7 +474,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     }
     if (opts.command === 'status') {
       const cfgWait = readHookConfig(home)?.permissionTimeoutS;
-      const st = installState(read.settings, command, typeof cfgWait === 'number' ? cfgWait : opts.waitS);
+      const st = installState(read.settings, command, typeof cfgWait === 'number' ? cfgWait : opts.waitS, windowsCommand);
       if (!st.ok.length && !st.outdated.length) {
         out(tr('• {0}: não instalado', [label]));
         continue;
@@ -469,7 +489,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
       out(tr('• {0}: instalado em {1} de {2} eventos', [label, st.ok.length + st.outdated.length, EVENTS.length]));
       continue;
     }
-    const plan = opts.command === 'install' ? planInstall(read.settings, command, opts.waitS) : planUninstall(read.settings);
+    const plan = opts.command === 'install' ? planInstall(read.settings, command, opts.waitS, windowsCommand) : planUninstall(read.settings);
     if (plan.action === 'none') {
       out(`= ${label}: ${plan.message}`);
       continue;
@@ -535,7 +555,7 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
     const behind = found.dirs.filter((d) => {
       if (dirs.includes(d)) return false;
       const r = readSettings(join(d, 'hooks.json'));
-      return !('error' in r) && installState(r.settings, command, opts.waitS).outdated.includes('PermissionRequest');
+      return !('error' in r) && installState(r.settings, command, opts.waitS, windowsCommand).outdated.includes('PermissionRequest');
     });
     if (behind.length) {
       out(tr('! {0}: o Habblaud está lá com outra espera; rode npm run codex:install sem --conta para alinhar.', [behind.map((d) => basename(d)).join(', ')]));
@@ -559,7 +579,12 @@ export async function run(opts: RunOptions, ctx: RunContext): Promise<number> {
 function probeNode(bin: string | undefined): string | undefined {
   try {
     const opts = { encoding: 'utf8' as const, timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'] };
-    const out = bin ? execFileSync(bin, ['--version'], opts) : execFileSync(process.env.SHELL || '/bin/sh', ['-lc', 'node --version'], opts);
+    // No Windows não há shell de login: o Codex roda o hook pelo shell nativo, com o node do PATH.
+    const out = bin
+      ? execFileSync(bin, ['--version'], opts)
+      : process.platform === 'win32'
+        ? execFileSync('node', ['--version'], opts)
+        : execFileSync(process.env.SHELL || '/bin/sh', ['-lc', 'node --version'], opts);
     return out.trim().split('\n').pop();
   } catch {
     return undefined;
