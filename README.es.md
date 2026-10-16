@@ -307,6 +307,36 @@ Sin HTTPS, el puerto remoto no se inicia; `HABBLAUD_REMOTE_INSECURE_HTTP=1` fuer
 la vista en la red). En modo Node: `HABBLAUD_REMOTE_PORT` y `HABBLAUD_REMOTE_HOST` (por defecto `0.0.0.0:4748`) y
 `HABBLAUD_REMOTE_TLS_DIR` (por defecto `~/.habblaud/remote-tls/server`).
 
+### Ejecutar como servicio (Linux y WSL)
+
+En Linux, o en WSL con systemd activado, Habblaud puede correr como servicio de usuario: la oficina se levanta con tu sesión, sin dejar una terminal abierta. Antes ejecuta `npm run build` (el servicio usa `dist/`, igual que `npm start`).
+
+```bash
+npm run build
+npm run service:install     # escribe ~/.config/systemd/user/habblaud.service y lo activa
+npm run service:status      # si está activo al iniciar, en ejecución y el linger
+npm run service:uninstall   # lo desactiva y borra la unidad
+```
+
+Las opciones van después de `--`, por ejemplo `npm run service:install -- --port 5000`; sin el `--`, npm consume `--force` y `--dry-run`.
+
+Opciones: `--port <n>` (un puerto distinto de 4747), `--dry-run` (muestra qué cambiaría sin escribir nada, en install y en uninstall) y `--force` (reemplaza o borra un `habblaud.service` escrito a mano). La unidad usa el `node` que ejecutó la instalación, esta carpeta y tu `PATH` (así el servidor encuentra `claude` y `codex`). Igual que `npm start`, el servicio no lee el `.env`, y tampoco hereda las variables exportadas en tu shell (como `HABBLAUD_LANG` o `HABBLAUD_CLAUDE_DIRS` en `~/.bashrc`). Para el puerto, usa `--port`.
+
+Si el servicio no arranca (por ejemplo, porque el puerto está ocupado por un `npm start` abierto), mira `npm run service:status` y `journalctl --user -u habblaud`.
+
+En WSL, systemd debe estar activado en `/etc/wsl.conf`:
+
+```ini
+[boot]
+systemd=true
+```
+
+Después ejecuta `wsl --shutdown` en Windows.
+
+> **Linger:** un servicio de usuario se detiene cuando cierras tu última sesión. Para que arranque con el sistema y siga activo sin iniciar sesión, ejecuta tú `loginctl enable-linger $USER` (el instalador solo muestra la sugerencia).
+
+**Después de un `git pull`:** el servicio sigue con el `dist/` anterior. Ejecuta `npm install`, `npm run build` y `systemctl --user restart habblaud`.
+
 ### Actualizar
 
 La versión en uso aparece en la barra superior, junto a "Conectado", y en **Configuración › Acerca de**. Cada 6 horas,

@@ -296,6 +296,36 @@ Sem HTTPS a porta remota não sobe; `HABBLAUD_REMOTE_INSECURE_HTTP=1` força HTT
 rede). No modo Node: `HABBLAUD_REMOTE_PORT` e `HABBLAUD_REMOTE_HOST` (padrão `0.0.0.0:4748`) e
 `HABBLAUD_REMOTE_TLS_DIR` (padrão `~/.habblaud/remote-tls/server`).
 
+### Rodar como serviço (Linux e WSL)
+
+No Linux, ou no WSL com systemd ligado, o Habblaud pode rodar como serviço de usuário: o escritório sobe com a sessão, sem terminal aberto. Antes, rode `npm run build` (o serviço usa o `dist/`, igual ao `npm start`).
+
+```bash
+npm run build
+npm run service:install     # grava ~/.config/systemd/user/habblaud.service e liga o serviço
+npm run service:status      # se está ligado no boot, rodando e o linger
+npm run service:uninstall   # desliga o serviço e apaga a unidade
+```
+
+As opções vão depois de `--`, por exemplo `npm run service:install -- --port 5000`; sem o `--`, o npm consome `--force` e `--dry-run`.
+
+Opções: `--port <n>` (outra porta que não a 4747), `--dry-run` (mostra o que mudaria sem gravar nada, no install e no uninstall) e `--force` (troca ou apaga um `habblaud.service` feito à mão). A unidade usa o `node` que rodou a instalação, esta pasta e o seu `PATH` (assim o servidor acha `claude` e `codex`). Como o `npm start`, o serviço não lê o `.env`, e também não herda variáveis exportadas no shell (como `HABBLAUD_LANG` ou `HABBLAUD_CLAUDE_DIRS` no `~/.bashrc`). Para a porta, use `--port`.
+
+Se o serviço não subir (por exemplo, a porta já ocupada por um `npm start` aberto), veja `npm run service:status` e `journalctl --user -u habblaud`.
+
+No WSL, o systemd precisa estar ligado em `/etc/wsl.conf`:
+
+```ini
+[boot]
+systemd=true
+```
+
+Depois, rode `wsl --shutdown` no Windows.
+
+> **Linger:** um serviço de usuário para quando a última sessão fecha. Para ele subir no boot e seguir ligado sem login, rode você mesmo `loginctl enable-linger $USER` (o instalador só mostra a dica).
+
+**Depois de um `git pull`:** o serviço continua com o `dist/` antigo. Rode `npm install`, `npm run build` e `systemctl --user restart habblaud`.
+
 ### Atualizar
 
 A versão em uso aparece na barra superior, ao lado de "Conectado", e em **Configurações › Sobre**. A cada 6 horas o
