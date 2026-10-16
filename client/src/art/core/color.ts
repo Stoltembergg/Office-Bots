@@ -5,6 +5,7 @@ export type RGBA = readonly [number, number, number, number];
 
 const parseCache = new Map<string, RGBA>();
 const MAGENTA: RGBA = [255, 0, 255, 255];
+const HEX_DIGITS = /^[0-9a-f]+$/;
 
 /** Converte '#rgb', '#rrggbb', '#rrggbbaa', 'rgb()/rgba()' e 'hsl()/hsla()' em RGBA (0–255). */
 export function parseColor(c: string): RGBA {
@@ -21,6 +22,7 @@ function parseUncached(c: string): RGBA {
   if (s === 'transparent') return [0, 0, 0, 0];
   if (s.startsWith('#')) {
     const hex = s.slice(1);
+    if (!HEX_DIGITS.test(hex)) return MAGENTA;
     if (hex.length === 3 || hex.length === 4) {
       const n = [...hex].map((ch) => parseInt(ch + ch, 16));
       return [n[0], n[1], n[2], hex.length === 4 ? n[3] : 255];
@@ -44,18 +46,20 @@ function parseUncached(c: string): RGBA {
     return Math.round(clamp01(a) * 255);
   };
   if (fn[1].startsWith('rgb')) {
-    return [
+    const rgba: RGBA = [
       Math.round(num(parts[0], 255)),
       Math.round(num(parts[1], 255)),
       Math.round(num(parts[2], 255)),
       alphaOf(parts[3]),
     ];
+    return rgba.every(Number.isFinite) ? rgba : MAGENTA;
   }
   const h = parseFloat(parts[0] ?? '0');
   const sat = num(parts[1], 1);
   const lig = num(parts[2], 1);
   const [r, g, b] = hslToRgb(h, sat, lig);
-  return [r, g, b, alphaOf(parts[3])];
+  const rgba: RGBA = [r, g, b, alphaOf(parts[3])];
+  return rgba.every(Number.isFinite) ? rgba : MAGENTA;
 }
 
 export function clamp01(v: number): number {
