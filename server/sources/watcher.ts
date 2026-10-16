@@ -7,7 +7,7 @@
 // abertas e nas pastas subagents/ dessas sessões (nunca no acervo de transcripts antigos).
 // fs.watch é só um acelerador (no Docker com bind mount do macOS os eventos podem não chegar).
 import { existsSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { SPECIAL } from '../../shared/activity';
 import type { Activity, AgentStatus, SourceInfo } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
@@ -327,6 +327,7 @@ export class ClaudeWatcher implements AgentSource {
       office.switchSession(key, entry.sessionId);
       t = fresh;
     }
+    if (t.entry.cwd !== entry.cwd) office.moveMain(key, entry.cwd);
     t.entry = entry;
     this.pumpMain(t);
     this.scanSubagents(t, boot);
@@ -456,6 +457,10 @@ export class ClaudeWatcher implements AgentSource {
     }
     for (let i = 0; i < 4; i++) {
       const r = t.tail.read();
+      if (r.missing) {
+        this.relocateTranscript(t);
+        return;
+      }
       if (r.reset) {
         log.warn(tr('Transcript da sessão {0} foi truncado/substituído; relendo.', [t.key]));
         this.loadMain(t, t.tail.path);
@@ -465,6 +470,29 @@ export class ClaudeWatcher implements AgentSource {
       if (r.lines.length) this.applyMainSummary(t);
       if (!r.more) break;
     }
+  }
+
+  /**
+   * O transcript sumiu do caminho conhecido: o Claude Code o move (com a pasta da sessão e dos subagentes) quando a
+   * sessão troca de cwd, como ao entrar numa worktree. Acha o novo pelo sessionId e segue lendo do mesmo ponto.
+   */
+  private relocateTranscript(t: SessionTracker): void {
+    const from = t.transcriptPath;
+    const to = this.resolveTranscript(t);
+    if (!from || !to || !t.tail || to === from) return;
+    const oldDir = sessionDirOf(from);
+    const newDir = sessionDirOf(to);
+    const move = (p: string) => (p.startsWith(oldDir + sep) ? newDir + p.slice(oldDir.length) : p);
+    t.tail.relocate(to);
+    t.transcriptPath = to;
+    for (const sub of t.subs.values()) {
+      sub.file = { ...sub.file, path: move(sub.file.path), metaPath: move(sub.file.metaPath) };
+      sub.tail.relocate(sub.file.path);
+    }
+    t.known = new Map([...t.known].map(([p, size]) => [move(p), size]));
+    this.closeWatchers(t);
+    this.watchSession(t);
+    log.info(tr('Sessão {0}: transcript mudou de pasta; seguindo em {1}.', [t.key, to]));
   }
 
   /** Lê o fim do transcript (≈1 MB) e agenda a leitura do começo em segundo plano. */

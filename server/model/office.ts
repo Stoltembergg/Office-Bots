@@ -360,6 +360,37 @@ export class Office {
     this.markDirty();
   }
 
+  /**
+   * A sessão mudou de pasta (entrou numa worktree, por exemplo): o principal e os subagentes dele vão para a sala do
+   * cwd novo, e a sala antiga some se ficou vazia.
+   */
+  moveMain(id: string, cwd: string): void {
+    const rec = this.agents.get(id);
+    if (!rec || rec.info.kind !== 'main') return;
+    const roomId = normalizeCwd(cwd);
+    const from = rec.info.roomId;
+    if (roomId === from) return;
+    const now = this.now();
+    this.ensureRoom(roomId, now);
+    const family = new Set([id]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const r of this.agents.values()) {
+        if (r.info.parentId && family.has(r.info.parentId) && !family.has(r.info.id)) {
+          family.add(r.info.id);
+          grew = true;
+        }
+      }
+    }
+    for (const member of family) {
+      const r = this.agents.get(member);
+      if (r) r.info.roomId = roomId;
+    }
+    this.dropEmptyRooms();
+    this.notice('arrive', id, 'info', tr('🚚 {0} foi para {1}', [rec.info.name, this.roomName(roomId)]), roomId);
+    this.markDirty();
+  }
+
   /** Mesmo processo, sessão nova (/clear, /resume): o personagem continua, tarefas e números zeram. */
   switchSession(id: string, sessionId: string): void {
     const rec = this.agents.get(id);
@@ -929,9 +960,7 @@ export class Office {
     // festa acabou / alarme expirou: o snapshot sai sem o efeito
     if (this.effects.prune(now)) this.markDirty();
     if (removed) {
-      const occupied = new Set([...this.agents.values()].map((r) => r.info.roomId));
-      for (const id of [...this.rooms.keys()]) if (!occupied.has(id)) this.rooms.delete(id);
-      this.recomputeRoomNames();
+      this.dropEmptyRooms();
       this.markDirty();
     }
   }
@@ -1036,6 +1065,13 @@ export class Office {
       }
     }
     return out;
+  }
+
+  /** Tira as salas sem ninguém (nem em período de graça). */
+  private dropEmptyRooms(): void {
+    const occupied = new Set([...this.agents.values()].map((r) => r.info.roomId));
+    for (const id of [...this.rooms.keys()]) if (!occupied.has(id)) this.rooms.delete(id);
+    this.recomputeRoomNames();
   }
 
   private ensureRoom(roomId: string, now: number): void {
