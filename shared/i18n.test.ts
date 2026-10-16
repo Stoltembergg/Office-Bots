@@ -3,6 +3,7 @@ import { getLocale, intlLocale, normalizeLocale, serverLocale, setLocale, tr } f
 import { EN } from './locales/en';
 import { ES } from './locales/es';
 import { FR } from './locales/fr';
+import { ID } from './locales/id';
 
 const placeholders = (s: string) => new Set(s.match(/\{\w+\}/g) ?? []);
 
@@ -62,8 +63,21 @@ describe('i18n', () => {
     expect(intlLocale()).toBe('es');
   });
 
+  it('indonésio: reconhece os formatos, traduz e usa o formato de data do idioma', () => {
+    expect(normalizeLocale('id')).toBe('id');
+    expect(normalizeLocale('id-ID')).toBe('id');
+    expect(normalizeLocale('id_ID.UTF-8')).toBe('id');
+    expect(serverLocale({ LANG: 'id_ID.UTF-8' })).toBe('id');
+    setLocale('id');
+    expect(intlLocale()).toBe('id-ID');
+    expect(tr('Sem conexão com o Habblaud.')).toBe(ID['Sem conexão com o Habblaud.']);
+    expect(tr('Não foi possível responder (erro {0}).', [500])).toBe(
+      ID['Não foi possível responder (erro {0}).'].replace('{0}', '500'),
+    );
+  });
+
   it('nenhuma tradução fica vazia nem perde ou inventa lacunas', () => {
-    for (const [lang, dict] of Object.entries({ en: EN, es: ES, fr: FR })) {
+    for (const [lang, dict] of Object.entries({ en: EN, es: ES, fr: FR, id: ID })) {
       for (const [pt, t] of Object.entries(dict)) {
         expect(t.trim(), `${lang}: ${pt}`).not.toBe('');
         const original = placeholders(pt);
