@@ -325,7 +325,18 @@ npm run service:uninstall   # le désactive et supprime l'unité
 
 Les options se placent après `--`, par exemple `npm run service:install -- --port 5000` ; sans le `--`, npm consomme `--force` et `--dry-run`.
 
-Options : `--port <n>` (un port autre que 4747), `--dry-run` (affiche l'unité sans l'écrire) et `--force` (remplace un `habblaud.service` écrit à la main). L'unité utilise le `node` qui a lancé l'installation, ce dossier et votre `PATH` (le serveur trouve ainsi `claude` et `codex`). L'unité ne définit aucune variable du `.env` et n'hérite pas des variables exportées dans votre shell (p. ex. `HABBLAUD_LANG` ou `HABBLAUD_CLAUDE_DIRS` dans `~/.bashrc`) ; pour le port, utilisez `--port`.
+Options : `--port <n>` (un port autre que 4747), `--dry-run` (affiche ce qui changerait sans rien écrire, pour install et uninstall) et `--force` (remplace ou supprime un `habblaud.service` écrit à la main). L'unité utilise le `node` qui a lancé l'installation, ce dossier et votre `PATH` (le serveur trouve ainsi `claude` et `codex`). Comme `npm start`, le service ne lit pas le `.env`, et n'hérite pas non plus des variables exportées dans votre shell (comme `HABBLAUD_LANG` ou `HABBLAUD_CLAUDE_DIRS` dans `~/.bashrc`). Pour le port, utilisez `--port`.
+
+Si le service ne démarre pas (par exemple parce que le port est déjà pris par un `npm start` ouvert), consultez `npm run service:status` et `journalctl --user -u habblaud`.
+
+Sous WSL, systemd doit être activé dans `/etc/wsl.conf` :
+
+```ini
+[boot]
+systemd=true
+```
+
+Puis lancez `wsl --shutdown` dans Windows.
 
 > **Linger :** un service utilisateur s'arrête quand votre dernière session se ferme. Pour qu'il démarre au boot et reste actif sans connexion, lancez vous-même `loginctl enable-linger $USER` (l'installeur affiche seulement l'indication).
 
