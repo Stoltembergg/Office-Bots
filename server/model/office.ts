@@ -328,6 +328,8 @@ export class Office {
     // A mesma sessão retomada noutro processo (ex.: "Assumir aqui") mantém o nome, mesmo com o processo antigo
     // ainda saindo do escritório.
     const person = chosen ?? this.deps.names.assign(p.sessionId, this.takenNames(undefined, p.sessionId));
+    // A aparência também é da sessão (e não do processo): reaberta com --resume, a conversa volta com o mesmo visual.
+    const saved = chosen ? undefined : this.deps.names.appearance(p.sessionId);
     const info: AgentInfo = {
       id: p.id,
       kind: 'main',
@@ -344,12 +346,16 @@ export class Office {
       lastEventAt: p.startedAt,
       statusSince: now,
       stats: zeroStats(),
-      seed: chosen?.seed ?? hash32(p.id),
+      seed: chosen?.seed ?? saved?.seed ?? hash32(p.id),
     };
     if (p.provider && p.provider !== 'claude') info.provider = p.provider;
     if (chosen) {
       info.custom = true;
       if (chosen.parts) info.parts = { ...chosen.parts };
+    } else if (saved) {
+      if (saved.parts) info.parts = { ...saved.parts };
+    } else {
+      this.deps.names.setAppearance(p.sessionId, { seed: info.seed });
     }
     if (p.status === 'waiting') info.waitingFor = p.waitingFor ?? tr('responder no terminal');
     const rec: AgentRecord = { info, history: [] };
@@ -371,7 +377,7 @@ export class Office {
       const owner = this.deps.names.character(info.roomId)?.owner;
       if (owner === undefined || owner === info.sessionId) this.deps.names.claimCharacter(info.roomId, sessionId);
     } else {
-      this.deps.names.remember(sessionId, { name: info.name, look: info.look });
+      this.deps.names.remember(sessionId, { name: info.name, look: info.look }, { seed: info.seed, parts: info.parts });
     }
     info.sessionId = sessionId;
     info.tasks = [];
@@ -825,10 +831,12 @@ export class Office {
     for (const r of this.agents.values()) {
       const o = r.info;
       if (o.id === id || o.kind !== 'main' || o.roomId !== info.roomId || !o.custom) continue;
-      this.deps.names.remember(o.sessionId, { name: o.name, look: o.look });
+      this.deps.names.remember(o.sessionId, { name: o.name, look: o.look }, { seed: o.seed, parts: o.parts });
       delete o.custom;
     }
     this.deps.names.setCharacter(info.roomId, { name: input.name, look: info.look, seed: input.seed, ...(parts ? { parts } : {}), owner: info.sessionId });
+    // O personagem também fica guardado na sessão: se outro agente da sala salvar depois, este não perde o visual.
+    this.deps.names.remember(info.sessionId, { name: input.name, look: info.look }, { seed: input.seed, parts });
     info.name = input.name;
     info.seed = input.seed;
     if (parts) info.parts = parts;
@@ -852,10 +860,13 @@ export class Office {
     const owner = this.deps.names.character(info.roomId)?.owner;
     if (owner === undefined || owner === info.sessionId) this.deps.names.clearCharacter(info.roomId);
     if (info.custom) {
+      // O personagem salvo também ficou na sessão: esquece para o sorteio valer de novo.
+      this.deps.names.forget(info.sessionId);
       const person = this.deps.names.assign(info.sessionId, this.takenNames(id));
       info.name = person.name;
       info.look = person.look;
       info.seed = hash32(id);
+      this.deps.names.setAppearance(info.sessionId, { seed: info.seed });
       delete info.parts;
       delete info.custom;
     }
@@ -1019,7 +1030,9 @@ export class Office {
       used.add(r.info.name);
     }
     for (const a of this.demoSnap?.agents ?? []) used.add(a.name);
-    for (const n of this.deps.names.reservedNames().keys()) used.add(n);
+    // O personagem de uma sala não é "ocupado" para a sessão dona dele (ex.: a sessão que o salvou num worktree e
+    // voltou para a pasta principal): sem isso, ela perdia o próprio nome no reinício.
+    for (const n of this.deps.names.reservedNames(undefined, exceptSession).keys()) used.add(n);
     return used;
   }
 
