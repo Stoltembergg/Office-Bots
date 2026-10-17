@@ -250,5 +250,41 @@ describe('Kiro integration', () => {
       expect(watcher.sessionCount()).toBe(0);
       watcher.stop();
     });
+
+    it('ignora sessões com locks antigos quando no Docker (inDocker: true)', () => {
+      const tmp = join(tmpdir(), `kiro-stale-${Date.now()}`);
+      mkdirSync(tmp, { recursive: true });
+      const names = new NameStore(join(tmpdir(), `names-${Date.now()}.json`));
+      const office = new Office({
+        names,
+        version: '0.11.0',
+        startedAt: Date.now(),
+        accounts: () => [],
+        sources: () => [],
+        accountName: () => 'Kiro',
+      });
+
+      try {
+        const sessionId = 'stale-uuid-123';
+        const lockPath = join(tmp, `${sessionId}.lock`);
+        writeFileSync(lockPath, JSON.stringify({ pid: 1234, started_at: new Date(Date.now() - 24 * 3600_000).toISOString() }));
+        writeFileSync(join(tmp, `${sessionId}.json`), JSON.stringify({ cwd: '/test/stale' }));
+
+        const now = Date.now();
+        // Simula lock com mtime de 15 horas atrás
+        const watcher = new KiroWatcher({
+          office,
+          sessionsDir: tmp,
+          inDocker: true,
+          now: () => now + 15 * 3600_000,
+        });
+
+        watcher.scan();
+        expect(watcher.sessionCount()).toBe(0);
+        watcher.stop();
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
   });
 });

@@ -37,6 +37,8 @@ interface ActiveKiroSession {
   lineCount: number;
 }
 
+export const STALE_LOCK_MS = 12 * 3600_000;
+
 export class KiroWatcher {
   private readonly office: Office;
   private readonly sessionsDir: string;
@@ -61,7 +63,12 @@ export class KiroWatcher {
     this.running = true;
 
     if (existsSync(this.sessionsDir)) {
-      this.scan();
+      this.office.beginBoot();
+      try {
+        this.scan();
+      } finally {
+        this.office.endBoot();
+      }
       try {
         this.fsWatcher = watch(this.sessionsDir, () => this.scan());
       } catch (err) {
@@ -143,8 +150,19 @@ export class KiroWatcher {
         continue;
       }
 
-      if (this.checkPid && (!pid || !pidAlive(pid))) {
-        continue; // Processo morto
+      if (this.checkPid) {
+        if (!pid || !pidAlive(pid)) {
+          continue; // Processo morto
+        }
+      } else {
+        try {
+          const st = statSync(lockPath);
+          if (this.now() - st.mtimeMs > STALE_LOCK_MS) {
+            continue; // Lock antigo no container
+          }
+        } catch {
+          continue;
+        }
       }
 
       currentLiveIds.add(sessionId);

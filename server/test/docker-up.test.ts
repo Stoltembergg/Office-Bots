@@ -11,12 +11,15 @@ import {
   type DockerState,
   envFileKeys,
   hostTimeZone,
+  kiroDisabled,
   parseArgs,
   planCodexMounts,
+  planKiroMount,
   planMounts,
   planUp,
   renderOverride,
   sanitizeCachedUsage,
+  worldLine,
   yamlString,
 } from '../../scripts/docker-up';
 
@@ -33,6 +36,21 @@ const acc = (id: string, extra: Partial<DetectedAccount> = {}): DetectedAccount 
 const slash = (p: string) => p.replaceAll('\\', '/');
 
 describe('docker-up', () => {
+  it('a linha do Habblaud World: o padrão sem URL; ligado com o endereço conferido; o ambiente vale mais que o .env', () => {
+    expect(worldLine({})).toBe('Habblaud World: ligado: https://server.habblaud.com (padrão)');
+    expect(worldLine({ HABBLAUD_WORLD_URL: 'wss://server.habblaud.com/' })).toBe('Habblaud World: ligado: https://server.habblaud.com');
+    // Do .env (o Compose lê sozinho), com aspas.
+    const file = 'HABBLAUD_WORLD_URL="http://host.docker.internal:4848"\nHABBLAUD_WORLD_DEV=1\n';
+    expect(worldLine({}, file)).toBe('Habblaud World: ligado: http://host.docker.internal:4848');
+    // Sem o modo de desenvolvimento, http:// é recusado (e o motivo aparece); no container não há --dev.
+    expect(worldLine({ HABBLAUD_WORLD_URL: 'http://host.docker.internal:4848' })).toMatch(/^Habblaud World: desligado \(HABBLAUD_WORLD_URL com http:\/\/.*desenvolvimento/);
+    // O ambiente ganha do .env, até vazio.
+    expect(worldLine({ HABBLAUD_WORLD_URL: '' }, file)).toBe('Habblaud World: ligado: https://server.habblaud.com (padrão)');
+    expect(worldLine({ HABBLAUD_WORLD: '0' }, file)).toBe('Habblaud World: desligado (HABBLAUD_WORLD=0).');
+    // Nunca repete a URL crua (pode ter usuário e senha).
+    expect(worldLine({ HABBLAUD_WORLD_URL: 'https://ana:segredo@server.habblaud.com' })).not.toContain('segredo');
+  });
+
   it('argumentos', () => {
     expect(parseArgs([])).toEqual({ down: false, build: true, help: false });
     expect(parseArgs(['--no-build'])).toEqual({ down: false, build: false, help: false });
@@ -114,6 +132,24 @@ describe('docker-up', () => {
     expect(codexDisabled({ HABBLAUD_CODEX: 'off' })).toBe(true);
     expect(codexDisabled({ HABBLAUD_CODEX: '1' })).toBe(false);
     expect(codexDisabled({})).toBe(false);
+  });
+
+  it('Kiro: monta SÓ sessions/cli (somente leitura) e passa KIRO_HOME no override', () => {
+    const host = '/Users/fulano/.kiro';
+    const exists = new Set([`${host}/sessions/cli`]);
+    const kiro = planKiroMount(host, (p) => (exists.has(slash(p)) ? `/real${slash(p)}` : undefined));
+    expect(kiro).toBeDefined();
+    expect(kiro!.binds).toEqual([
+      { source: `/real${host}/sessions/cli`, target: '/kiro/sessions/cli' },
+    ]);
+    const claude = planMounts(['/Users/fulano/.claude'], [acc('.claude')], slash);
+    const yml = renderOverride(claude, new Date(0), undefined, undefined, [], undefined, [], kiro);
+    expect(yml).toContain('KIRO_HOME: "/kiro"');
+    expect(yml).toContain(`source: "/real${host}/sessions/cli"\n        target: "/kiro/sessions/cli"\n        read_only: true`);
+    expect(kiroDisabled({ HABBLAUD_KIRO: '0' })).toBe(true);
+    expect(kiroDisabled({ HABBLAUD_KIRO: 'off' })).toBe(true);
+    expect(kiroDisabled({ HABBLAUD_KIRO: '1' })).toBe(false);
+    expect(kiroDisabled({})).toBe(false);
   });
 
   it('fuso do host vai para o container como TZ', () => {
