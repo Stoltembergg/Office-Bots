@@ -43,7 +43,8 @@ import { getLocale, tr } from '../shared/i18n';
 import type { WorldLocale } from '../shared/world/protocol';
 import { createCliRunner, createOpener, SpawnService } from './spawn/spawn';
 import { runnableClaudeBin } from './claude-bin';
-import { AttachmentStore } from './spawn/attachments';
+import { AttachmentStore, attachmentsRoot, writeAttachments } from './spawn/attachments';
+import { PasteService } from './paste/paste';
 import { recentFolders } from './spawn/folders';
 import { isDemoId } from '../shared/timeline';
 import { DictationService } from './dictation/dictation';
@@ -265,6 +266,10 @@ const whisper = config.messages && !config.inDocker ? findWhisper() : undefined;
 const dictation = config.messages
   ? new DictationService(whisper && !('missing' in whisper) ? { transcriber: createWhisperTranscriber(whisper) } : {})
   : undefined;
+// Print colado na caixa de mensagem: no Docker quem grava é o auxiliar do host; no Node, o servidor.
+const paste = config.messages
+  ? new PasteService(config.inDocker ? {} : { write: (id, file) => writeAttachments(attachmentsRoot(), id, [file])[0]! })
+  : undefined;
 const messages = config.messages
   ? new MessageRegistry({
       office,
@@ -362,6 +367,7 @@ const api = createApiHandler({
   spawn,
   attachments,
   dictation,
+  paste,
   deliveries,
   files: deliveryFiles,
   spawnFolders: async () => {

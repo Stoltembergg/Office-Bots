@@ -24,7 +24,7 @@ import { createCodexQueueRunner, findCodexBin, THREAD_ID, type CodexQueueResult,
 import { tr } from '../shared/i18n';
 import { createCliRunner, createOpener, folderProblem, launch, parseSpawn, type CliRunner, type Opener, type SpawnHow } from '../server/spawn/spawn';
 import { runnableClaudeBin } from '../server/claude-bin';
-import { ATTACHMENT_MAX_BYTES, ATTACHMENTS_PER_SPAWN, attachmentsRoot, promptWithAttachments, safeFileName, writeAttachments, type Attachment } from '../server/spawn/attachments';
+import { ATTACHMENT_MAX_BYTES, ATTACHMENTS_PER_SPAWN, attachmentsRoot, parseAttachment, promptWithAttachments, safeFileName, writeAttachments, type Attachment } from '../server/spawn/attachments';
 import { createWhisperTranscriber, findWhisper, type Transcriber } from '../server/dictation/whisper';
 import { checkFile, insideKnownFolder, tempRoots } from '../server/deliveries/files';
 import { discoverClaudeDirs } from '../server/accounts/detect';
@@ -251,6 +251,44 @@ export async function spawnRound(
 }
 
 /**
+ * Print colado na caixa de mensagem: busca as imagens (POST /api/host/paste/poll), grava cada uma em
+ * ~/.habblaud/attachments/ (como os anexos do Novo agente) e devolve o caminho em /api/host/paste/ack. Nunca lança.
+ */
+export async function pasteRound(
+  post: Post,
+  log: (line: string) => void = () => {},
+  write: (id: string, files: readonly Attachment[]) => string[] = (id, files) => writeAttachments(attachmentsRoot(), id, files),
+  opts: { wait?: boolean } = {},
+): Promise<RoundResult> {
+  const polled = await post(`/api/host/paste/poll${opts.wait ? '?wait=1' : ''}`, {});
+  if (!polled) return { state: 'down' };
+  const list = rec(polled.json)?.pastes;
+  if (polled.status !== 200 || !Array.isArray(list)) return { state: 'refused', status: polled.status };
+  const results: Array<BridgeResult & { path?: string }> = [];
+  for (const raw of list) {
+    const id = typeof rec(raw)?.id === 'string' ? (rec(raw)!.id as string) : '';
+    if (!id) continue;
+    const file = parseAttachment(raw);
+    if ('error' in file) {
+      results.push({ id, ok: false, error: file.error });
+      log(tr('✗ print recusado: {0}', [file.error]));
+      continue;
+    }
+    try {
+      const [path] = write(id, [file]);
+      results.push({ id, ok: true, path });
+      log(tr('✓ print colado gravado ({0} KB)', [Math.ceil(file.data.length / 1024)]));
+    } catch (err) {
+      const error = (err as Error)?.message || tr('não consegui gravar o print');
+      results.push({ id, ok: false, error });
+      log(tr('✗ print: {0}', [error]));
+    }
+  }
+  if (results.length) await post('/api/host/paste/ack', { results });
+  return { state: 'ok', results: results.map(({ id, ok, error }) => ({ id, ok, ...(error ? { error } : {}) })) };
+}
+
+/**
  * Ditado: busca os áudios (POST /api/host/dictation/poll), transcreve cada um com o Whisper local e devolve o texto e
  * o idioma em /api/host/dictation/ack. O texto nunca vai para a tela. Nunca lança.
  */
@@ -364,6 +402,7 @@ async function main(): Promise<void> {
     const roots = [...tempRoots(), attachmentsRoot()];
     const inside = (p: string) => insideKnownFolder(p, { accountDirs, roots });
     void waitLoop(() => filesRound(waitPost, log, undefined, undefined, { inside, wait: true }));
+    void waitLoop(() => pasteRound(waitPost, log, undefined, { wait: true }));
     if (transcribe) {
       const t = transcribe;
       void waitLoop(() => dictationRound(waitPost, t, log, { wait: true }));
