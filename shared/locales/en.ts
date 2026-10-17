@@ -2076,6 +2076,7 @@ export const EN: Readonly<Record<string, string>> = {
   "{0} não tem projects/ nem sessions/; conta ignorada.": "{0} has neither projects/ nor sessions/; account skipped.",
   "{0} é uma pasta do Codex, não do Claude Code; conta ignorada.": "{0} is a Codex folder, not a Claude Code one; account skipped.",
   "Codex {0} ({1}): monta {2} de {3}, somente leitura.": "Codex {0} ({1}): mounts {2} from {3}, read-only.",
+  "Kiro {0} ({1}): monta {2} de {3}, somente leitura.": "Kiro {0} ({1}): mounts {2} from {3}, read-only.",
   "{0} ainda não tem thread-writer-locks/: no container, sessão aberta = conversa modificada nos últimos 30 min (rode o docker:up de novo depois de usar o Codex).": "{0} doesn't have thread-writer-locks/ yet: in the container, open session = conversation modified in the last 30 min (run docker:up again after using Codex).",
   "Uso ao vivo (mod ou tap de statusline): monta {0} em {1}, somente leitura.": "Live usage (mod or statusline tap): mounts {0} at {1}, read-only.",
   "docker-compose.override.yml gerado.": "docker-compose.override.yml generated.",

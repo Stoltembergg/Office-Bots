@@ -737,7 +737,7 @@ async function up(opts: Options, port: number): Promise<void> {
   const kiroMount = kiroDir ? planKiroMount(kiroDir) : undefined;
   if (kiroMount) {
     const subdirs = kiroMount.binds.map((b) => posix.basename(b.target)).join(', ');
-    say(tr('Kiro ({0}): monta {1} de {2}, somente leitura.', [kiroMount.account.id, subdirs, tildify(kiroMount.hostDir)]));
+    say(tr('Kiro {0} ({1}): monta {2} de {3}, somente leitura.', [kiroMount.account.short, kiroMount.account.id, subdirs, tildify(kiroMount.hostDir)]));
   }
 
   migrateStateDir();
