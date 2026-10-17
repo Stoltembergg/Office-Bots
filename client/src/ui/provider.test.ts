@@ -82,13 +82,17 @@ describe('ferramenta (Claude Code ou Codex)', () => {
     expect(accountChipLabel(undefined, '', 'claude')).toBe('Conta desconhecida');
   });
 
-  it('escritório vazio: atalhos só das contas do Claude Code; o Codex entra quando há conta dele', () => {
+  it('escritório vazio: atalhos só das contas do Claude Code; o Codex e Kiro entram quando há conta deles', () => {
     const c = { short: 'C' };
     const d = { short: 'D' };
     const x = { short: 'X', provider: 'codex' as const };
+    const k = { short: 'K', provider: 'kiro' as const };
     expect(emptyOfficeHint([c, d])).toBe('Abra o Claude Code em qualquer projeto (atalhos c ou d) e veja seu agente chegar.');
     expect(emptyOfficeHint([c, d, x])).toBe('Abra o Claude Code (atalhos c ou d) ou o Codex em qualquer projeto e veja seu agente chegar.');
+    expect(emptyOfficeHint([c, d, k])).toBe('Abra o Claude Code (atalhos c ou d) ou o Kiro em qualquer projeto e veja seu agente chegar.');
+    expect(emptyOfficeHint([c, d, x, k])).toBe('Abra o Claude Code (atalhos c ou d), o Codex ou o Kiro em qualquer projeto e veja seu agente chegar.');
     expect(emptyOfficeHint([x])).toBe('Abra o Claude Code ou o Codex em qualquer projeto e veja seu agente chegar.');
+    expect(emptyOfficeHint([k])).toBe('Abra o Claude Code ou o Kiro em qualquer projeto e veja seu agente chegar.');
     expect(emptyOfficeHint([])).toBe('Abra o Claude Code em qualquer projeto e veja seu agente chegar.');
   });
 

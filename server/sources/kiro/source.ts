@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Provider, SourceInfo } from '../../../shared/types';
-import type { AccountsService } from '../../accounts/service';
+import type { AccountEntry, AccountsService } from '../../accounts/service';
 import type { Office } from '../../model/office';
 import type { AgentSource } from '../source';
 import type { TerminalParser } from '../terminal';
@@ -61,6 +61,10 @@ export class KiroSource implements AgentSource {
 
   stop(): void {
     this.watcher.stop();
+  }
+
+  accountEntries(): readonly AccountEntry[] {
+    return this.accounts.entriesOf('kiro');
   }
 
   sources(): SourceInfo[] {

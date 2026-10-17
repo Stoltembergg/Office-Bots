@@ -38,6 +38,7 @@ import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
 import { discoverKiroDir } from './sources/kiro/accounts';
+import { KiroHistory } from './sources/kiro/history';
 import { KiroSource } from './sources/kiro/source';
 import { createBuildReader, readBuildInfo } from './build';
 import { UpdateChecker } from './updates/checker';
@@ -201,6 +202,7 @@ const history = config.terminal
   ? new HistorySet([new SessionHistory({ accounts: () => accounts.entries(), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) })])
   : undefined;
 if (history && codex) history.add(new CodexHistory({ accounts: () => accounts.entriesOf('codex'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid) }));
+if (history && kiro) history.add(new KiroHistory({ accounts: () => accounts.entriesOf('kiro'), openAgentOf: (acc, sid) => openMainAgent(office.list(), acc, sid), dir: kiroDir }));
 // Entregas: o fim de cada pedido, lido dos transcripts do histórico (mesma trava do terminal). Os arquivos entregues
 // são lidos aqui (Node, ou pasta de conta montada no Docker) ou pelo auxiliar do host.
 const deliveries = history
@@ -495,6 +497,16 @@ server.listen(config.port, config.host, () => {
     }
   } else {
     log.info(tr('   Codex: {0}.', [config.codex ? tr('nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)') : tr('desligado (HABBLAUD_CODEX=0)')]));
+  }
+  if (kiro) {
+    const kiroAccounts = kiro.accountEntries();
+    const open = kiro.sources().reduce((n, s) => n + s.sessions, 0);
+    log.info(tr('   Kiro: {0} conta(s), {1} sessão(ões) aberta(s).', [kiroAccounts.length, open]));
+    for (const a of kiroAccounts) {
+      log.info(tr('   Conta {0} do Kiro ({1}): {2}', [a.detected.short, a.id, a.detected.configDir]));
+    }
+  } else {
+    log.info(tr('   Kiro: {0}.', [config.kiro ? tr('nenhuma pasta do Kiro encontrada (defina KIRO_HOME)') : tr('desligado (HABBLAUD_KIRO=0)')]));
   }
   if (office.isDemo()) log.info(tr('   Modo demonstração ligado (agentes simulados misturados aos reais).'));
   if (config.terminal) log.info(tr('   Terminal: ligado (acesso só local).'));

@@ -1,5 +1,7 @@
 // Parser de eventos de sessão do Kiro (~/.kiro/sessions/cli/<uuid>.jsonl)
 import type { Activity, ActivityKind, AgentStatus } from '../../../shared/types';
+import { basename, truncate } from '../../../shared/activity';
+import { tr } from '../../../shared/i18n';
 
 export interface KiroParsedLine {
   activity?: Activity;
@@ -20,44 +22,44 @@ export function describeKiroTool(toolName: string, input: Record<string, unknown
   if (toolName === 'shell' || toolName === 'execute' || toolName === 'bash') {
     if (command) {
       if (/\b(?:test|pytest|vitest|jest|phpunit)\b/i.test(command)) {
-        return { kind: 'test', icon: '🧪', text: purpose || 'Rodando testes', detail: command };
+        return { kind: 'test', icon: '🧪', text: purpose || tr('Rodando testes'), detail: command };
       }
       if (/\bgit\b/i.test(command)) {
-        return { kind: 'git', icon: '🌿', text: purpose || 'Comando git', detail: command };
+        return { kind: 'git', icon: '🌿', text: purpose || tr('Conferindo o git status'), detail: command };
       }
       if (/\b(?:build|compile)\b/i.test(command)) {
-        return { kind: 'run', icon: '🏗️', text: purpose || 'Compilando projeto', detail: command };
+        return { kind: 'run', icon: '🏗️', text: purpose || tr('Compilando o projeto'), detail: command };
       }
-      return { kind: 'run', icon: '💻', text: purpose || 'Executando comando', detail: command };
+      return { kind: 'run', icon: '💻', text: purpose || tr('Rodando um comando no terminal'), detail: command };
     }
-    return { kind: 'run', icon: '💻', text: purpose || 'Terminal shell' };
+    return { kind: 'run', icon: '💻', text: purpose || tr('Rodando um comando no terminal') };
   }
 
   if (toolName === 'read_file' || toolName === 'view_file' || toolName === 'cat') {
-    return { kind: 'read', icon: '📖', text: purpose || (path ? `Lendo ${path}` : 'Lendo arquivo'), detail: path };
+    return { kind: 'read', icon: '📖', text: purpose || (path ? tr('Lendo {0}', [basename(path)]) : tr('Lendo arquivo')), detail: path };
   }
 
   if (toolName === 'write_file' || toolName === 'edit' || toolName === 'replace_file_content') {
-    return { kind: 'edit', icon: '✏️', text: purpose || (path ? `Editando ${path}` : 'Editando código'), detail: path };
+    return { kind: 'edit', icon: '✏️', text: purpose || (path ? tr('Editando {0}', [basename(path)]) : tr('Editando arquivo')), detail: path };
   }
 
   if (toolName === 'subagent' || toolName === 'delegate') {
-    return { kind: 'delegate', icon: '🤝', text: purpose || 'Invocando subagente', detail: path || command };
+    return { kind: 'delegate', icon: '🤝', text: purpose || tr('Chamando um subagente'), detail: path || command };
   }
 
   if (toolName === 'search' || toolName === 'grep' || toolName === 'find') {
-    return { kind: 'search', icon: '🔍', text: purpose || 'Buscando no projeto', detail: path || command };
+    return { kind: 'search', icon: '🔍', text: purpose || (path ? tr('Buscando “{0}”', [basename(path)]) : tr('Buscando no código')), detail: path || command };
   }
 
   if (toolName === 'ask' || toolName === 'ask_question') {
-    return { kind: 'ask', icon: '❓', text: purpose || 'Aguardando confirmação do usuário', detail: command };
+    return { kind: 'ask', icon: '❓', text: purpose || tr('Aguardando você: {0}', [command || tr('responder uma pergunta')]), detail: command };
   }
 
   // Ferramentas customizadas (skills como revisor, frontend, etc.)
   return {
     kind: 'skill',
     icon: '⚡',
-    text: purpose || `Executando ${toolName}`,
+    text: purpose || tr('Executando {0}', [toolName]),
     detail: command || path || JSON.stringify(input).slice(0, 150),
   };
 }
@@ -77,13 +79,13 @@ export function parseKiroJsonlLine(line: string, index: number, now: number = Da
   if (kind === 'Prompt') {
     const contents = (data.content as Array<{ kind: string; data: unknown }>) || [];
     const textPart = contents.find((c) => c.kind === 'text');
-    const promptText = typeof textPart?.data === 'string' ? textPart.data : 'Nova instrução';
+    const promptText = typeof textPart?.data === 'string' ? textPart.data : '';
     return {
       activity: {
         id: `kiro-prompt-${index}`,
         kind: 'prompt',
         icon: '💬',
-        text: 'Nova instrução',
+        text: promptText ? truncate(promptText, 34) : tr('Recebeu um pedido'),
         detail: promptText.slice(0, 300),
         at: now,
       },
@@ -102,6 +104,7 @@ export function parseKiroJsonlLine(line: string, index: number, now: number = Da
       const input = toolData.input || {};
       const desc = describeKiroTool(toolName, input);
 
+      const isAsk = desc.kind === 'ask';
       return {
         activity: {
           id: toolData.toolUseId || `kiro-tool-${index}`,
@@ -112,7 +115,8 @@ export function parseKiroJsonlLine(line: string, index: number, now: number = Da
           tool: toolName,
           at: now,
         },
-        status: 'working',
+        status: isAsk ? 'waiting' : 'working',
+        waitingFor: isAsk ? tr('responder uma pergunta') : undefined,
         command: typeof input.command === 'string' ? input.command : undefined,
       };
     }
@@ -125,7 +129,7 @@ export function parseKiroJsonlLine(line: string, index: number, now: number = Da
           id: `kiro-think-${index}`,
           kind: 'think',
           icon: '🧠',
-          text: 'Pensando...',
+          text: tr('Pensando…'),
           at: now,
         },
         status: 'working',
@@ -140,7 +144,7 @@ export function parseKiroJsonlLine(line: string, index: number, now: number = Da
           id: `kiro-resp-${index}`,
           kind: 'respond',
           icon: '💬',
-          text: 'Respondendo',
+          text: tr('Escrevendo a resposta'),
           detail: textPart.data.slice(0, 150),
           at: now,
         },
