@@ -5,7 +5,7 @@
 <h1 align="center">Habblaud</h1>
 
 <p align="center">
-  <b>The virtual office for your Claude Code (and Codex) agents.</b><br />
+  <b>The virtual office for your Claude Code, Codex and Kiro agents.</b><br />
   Each project becomes a room, and each agent becomes a pixel-art character that shows, in real time, what it's doing.
 </p>
 
@@ -608,6 +608,20 @@ Codex account chip is hollow and carries the **CODEX** tag.
   little while to leave after you close the terminal.
 - ChatGPT cloud conversations (with no file on the computer) don't show up. `HABBLAUD_CODEX=0` turns Codex off.
 
+### Kiro
+
+Kiro sessions (CLI or IDE) show up in the office automatically: character, project room, activity,
+terminal with live streaming, and history. The Kiro account chip carries the **KIRO** tag and vibrant purple color.
+
+- **Zero configuration:** Habblaud detects active Kiro CLI sessions automatically by reading session locks in
+  `~/.kiro/sessions/cli/*.lock` (and `KIRO_HOME` or `KIRO_SESSIONS_DIR`). The working directory (`cwd`) is determined from
+  the lockfile and process status.
+- **Live Terminal & History:** Habblaud tails `~/.kiro/sessions/cli/<sessionId>.jsonl` to reconstruct prompts, tool usage
+  (shell commands, file edits, git, test execution), model thinking, and outputs in real time via Server-Sent Events.
+- **Account & Plan:** Habblaud discovers plan metadata automatically from local files (`plan`, `plan.txt`,
+  `settings/plan.json`, `user.json`) or environment variables (`HABBLAUD_KIRO_PLAN`, `KIRO_PLAN`).
+- `HABBLAUD_KIRO=0` turns Kiro off in the office.
+
 ### GitHub in the office
 
 What the agents do on GitHub livens up the project's room, with no token and no internet access: Habblaud reads the
@@ -729,12 +743,13 @@ Everything works without configuring anything. If you need to adjust something, 
 | `HABBLAUD_CODEX` | on | `0` turns off Codex in the office. |
 | `HABBLAUD_CODEX_DIRS` | automatic detection | Codex folders, comma-separated (instead of `~/.codex*` and `CODEX_HOME`). |
 | `HABBLAUD_CODEX_BIN` | `codex` from PATH (on Windows, `codex.exe`) | The Codex binary that delivers the messages (`codex queue`), in Node mode or in `npm run codex:bridge`. |
+| `HABBLAUD_KIRO` | on | `0` turns off Kiro in the office. |
 | `HABBLAUD_UPDATE_CHECK` | on | `0` turns off the new-version check (a request to the repository's releases on GitHub every 6 h). |
 | `HABBLAUD_LANG` | system language (except English), otherwise `pt-BR` | Language of the texts the server builds (activities, notices, logs): `pt-BR`, `en`, `es` or `fr`. The interface follows the browser or the choice in Settings › Language. See [Languages](#languages). |
 | `HABBLAUD_ACCOUNTS` | — | JSON to customize name, letter or color, matched by the account folder name. E.g. `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **In Docker**, `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
-`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY`, the `HABBLAUD_WORLD*` and the
+`HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_KIRO`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY`, the `HABBLAUD_WORLD*` and the
 `HABBLAUD_REMOTE_*` apply (in `.env` or in the environment), as do `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` and
 `HABBLAUD_ACCOUNTS` (read by `docker:up` on the host); the rest are fixed inside the container. Options: `npm run docker:up -- --no-build` (starts without rebuilding),
 `npm run docker:down` (stops) and `npm run docker:logs` (follows the logs).
@@ -1013,6 +1028,9 @@ metadata (letter, email, organization) is read on the host by `docker:up` and pa
   other apps stay where they are) and writes `~/.habblaud/codex-hook.json`; approving the hooks is always up to you, in
   `/hooks`. The hooks only talk to `127.0.0.1`. Messages to Codex carry the same warning as those to Claude Code: any
   program on this machine that talks to Habblaud can leave a message in a session's queue.
+- **Kiro:** Habblaud only reads active session locks (`~/.kiro/sessions/cli/*.lock`) to discover open sessions,
+  their PID, and working folder. The transcript (`<sessionId>.jsonl`) is streamed exclusively for the local terminal
+  view. Habblaud never reads credentials, authentication tokens, or configurations outside the session directory.
 - **What shows up on screen:** activity summaries (tool, file, command or query), session titles,
   tasks and stats (and, in the terminal, the conversation). Don't expose the port on networks you don't
   trust.
@@ -1153,6 +1171,16 @@ run `npm run codex:install`, **approve the hooks in `/hooks` in Codex** and chec
 the hooks through the login shell, which may have an old Node; `codex:install` picks a Node 22+ and tells you which one (or use
 `--node <caminho>`). A freshly opened CLI session only shows up with the **first message**: before that, Codex doesn't
 say which folder it's in (it only creates the session lock), and without the folder there's no room.
+
+</details>
+
+<details>
+<summary><b>Kiro doesn't show up in the office</b></summary>
+
+Check that:
+- Kiro CLI sessions are actively running with session lock files in `~/.kiro/sessions/cli/` (or the directory pointed to by `KIRO_HOME` or `KIRO_SESSIONS_DIR`).
+- `HABBLAUD_KIRO=0` was not set in your environment.
+- The startup log (`npm run docker:logs` or terminal output) confirms: `Kiro: 1 conta(s), X sessão(ões) aberta(s).`
 
 </details>
 

@@ -10,6 +10,10 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Suporte ao Kiro CLI:** o Habblaud agora detecta e acompanha sessões do Kiro (`~/.kiro/sessions/cli/` ou `KIRO_HOME`), exibindo o agente no escritório com seu papel, status em tempo real, atividades transmitidas via `.jsonl` e sala do projeto correspondente. Inclui histórico de sessões (`KiroHistory`) na gaveta e no terminal, integração com índice de entregas, exibição do plano da conta (`HABBLAUD_KIRO_PLAN`, `KIRO_PLAN` ou `~/.kiro/plan`), cartão de uso orientando consulta com `/usage`, suporte a montagem de volume no container Docker (`KIRO_HOME`), seção dedicada na ajuda e desligamento opcional via `HABBLAUD_KIRO=0`.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
@@ -220,6 +224,7 @@ idiomas.
   respondem, a meta a 80 % e, com `&fireworks=1`, um botão de teste dos fogos). `npm run shots:world` refaz as capturas
   `docs/screenshots/world-predio.png`, `world-enviado.png`, `world-cidade.png`, `world-cartao.png`, `world-visita.png`,
   `world-visita-painel.png`, `world-social.png` e `world-praca.png`.
+>>>>>>> upstream/main
 
 ## [0.11.0] - 2026-10-13
 
