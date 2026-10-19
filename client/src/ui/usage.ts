@@ -7,18 +7,28 @@
 // Conta do Codex: os números vêm dos arquivos de sessão dele, que só se renovam enquanto alguma sessão roda; por isso
 // a idade ("há 12 min") fica sempre à mostra. Sem cota nem créditos ("sem cota") nunca vira 0%. Não há o que
 // instalar para o uso: "Como funciona" abre a ajuda na seção do Codex. Sem Opus/Sonnet nem e-mail (só o plano).
+// Conta do Cursor: medidores Cursor Models / Other Models (autoPercentUsed / apiPercentUsed) via API do CLI.
 import type { AccountInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
-import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
+import {
+  BILLING_CYCLE_MS,
+  FIVE_HOURS_MS,
+  relativeTime,
+  usageLevel,
+  usageWindowView,
+  WEEK_MS,
+  type UsageWindowView,
+} from './format';
 import { ICONS } from './icons';
-import { isCodex } from './provider';
+import { isCodex, isCursor, providerOf } from './provider';
 import { createAccountChip, createProviderTag, updateAccountChip, updateProviderTag } from './widgets';
 
 export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], string> = {
   cache: 'cache do /usage do Claude Code',
   statusline: 'ao vivo (statusline do Claude Code)',
   codex: 'arquivos do Codex',
+  cursor: 'API do Cursor (login do CLI)',
 };
 
 /** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do Habblaud ou pelo tap. */
@@ -43,6 +53,18 @@ export const USAGE_SETUP_STEPS: readonly [string, string][] = [
   ['/usage', 'Sem instalar nada: rode `/usage` no Claude Code desta conta para atualizar o cache (os números envelhecem até a próxima vez).'],
 ];
 
+/** Como ligar o uso da conta Cursor (dica do cartão). */
+export const CURSOR_USAGE_SETUP_STEPS: readonly [string, string][] = [
+  [
+    'agent login',
+    'No host onde o Habblaud roda, autentique o Cursor CLI (`agent login`). O Habblaud lê `~/.config/cursor/auth.json` e consulta o uso do plano (Cursor Models e Other Models).',
+  ],
+  [
+    'HABBLAUD_CURSOR_AUTH',
+    'Opcional: caminho alternativo do `auth.json` se o login do CLI não estiver no padrão `~/.config/cursor/auth.json`.',
+  ],
+];
+
 /** Texto com trechos `assim` como código. */
 export function richText(text: string): Node[] {
   return text.split('`').map((part, i) => (i % 2 ? h('code', { class: 'ui-usage-setup__inline', text: part }) : document.createTextNode(part)));
@@ -55,6 +77,8 @@ interface Meter {
   reset: HTMLElement;
   resetLong: HTMLElement;
   resetShort: HTMLElement;
+  labelLong: HTMLElement;
+  labelShort: HTMLElement;
 }
 
 interface CardRefs {
@@ -89,14 +113,27 @@ function createMeter(long: string, short: string, title: string): Meter {
   const resetLong = h('span', { class: 'ui-meter__reset-long' });
   const resetShort = h('span', { class: 'ui-meter__reset-short' });
   const reset = h('span', { class: 'ui-meter__reset' }, resetLong, resetShort);
-  const label = h(
-    'span',
-    { class: 'ui-meter__label' },
-    h('span', { class: 'ui-meter__label-long', text: long }),
-    h('span', { class: 'ui-meter__label-short', text: short, attrs: { 'aria-hidden': 'true' } }),
-  );
+  const labelLong = h('span', { class: 'ui-meter__label-long', text: long });
+  const labelShort = h('span', { class: 'ui-meter__label-short', text: short, attrs: { 'aria-hidden': 'true' } });
+  const label = h('span', { class: 'ui-meter__label' }, labelLong, labelShort);
   const el = h('div', { class: 'ui-meter', role: 'img', attrs: { 'aria-label': title } }, label, bar, pct, reset);
-  return { el, bar, pct, reset, resetLong, resetShort };
+  return { el, bar, pct, reset, resetLong, resetShort, labelLong, labelShort };
+}
+
+function setMeterLabels(m: Meter, long: string, short: string): void {
+  setText(m.labelLong, long);
+  setText(m.labelShort, short);
+}
+
+/** Passo a passo Cursor (dica do cartão). */
+export function createCursorUsageSetup(): HTMLElement {
+  return h(
+    'ol',
+    { class: 'ui-usage-setup' },
+    ...CURSOR_USAGE_SETUP_STEPS.map(([cmd, text]) =>
+      h('li', {}, h('code', { class: 'ui-usage-setup__cmd', text: cmd }), h('span', {}, ...richText(text))),
+    ),
+  );
 }
 
 function updateMeter(m: Meter, view: UsageWindowView | null, windowName: string): void {
@@ -176,6 +213,7 @@ export function showsUsageAge(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'pr
 export function usageSubtitle(a: Pick<AccountInfo, 'email' | 'plan' | 'configDir' | 'provider'>): string {
   if (a.email) return a.email;
   if (isCodex(a)) return a.plan ? `plano ${a.plan}` : 'Codex';
+  if (isCursor(a)) return a.plan ? `plano ${a.plan}` : 'Cursor';
   return a.configDir;
 }
 
@@ -183,8 +221,19 @@ export function usageSubtitle(a: Pick<AccountInfo, 'email' | 'plan' | 'configDir
 export function usageMessage(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>): [string, string] {
   const state = cardState(a);
   if (state === 'noquota') return ['sem cota', 'sem cota'];
-  if (isCodex(a)) return ['sem dados ainda', 'sem dados'];
+  if (isCodex(a) || isCursor(a)) return ['sem dados ainda', 'sem dados'];
   return ['sem dados de uso', 'sem dados'];
+}
+
+/** Explicação do cartão Cursor (dica); '' nas outras. */
+export function cursorUsageNote(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>, now: number): string {
+  if (!isCursor(a)) return '';
+  const u = a.usage;
+  const state = cardState(a);
+  if (state === 'empty')
+    return 'Faça `agent login` no host do Habblaud. Os números vêm da API do plano (Cursor Models e Other Models).';
+  const age = u ? relativeTime(u.fetchedAt, now) : '';
+  return `Uso do plano Cursor (última leitura ${age}): Cursor Models e Other Models, como no dashboard Spending.`;
 }
 
 /** Explicação do cartão de uma conta do Codex (dica); '' nas outras. */
@@ -254,7 +303,12 @@ export class UsageCards {
     const tipTitle = h('div', { class: 'ui-usage-tip__title' });
     const tipRows = h('dl', { class: 'ui-kv' });
     const tipNote = h('p', { class: 'ui-usage-tip__note' });
-    const tipSetup = h('div', { class: 'ui-usage-tip__setup' }, h('p', { class: 'ui-usage-tip__setup-title', text: 'Como ter o uso ao vivo' }), createUsageSetup());
+    const tipSetup = h(
+      'div',
+      { class: 'ui-usage-tip__setup' },
+      h('p', { class: 'ui-usage-tip__setup-title', text: 'Como ter o uso ao vivo' }),
+      createUsageSetup(),
+    );
     const tip = h('div', { class: 'ui-usage-tip', role: 'tooltip', attrs: { id: tipId } }, tipTitle, tipRows, tipNote, tipSetup);
     const card = h(
       'div',
@@ -294,23 +348,32 @@ export class UsageCards {
     const r = this.refs.get(card)!;
     const now = this.ctx.now();
     const codex = isCodex(a);
+    const cursor = isCursor(a);
+    const provider = providerOf(a);
     updateAccountChip(r.chip, a);
     setStyleVar(card, '--acc', a.color);
     setText(r.name, a.name);
-    updateProviderTag(r.prov, codex ? 'codex' : 'claude', a.name);
+    updateProviderTag(r.prov, provider, a.name);
     setText(r.email, usageSubtitle(a));
-    setAttr(card, 'aria-label', `${a.name}${codex ? ' (Codex)' : ''}: uso do plano`);
+    const provSuffix = codex ? ' (Codex)' : cursor ? ' (Cursor)' : '';
+    setAttr(card, 'aria-label', `${a.name}${provSuffix}: uso do plano`);
 
     const usage = a.usage;
     const state = cardState(a);
     setVariant(card, 'is-', state);
-    const five = usage ? usageWindowView(usage.fiveHour, usage.fetchedAt, now, FIVE_HOURS_MS) : null;
-    const week = usage ? usageWindowView(usage.sevenDay, usage.fetchedAt, now, WEEK_MS) : null;
+    const firstWindowMs = cursor ? BILLING_CYCLE_MS : FIVE_HOURS_MS;
+    const secondWindowMs = cursor ? BILLING_CYCLE_MS : WEEK_MS;
+    const five = usage ? usageWindowView(usage.fiveHour, usage.fetchedAt, now, firstWindowMs) : null;
+    const week = usage ? usageWindowView(usage.sevenDay, usage.fetchedAt, now, secondWindowMs) : null;
+    const firstName = cursor ? 'Cursor' : 'Sessão de 5 horas';
+    const secondName = cursor ? 'Others' : 'Semana';
+    setMeterLabels(r.five, cursor ? 'Cursor' : '5h', cursor ? 'Cursor' : '5h');
+    setMeterLabels(r.week, cursor ? 'Others' : 'Semana', cursor ? 'Others' : 'Sem.');
     const showMeters = hasWindows(a);
     setHidden(r.meters, !showMeters);
     if (usage && showMeters) {
-      updateMeter(r.five, five, 'Sessão de 5 horas');
-      updateMeter(r.week, week, 'Semana');
+      updateMeter(r.five, five, firstName);
+      updateMeter(r.week, week, secondName);
     }
     r.meters.classList.toggle('is-dim', state !== 'ok');
 
@@ -328,12 +391,13 @@ export class UsageCards {
         r.state,
         codex
           ? `Atualizado ${age}: o Codex só grava o uso enquanto alguma sessão roda.`
-          : `Números de ${age}: podem não refletir o uso atual.`,
+          : cursor
+            ? `Atualizado ${age}: uso do plano Cursor (API do CLI).`
+            : `Números de ${age}: podem não refletir o uso atual.`,
       );
     }
 
-    // Sem números: "sem dados de uso" + "Como ativar" (no Codex, "Como funciona": não há o que instalar). Sem cota:
-    // a mensagem, sem botão.
+    // Sem números: "sem dados de uso" + "Como ativar" (no Codex/Cursor, "Como funciona"). Sem cota: mensagem, sem botão.
     const [msgLong, msgShort] = usageMessage(a);
     setText(r.msgLong, msgLong);
     setText(r.msgShort, msgShort);
@@ -341,18 +405,31 @@ export class UsageCards {
     setHidden(r.how, state === 'noquota');
     r.msg.classList.toggle('is-noquota', state === 'noquota');
     setTitle(r.msg, state === 'noquota' ? codexUsageNote(a, now) : '');
-    setText(r.howLong, codex ? 'Como funciona' : 'Como ativar');
-    setText(r.howShort, codex ? 'Saber' : 'Ativar');
+    const howAlt = codex || cursor;
+    setText(r.howLong, howAlt ? 'Como funciona' : 'Como ativar');
+    setText(r.howShort, howAlt ? 'Saber' : 'Ativar');
     r.how.dataset.help = codex ? 'codex' : 'usage';
-    setTitle(r.how, codex ? 'Como o uso do Codex chega ao Habblaud (abre a ajuda em “Codex”)' : 'Como mostrar o uso desta conta (abre a ajuda em “Contas e uso”)');
+    setTitle(
+      r.how,
+      codex
+        ? 'Como o uso do Codex chega ao Habblaud (abre a ajuda em “Codex”)'
+        : cursor
+          ? 'Como o uso do Cursor chega ao Habblaud (abre a ajuda em “Contas e uso”)'
+          : 'Como mostrar o uso desta conta (abre a ajuda em “Contas e uso”)',
+    );
     this.updateTip(r, a, state, five, week, now);
   }
 
   private updateTip(r: CardRefs, a: AccountInfo, state: CardState, five: UsageWindowView | null, week: UsageWindowView | null, now: number): void {
     const codex = isCodex(a);
-    setText(r.tipTitle, `${a.name}${codex && !/codex/i.test(a.name) ? ' · Codex' : ''}${a.plan ? ` · plano ${a.plan}` : ''}`);
+    const cursor = isCursor(a);
+    setText(
+      r.tipTitle,
+      `${a.name}${codex && !/codex/i.test(a.name) ? ' · Codex' : ''}${cursor && !/cursor/i.test(a.name) ? ' · Cursor' : ''}${a.plan ? ` · plano ${a.plan}` : ''}`,
+    );
     const rows: [string, string][] = [];
     if (codex) rows.push(['Ferramenta', 'Codex']);
+    if (cursor) rows.push(['Ferramenta', 'Cursor']);
     if (a.email) rows.push(['E-mail', a.email]);
     if (a.organization) rows.push(['Organização', a.organization]);
     if (a.plan) rows.push(['Plano', a.plan]);
@@ -360,27 +437,38 @@ export class UsageCards {
     rows.push(['Sessões abertas', String(a.sessions)]);
     const u = a.usage;
     if (u && (u.fiveHour || u.sevenDay)) {
-      rows.push(['Sessão de 5 h', five?.summary ?? '—']);
-      rows.push(['Semana', week?.summary ?? '—']);
-      // Opus e Sonnet são janelas do Claude: no Codex não existem.
-      const opus = codex ? null : usageWindowView(u.sevenDayOpus, u.fetchedAt, now, WEEK_MS);
-      const sonnet = codex ? null : usageWindowView(u.sevenDaySonnet, u.fetchedAt, now, WEEK_MS);
+      rows.push([cursor ? 'Cursor' : 'Sessão de 5 h', five?.summary ?? '—']);
+      rows.push([cursor ? 'Others' : 'Semana', week?.summary ?? '—']);
+      // Opus e Sonnet são janelas do Claude: no Codex/Cursor não existem.
+      const opus = codex || cursor ? null : usageWindowView(u.sevenDayOpus, u.fetchedAt, now, WEEK_MS);
+      const sonnet = codex || cursor ? null : usageWindowView(u.sevenDaySonnet, u.fetchedAt, now, WEEK_MS);
       if (opus) rows.push(['Opus (semana)', opus.summary]);
       if (sonnet) rows.push(['Sonnet (semana)', sonnet.summary]);
     }
     if (u && state === 'noquota') rows.push(['Cota', 'sem cota nem créditos agora']);
-    if (u && (state !== 'empty' || codex)) {
+    if (u && (state !== 'empty' || codex || cursor)) {
       rows.push(['Origem', sourceLabel(u)]);
       rows.push(['Atualizado', relativeTime(u.fetchedAt, now)]);
     }
     syncRows(r.tipRows, rows);
 
-    // Codex: a explicação dele, sem o passo a passo do Claude Code (não há o que instalar para o uso).
     if (codex) {
       const note = codexUsageNote(a, now);
       setText(r.tipNote, note);
       setHidden(r.tipNote, !note);
       setHidden(r.tipSetup, true);
+      return;
+    }
+
+    if (cursor) {
+      const note = cursorUsageNote(a, now);
+      setText(r.tipNote, note);
+      setHidden(r.tipNote, !note);
+      r.tipSetup.replaceChildren(
+        h('p', { class: 'ui-usage-tip__setup-title', text: 'Como ter o uso do Cursor' }),
+        createCursorUsageSetup(),
+      );
+      setHidden(r.tipSetup, state === 'ok' && u?.source === 'cursor');
       return;
     }
 
@@ -392,7 +480,10 @@ export class UsageCards {
     else if (five?.renewed || week?.renewed) note = 'Uma das janelas já reiniciou depois da última leitura.';
     setText(r.tipNote, note);
     setHidden(r.tipNote, !note);
-    // O passo a passo aparece sempre que os números não são ao vivo.
+    r.tipSetup.replaceChildren(
+      h('p', { class: 'ui-usage-tip__setup-title', text: 'Como ter o uso ao vivo' }),
+      createUsageSetup(),
+    );
     const live = u?.source === 'statusline' && state === 'ok';
     setHidden(r.tipSetup, live);
   }

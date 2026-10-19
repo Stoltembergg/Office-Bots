@@ -134,6 +134,9 @@ describe('textos', () => {
     expect(prettyModel('gpt-5-codex')).toBe('GPT-5 Codex');
     expect(prettyModel('gpt-5')).toBe('GPT-5');
     expect(prettyModel('gpt-4o')).toBe('GPT-4o');
+    // Cursor / xAI.
+    expect(prettyModel('cursor-grok-4.5-high')).toBe('Grok 4.5 High');
+    expect(prettyModel('grok-4.7-high-fast')).toBe('Grok 4.7 High Fast');
     expect(prettyModel(undefined)).toBe('—');
   });
   it('permissionLabel traduz modos conhecidos', () => {

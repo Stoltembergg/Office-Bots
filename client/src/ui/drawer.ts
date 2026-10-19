@@ -655,16 +655,19 @@ class AgentView {
   private renderStats(a: AgentInfo, now: number): void {
     const s = a.stats;
     const st = this.stats;
+    const provider = providerOf(a);
+    const codex = provider === 'codex';
+    const cursor = provider === 'cursor';
     st.set('tools', formatInt(s.toolCalls));
-    st.set('tokensIn', formatTokens(s.tokensIn));
-    st.set('tokensOut', formatTokens(s.tokensOut));
+    // Cursor: tokens por sessão não vêm do store.db plaintext — some a linha em vez de mostrar 0.
+    st.set('tokensIn', cursor && !s.tokensIn ? null : formatTokens(s.tokensIn));
+    st.set('tokensOut', cursor && !s.tokensOut ? null : formatTokens(s.tokensOut));
     st.set('cost', s.costUSD !== undefined ? formatUSD(s.costUSD) : null);
-    const codex = providerOf(a) === 'codex';
     const hasLines = s.linesAdded !== undefined || s.linesRemoved !== undefined;
     st.show('lines', hasLines);
     setText(this.linesPlus, `+${formatInt(s.linesAdded ?? 0)}`);
     setText(this.linesMinus, `−${formatInt(s.linesRemoved ?? 0)}`);
-    st.set('subs', a.kind === 'main' ? formatInt(s.subagents) : null);
+    st.set('subs', a.kind === 'main' && !cursor ? formatInt(s.subagents) : null);
     st.set('model', prettyModel(a.model));
     st.set('branch', a.gitBranch ?? null);
     // Codex: a política de aprovação (quando o servidor a manda) no lugar do modo de permissão do Claude Code.

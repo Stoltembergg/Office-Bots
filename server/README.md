@@ -381,6 +381,7 @@ de fora. Uma conta `.cursor` no MVP (várias raízes em `HABBLAUD_CURSOR_DIRS` c
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
 | `HABBLAUD_CURSOR` | ligado | `0` desliga a fonte do Cursor (modo observação) |
 | `HABBLAUD_CURSOR_DIRS` / `HABBLAUD_CURSOR_DIR` | — | raízes do Cursor (com `chats/`), separadas por vírgula; `DIRS` tem prioridade sobre `DIR` |
+| `HABBLAUD_CURSOR_AUTH` | `~/.config/cursor/auth.json` | token do CLI para o uso do plano (Cursor Models / Other Models); só no host |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0`, `false`, `off` ou `no` desligam só as mensagens pelo escritório |
 | `HABBLAUD_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` (Docker: `/data`) | estado do Habblaud (nomes e personagens dos projetos persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |

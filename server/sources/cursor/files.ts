@@ -14,6 +14,8 @@ export interface CursorChatMeta {
   dir: string;
   title?: string;
   cwd?: string;
+  /** Início da conversa (meta.json `createdAtMs`), quando houver. */
+  createdAtMs?: number;
   updatedAtMs: number;
   isSubagent: boolean;
   storeMtimeMs?: number;
@@ -88,6 +90,7 @@ function readMeta(chatDir: string, chatId: string): CursorChatMeta | undefined {
   };
   if (typeof rec.title === 'string' && rec.title.trim()) meta.title = rec.title.trim();
   if (typeof rec.cwd === 'string' && rec.cwd.trim()) meta.cwd = rec.cwd.trim();
+  if (typeof rec.createdAtMs === 'number' && Number.isFinite(rec.createdAtMs)) meta.createdAtMs = rec.createdAtMs;
 
   const storePath = join(chatDir, 'store.db');
   try {

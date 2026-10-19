@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountInfo } from '../../../shared/types';
-import { cardState, codexUsageNote, showsUsageAge, sourceLabel, usageMessage, usageSubtitle } from './usage';
+import {
+  cardState,
+  codexUsageNote,
+  cursorUsageNote,
+  showsUsageAge,
+  sourceLabel,
+  usageMessage,
+  usageSubtitle,
+} from './usage';
 
 const MIN = 60_000;
 type Acc = Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider' | 'email' | 'plan' | 'configDir'>;
 const codex = (over: Partial<Acc> = {}): Acc => ({ provider: 'codex', usageStatus: 'ok', configDir: '~/.codex', plan: 'Team', ...over });
+const cursor = (over: Partial<Acc> = {}): Acc => ({ provider: 'cursor', usageStatus: 'ok', configDir: '~/.cursor', ...over });
 const win = { utilization: 42, resetsAt: 10 * 60 * MIN };
 
 describe('sourceLabel', () => {
@@ -14,6 +23,21 @@ describe('sourceLabel', () => {
     expect(sourceLabel({ source: 'statusline', fetchedAt: 0 })).toBe('ao vivo (statusline do Claude Code)');
     expect(sourceLabel({ source: 'cache', fetchedAt: 0 })).toBe('cache do /usage do Claude Code');
     expect(sourceLabel({ source: 'codex', fetchedAt: 0 })).toBe('arquivos do Codex');
+    expect(sourceLabel({ source: 'cursor', fetchedAt: 0 })).toBe('API do Cursor (login do CLI)');
+  });
+});
+
+describe('cartão de uso de uma conta do Cursor', () => {
+  it('mostra pools quando há números; sem dados pede login do CLI', () => {
+    const withUsage = cursor({
+      usage: { source: 'cursor', fiveHour: win, sevenDay: { utilization: 90, resetsAt: 20 * 60 * MIN }, fetchedAt: 0 },
+    });
+    expect(cardState(withUsage)).toBe('ok');
+    expect(usageSubtitle(cursor())).toBe('Cursor');
+    expect(usageSubtitle(cursor({ plan: 'Pro+' }))).toBe('plano Pro+');
+    expect(usageMessage(cursor())).toEqual(['sem dados ainda', 'sem dados']);
+    expect(cursorUsageNote(cursor(), 0)).toMatch(/agent login/);
+    expect(cursorUsageNote(withUsage, 3 * MIN)).toMatch(/Cursor Models/);
   });
 });
 

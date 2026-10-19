@@ -18,6 +18,10 @@ export function isCodex(x: { provider?: Provider } | null | undefined): boolean 
   return x?.provider === 'codex';
 }
 
+export function isCursor(x: { provider?: Provider } | null | undefined): boolean {
+  return x?.provider === 'cursor';
+}
+
 /** Terminal ao vivo (SSE): Claude Code e Codex; Cursor fase 1 é só observação. */
 export function supportsLiveTerminal(provider: Provider): boolean {
   return provider !== 'cursor';

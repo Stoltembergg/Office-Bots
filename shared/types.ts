@@ -282,13 +282,15 @@ export interface AccountUsage {
   sevenDayOpus?: UsageWindow;
   sevenDaySonnet?: UsageWindow;
   /**
-   * Origem dos números (todas são arquivos locais gravados pela própria ferramenta):
+   * Origem dos números:
    * - 'statusline': capturado ao vivo e gravado em ~/.habblaud/usage/<conta>.json pelo mod do Habblaud
    *   (mod/habblaud, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
    * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage);
-   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda).
+   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda);
+   * - 'cursor': `GetCurrentPeriodUsage` da API do Cursor (token em ~/.config/cursor/auth.json, só no host).
+   *   Para Cursor, `fiveHour` = Cursor Models (autoPercentUsed) e `sevenDay` = Other Models (apiPercentUsed).
    */
-  source: 'cache' | 'statusline' | 'codex';
+  source: 'cache' | 'statusline' | 'codex' | 'cursor';
   /** Quem gravou o arquivo ao vivo ('statusline'): o mod do Habblaud no Claude Code ou o tap de statusline. */
   via?: 'mod' | 'tap';
   /**

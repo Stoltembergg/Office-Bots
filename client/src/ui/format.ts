@@ -103,6 +103,8 @@ export function compactDuration(ms: number): string {
 
 export const FIVE_HOURS_MS = 5 * HOUR;
 export const WEEK_MS = 7 * DAY;
+/** Ciclo de billing do Cursor (~32 d) quando falta resetsAt. */
+export const BILLING_CYCLE_MS = 32 * DAY;
 
 /** Apresentação de uma janela de uso (5 h ou semana), já considerando a idade dos números. */
 export interface UsageWindowView {
@@ -222,6 +224,15 @@ export function prettyModel(model: string | undefined): string {
       .filter(Boolean)
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
     return [`GPT-${gpt[1]}`, ...words].join(' ');
+  }
+  // Cursor / xAI: "cursor-grok-4.5-high" / "grok-4.7-high-fast" -> "Grok 4.5 High" / "Grok 4.7 High Fast".
+  const grok = /^(?:cursor-)?grok-(.+)$/i.exec(model);
+  if (grok) {
+    const words = grok[1]
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map((w) => (/^\d+(?:\.\d+)?$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()));
+    return ['Grok', ...words].join(' ');
   }
   // Formatos: "claude-opus-5-5", "claude-sonnet-4-5-20250929", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022".
   const m = /claude-(?:(\d{1,2}(?:-\d{1,2})?)-)?([a-z]+)(?:-(\d{1,2})(?!\d)(?:-(\d{1,2})(?!\d))?)?/i.exec(model);
