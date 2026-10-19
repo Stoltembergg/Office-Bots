@@ -718,6 +718,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_TIMELINE` | ligado | `0` desliga a gravação da linha do tempo (os dias já gravados continuam no timelapse). No Docker fica sempre ligado. |
 | `HABBLAUD_USAGE_DIR` | `~/.habblaud/usage` | Onde o mod (ou o tap de statusline) grava o uso. |
 | `HABBLAUD_DEMO` | desligado | `1` liga o modo demonstração ao iniciar. |
+| `HABBLAUD_ROOM_TITLES` | desligado | `1` dá a cada sala o título da sessão (a do agente principal) em vez do nome da pasta. O nome que você der em Renomear continua valendo. |
 | `HABBLAUD_ALLOWED_HOSTS` | — | Nomes extras aceitos no endereço (ex.: `meu-mac.local`), além de `localhost` e IPs. |
 | `HABBLAUD_TERMINAL` | ligado (só com acesso local) | `0` desliga o terminal, responder e mandar mensagens pelo escritório e o editor de personagem. Com a porta exposta eles já ficam desligados, sem opção de ligar. |
 | `HABBLAUD_PTY` | desligado | `1` liga o terminal interativo (abrir, assumir e encerrar sessões do Claude Code pelo escritório; só com acesso local e fora do Docker) e o **Novo agente** (também no Docker, pelo `npm run codex:bridge`). Leia o aviso em [Privacidade e segurança](#privacidade-e-segurança). |
@@ -731,7 +732,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_LANG` | idioma do sistema (menos inglês), senão `pt-BR` | Idioma dos textos montados pelo servidor (atividades, avisos, logs): `pt-BR`, `en`, `es` ou `fr`. A interface segue o navegador ou a escolha em Configurações › Idioma. Ver [Idiomas](#idiomas). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
-**No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
+**No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_ROOM_TITLES`, `HABBLAUD_TERMINAL`,
 `HABBLAUD_MENSAGENS`, `HABBLAUD_CODEX`, `HABBLAUD_UPDATE_CHECK`, `HABBLAUD_LANG`, `HABBLAUD_PTY`, os `HABBLAUD_WORLD*` e os
 `HABBLAUD_REMOTE_*` (no `.env` ou no ambiente) e `HABBLAUD_CLAUDE_DIRS`, `HABBLAUD_CODEX_DIRS`, `HABBLAUD_USAGE_DIR` e
 `HABBLAUD_ACCOUNTS` (lidas pelo `docker:up` no host); as demais ficam fixas dentro do container. Opções: `npm run docker:up -- --no-build` (sobe sem reconstruir),

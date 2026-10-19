@@ -30,6 +30,7 @@ import { describeGitHubEvent, githubEventKey, RoomEffects, type GitHubEvent } fr
 import { hash32 } from '../../shared/hash';
 import { applyPermission } from '../permissions/registry';
 import type { NameStore, StoredCharacter } from './names';
+import { ROOM_NAME_MAX } from './room-aliases';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 import { tr } from '../../shared/i18n';
 import type { WorldMeta } from '../../shared/world/api';
@@ -56,6 +57,8 @@ export interface OfficeDeps {
   names: NameStore;
   /** Nome escolhido pelo usuário para a sala da pasta (model/room-aliases.ts), se houver. */
   roomAlias?: (path: string) => string | undefined;
+  /** Nomeia a sala com o título da sessão do agente principal quando não há apelido (HABBLAUD_ROOM_TITLES). */
+  roomTitles?: boolean;
   version: string;
   /** Build do cliente servido (ver OfficeSnapshot.meta.build); ausente no modo dev e nos testes. */
   build?: () => string | undefined;
@@ -668,7 +671,10 @@ export class Office {
       else info[k] = v;
       changed = true;
     };
-    if (info.kind === 'main') set('title', t.title);
+    if (info.kind === 'main') {
+      set('title', t.title);
+      if (changed && this.deps.roomTitles) this.recomputeRoomNames();
+    }
     set('tasks', t.tasks.map((x) => ({ ...x })));
     set('stats', { ...t.stats });
     set('model', t.model);
@@ -1050,9 +1056,19 @@ export class Office {
     for (const r of this.demoSnap?.rooms ?? []) paths.set(r.id, r.path);
     this.roomNames = roomDisplayNames(paths);
     for (const [id, path] of paths) {
-      const alias = this.deps.roomAlias?.(path);
+      const alias = this.deps.roomAlias?.(path) ?? (this.deps.roomTitles ? this.sessionRoomTitle(id) : undefined);
       if (alias) this.roomNames.set(id, alias);
     }
+  }
+
+  /** Título da sessão do agente principal da sala (a primeira a chegar, se houver várias), no lugar do nome da pasta. */
+  private sessionRoomTitle(roomId: string): string | undefined {
+    for (const { info } of this.agents.values()) {
+      if (info.roomId !== roomId || info.kind !== 'main' || !info.title) continue;
+      const title = info.title.replace(/\s+/g, ' ').trim();
+      return title.length > ROOM_NAME_MAX ? `${title.slice(0, ROOM_NAME_MAX - 1)}…` : title || undefined;
+    }
+    return undefined;
   }
 
   /** Um nome de sala mudou (renomear): recalcula e transmite. */

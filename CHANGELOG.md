@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Salas com o título da sessão (opcional).** Com `HABBLAUD_ROOM_TITLES=1`, cada sala usa o título da sessão do
+  agente principal (o mesmo da lista lateral) em vez do nome da pasta, o que ajuda nas sessões sem projeto, cujas
+  pastas têm nomes como `scratch-2026-10-18-ddf245`. O nome dado em Renomear continua valendo, e sem título a sala
+  mantém o nome da pasta. Desligado por padrão.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido

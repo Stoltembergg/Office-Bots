@@ -43,6 +43,8 @@ export interface ServerConfig {
   messages: boolean;
   /** Grava a linha do tempo do escritório para o timelapse (<dataDir>/timeline); HABBLAUD_TIMELINE=0 desliga. */
   timeline: boolean;
+  /** Nomeia cada sala com o título da sessão do agente principal, em vez do nome da pasta; HABBLAUD_ROOM_TITLES=1 liga. */
+  roomTitles: boolean;
   /** Raiz do projeto (onde fica o package.json); serve dist/client a partir daqui. */
   rootDir: string;
   version: string;
@@ -244,6 +246,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     terminal: terminalOffReason(env, host, inDocker) === undefined,
     messages: messagesOffReason(env, host, inDocker) === undefined,
     timeline: !env.HABBLAUD_TIMELINE?.trim() || isTruthy(env.HABBLAUD_TIMELINE),
+    roomTitles: isTruthy(env.HABBLAUD_ROOM_TITLES),
     rootDir,
     version: pkg.version,
     repo: pkg.repo,

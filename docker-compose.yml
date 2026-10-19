@@ -29,6 +29,7 @@ services:
     environment:
       HABBLAUD_ALLOWED_HOSTS: ${HABBLAUD_ALLOWED_HOSTS:-}
       HABBLAUD_DEMO: ${HABBLAUD_DEMO:-}
+      HABBLAUD_ROOM_TITLES: ${HABBLAUD_ROOM_TITLES:-}
       # O mesmo valor da porta publicada acima: o terminal (e o que age sobre as sessões) só liga com bind local.
       HABBLAUD_BIND: ${HABBLAUD_BIND:-127.0.0.1}
       HABBLAUD_TERMINAL: ${HABBLAUD_TERMINAL:-}

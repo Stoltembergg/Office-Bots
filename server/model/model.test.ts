@@ -8,7 +8,7 @@ import { NAME_POOL } from '../../shared/names';
 import { setQuiet } from '../log';
 import { tempDir } from '../test/fixtures';
 import { NameStore } from './names';
-import { DONE_GRACE_MS, Office, OFFLINE_GRACE_MS, SNAPSHOT_RECENT } from './office';
+import { DONE_GRACE_MS, Office, OFFLINE_GRACE_MS, SNAPSHOT_RECENT, type OfficeDeps } from './office';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 
 setQuiet(true);
@@ -200,7 +200,7 @@ describe('NameStore: personagem de cada sala', () => {
   });
 });
 
-function makeOffice(names = new NameStore(null)) {
+function makeOffice(names = new NameStore(null), extra: Partial<OfficeDeps> = {}) {
   let clock = 1_000_000;
   const office = new Office({
     names,
@@ -210,6 +210,7 @@ function makeOffice(names = new NameStore(null)) {
     sources: () => [],
     accountName: () => 'Conta C',
     now: () => clock,
+    ...extra,
   });
   return { office, names, advance: (ms: number) => (clock += ms), now: () => clock };
 }
@@ -217,6 +218,32 @@ function makeOffice(names = new NameStore(null)) {
 const act = (id: string, at: number, kind: Activity['kind'] = 'read'): Activity => ({ id, at, kind, icon: '📖', text: 'Lendo x' });
 
 describe('Office', () => {
+  it('com roomTitles, a sala usa o título da sessão do agente principal; sem título, o nome da pasta', () => {
+    const { office, now } = makeOffice(undefined, { roomTitles: true });
+    const scratch = '/Users/x/Library/Application Support/Claude/scratch-workspaces/a/b/scratch-2026-10-18-ddf245';
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: scratch, role: 'x', startedAt: now(), status: 'working' });
+    office.addMain({ id: 'acc:2', account: 'acc', sessionId: 's2', cwd: '/p/loja', role: 'x', startedAt: now(), status: 'working' });
+    expect(office.roomName(normalizeCwd(scratch))).toBe('scratch-2026-10-18-ddf245');
+    for (const id of ['acc:1', 'acc:2']) office.applyTranscript(id, { title: 'Desinstalar mod /office', tasks: [], stats: office.get(id)!.stats });
+    expect(office.roomName(normalizeCwd(scratch))).toBe('Desinstalar mod /office');
+    expect(office.roomName('/p/loja')).toBe('Desinstalar mod /office');
+    office.applyTranscript('acc:1', { title: `  ${'longo '.repeat(12)}`, tasks: [], stats: office.get('acc:1')!.stats });
+    const long = office.roomName(normalizeCwd(scratch));
+    expect(long.length).toBeLessThanOrEqual(40);
+    expect(long.endsWith('…')).toBe(true);
+  });
+
+  it('sem roomTitles a sala segue com o nome da pasta, e o apelido vence o título', () => {
+    const off = makeOffice();
+    off.office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/loja', role: 'x', startedAt: off.now(), status: 'working' });
+    off.office.applyTranscript('acc:1', { title: 'Carrinho de compras', tasks: [], stats: off.office.get('acc:1')!.stats });
+    expect(off.office.roomName('/p/loja')).toBe('loja');
+    const on = makeOffice(undefined, { roomTitles: true, roomAlias: (p) => (p === '/p/loja' ? 'Minha loja' : undefined) });
+    on.office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/loja', role: 'x', startedAt: on.now(), status: 'working' });
+    on.office.applyTranscript('acc:1', { title: 'Carrinho de compras', tasks: [], stats: on.office.get('acc:1')!.stats });
+    expect(on.office.roomName('/p/loja')).toBe('Minha loja');
+  });
+
   it('avisos com dedupe de 10 s e feed em lote', () => {
     const { office, advance, now } = makeOffice();
     office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/loja/', role: 'Agente principal', startedAt: now(), status: 'working' });
