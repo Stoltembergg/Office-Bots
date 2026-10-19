@@ -2116,7 +2116,7 @@
   font-size: 12.5px;
   color: #c9d1e2;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2274,7 +2274,7 @@
 .ui-now {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
-  align-items: center;
+  align-items: start;
   gap: 10px;
 }
 
@@ -2305,34 +2305,23 @@
   color: #ff9b8f;
 }
 
+.ui-now__detail {
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 120px;
+  overflow: auto;
+  border: 0;
+  background: transparent;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .ui-now__time {
   font-size: 11.5px;
   color: var(--ui-muted);
-}
-
-.ui-now__details {
-  margin-top: 8px;
-}
-
-.ui-now__details summary {
-  width: max-content;
-  font-size: 11.5px;
-  color: var(--ui-accent);
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.ui-now__details pre {
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  max-height: 160px;
-  overflow: auto;
-  border-radius: 7px;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid var(--ui-line);
-  color: #cfd7e8;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .ui-tasks {

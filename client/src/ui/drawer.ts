@@ -227,7 +227,7 @@ class AgentView {
   private actIcon: HTMLElement;
   private actText: HTMLElement;
   private actTime: HTMLElement;
-  private actDetails: HTMLDetailsElement;
+  /** Detalhe da atividade atual (comando, caminho, prompt…) — sempre visível em Agora quando houver. */
   private actDetail: HTMLElement;
   /** Mandar mensagem ao agente principal pelo Habblaud (plugin habblaud-mensagens). */
   private composer: MessageComposer;
@@ -333,10 +333,12 @@ class AgentView {
 
     this.actIcon = h('span', { class: 'ui-now__icon', attrs: { 'aria-hidden': 'true' } });
     this.actText = h('span', { class: 'ui-now__text' });
+    this.actDetail = h('pre', { class: 'ui-now__detail ui-mono' });
     this.actTime = h('span', { class: 'ui-now__time' });
-    this.actDetail = h('pre', { class: 'ui-mono' });
-    this.actDetails = h('details', { class: 'ui-now__details' }, h('summary', { text: 'Detalhes' }), this.actDetail);
-    const nowSec = section('Agora', h('div', { class: 'ui-now' }, this.actIcon, h('div', { class: 'ui-now__body' }, this.actText, this.actTime)), this.actDetails);
+    const nowSec = section(
+      'Agora',
+      h('div', { class: 'ui-now' }, this.actIcon, h('div', { class: 'ui-now__body' }, this.actText, this.actDetail, this.actTime)),
+    );
     this.composer = new MessageComposer(ctx, 'drawer');
     this.msgSec = section('Mandar mensagem', this.composer.el);
     this.social = new SocialSection(ctx);
@@ -422,7 +424,6 @@ class AgentView {
     this.tasks.clear();
     this.team.clear();
     this.shells.clear();
-    this.actDetails.open = false;
     const req = ++this.historyReq;
     this.ctx.store
       .agentHistory(id)
@@ -546,8 +547,10 @@ class AgentView {
     setText(this.actTime, act ? `${relativeTime(act.at, now)}${showDuration ? ` · levou ${formatDuration(act.durationMs!)}` : ''}` : '');
     this.actText.classList.toggle('is-error', !!act?.error);
     const detail = act?.detail ?? '';
-    setHidden(this.actDetails, !detail);
-    setText(this.actDetail, detail);
+    // Só mostra o detalhe quando acrescenta algo além do texto curto (evita repetir o mesmo conteúdo).
+    const showDetail = !!detail && detail.trim() !== (act?.text ?? '').trim();
+    setHidden(this.actDetail, !showDetail);
+    setText(this.actDetail, showDetail ? detail : '');
 
     // Mandar mensagem: só para principais presentes (com o recurso ligado e a página local; sem o plugin, a dica).
     setHidden(this.msgSec.el, this.composer.render(live, this.id) === 'off');
