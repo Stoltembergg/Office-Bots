@@ -499,7 +499,7 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
 Se você usa o **Cursor** (IDE com agente), os chats ativos entram no escritório como personagens da conta `.cursor` (chip **R** e nome **Cursor** nos detalhes do agente). O Habblaud acha sozinho `~/.cursor` (precisa existir a pasta `chats/`) e lê só `meta.json` de cada conversa e o *mtime* de `store.db` — **sem abrir o SQLite** — para saber quem está aberto, ocioso ou digitando (atividade recente). Título e sala vêm do `meta.json` (`cwd`); subagentes e chats sem pasta de projeto ficam de fora.
 
 - **Só observação (fase 1):** não há terminal, histórico, hooks nem responder/mandar mensagem pelo escritório para o Cursor; atividades detalhadas e “precisa de você” vêm em fases futuras (hooks/terminal).
-- **Presença:** chat com atividade nos últimos 30 min aparece; parado há mais tempo some do escritório. “Trabalhando” vs ocioso usa uma janela curta (5 min) em cima disso.
+- **Presença:** chat com atividade nos últimos 10 min aparece; parado há mais tempo some do escritório. “Trabalhando” vs ocioso usa uma janela curta (5 min) em cima disso.
 - **Desligar ou apontar pastas:** `HABBLAUD_CURSOR=0` desliga a fonte; `HABBLAUD_CURSOR_DIRS` ou `HABBLAUD_CURSOR_DIR` (vírgula) substituem a detecção automática de `~/.cursor`.
 
 ### GitHub no escritório
