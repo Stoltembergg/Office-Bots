@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expandHome } from '../../accounts/detect';
 
-export const CURSOR_RECENT_MS = 30 * 60_000;
+export const CURSOR_RECENT_MS = 10 * 60_000;
 /** Hot window for status `working` (vs idle while still present). */
 export const CURSOR_WORKING_MS = 5 * 60_000;
 

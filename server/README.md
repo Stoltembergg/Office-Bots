@@ -363,7 +363,7 @@ de fora. Uma conta `.cursor` no MVP (várias raízes em `HABBLAUD_CURSOR_DIRS` c
 
 - **Pastas** (`sources/cursor/files.ts`): `discoverCursorRoots` — padrão `~/.cursor` se existir `chats/`; `HABBLAUD_CURSOR_DIRS`
   (ou `HABBLAUD_CURSOR_DIR`) substituem. `HABBLAUD_CURSOR=0` desliga em `config.ts`.
-- **Presença** (`files.ts`, `source.ts`): atividade nos últimos `CURSOR_RECENT_MS` (30 min) = chat aberto; `working` vs
+- **Presença** (`files.ts`, `source.ts`): atividade nos últimos `CURSOR_RECENT_MS` (10 min) = chat aberto; `working` vs
   `idle` na janela `CURSOR_WORKING_MS` (5 min). Ausência por 1,5 s fecha o agente (mesma folga das outras fontes).
 - **Conta** (`sources/cursor/accounts.ts`): id `.cursor`, letra **R**, cor da paleta sem repetir Claude/Codex.
 - **Roadmap:** terminal, atividades por ferramenta, hooks e “precisa de você” para o Cursor ainda não estão implementados.
