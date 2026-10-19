@@ -16,6 +16,14 @@ do meio (0.**3**.0).
   interativo, Assumir daqui, os instaladores e o Novo agente. O acesso pelo celular funciona pelo IP (sem o
   anúncio `.local` automático). `npm run demo` passa a usar `--demo` (vale também fora do Windows); o CI roda
   no Ubuntu e no Windows.
+- **omp (oh-my-pi) no escritório:** as sessões do CLI `omp` entram na sala do projeto, como as do Claude Code e do
+  Codex, com atividade, título, modelo, tokens, subagentes e o selo **OMP**, lidas de `~/.omp/agent/sessions/` sem
+  instalar nada. `npm run omp:install` (e `omp:uninstall`, `omp:status`) põe a extensão do Habblaud no omp: status ao
+  vivo, saída em até 30 s se o processo morrer, **Mandar mensagem** (turno novo com o agente à toa, continuação com
+  ele trabalhando) e as aprovações no escritório: por padrão o personagem levanta a mão enquanto o omp pergunta no
+  terminal; com `HABBLAUD_OMP_PERMISSOES=1` (e `omp --approval-mode yolo`), terminal e escritório decidem juntos e
+  vale a primeira resposta. `HABBLAUD_OMP=0` desliga; `HABBLAUD_OMP_DIRS` escolhe as pastas; no Docker, o
+  `docker:up` monta só as `sessions/` do omp, somente leitura.
 
 ### Corrigido
 
