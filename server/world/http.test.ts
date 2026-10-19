@@ -258,6 +258,15 @@ describe('docker-compose.yml', () => {
     for (const key of read) expect(compose, key).toMatch(new RegExp(`^\\s+${key}: \\$\\{${key}:-\\}$`, 'm'));
   });
 
+  it('repassa ao container as variáveis do omp que o servidor lê (HABBLAUD_OMP e HABBLAUD_OMP_DIRS)', () => {
+    const compose = readFileSync(join(import.meta.dirname, '..', '..', 'docker-compose.yml'), 'utf8');
+    const config = readFileSync(join(import.meta.dirname, '..', 'config.ts'), 'utf8');
+    const accounts = readFileSync(join(import.meta.dirname, '..', 'sources', 'omp', 'accounts.ts'), 'utf8');
+    const read = [...new Set([...(config + accounts).matchAll(/env\.(HABBLAUD_OMP[A-Z_]*)/g)].map((m) => m[1]))].sort();
+    expect(read).toEqual(['HABBLAUD_OMP', 'HABBLAUD_OMP_DIRS']);
+    for (const key of read) expect(compose, key).toMatch(new RegExp(`^\\s+${key}: \\$\\{${key}:-\\}$`, 'm'));
+  });
+
   it('o container acha o host em host.docker.internal (servidor do mundo local, também no Linux)', () => {
     const compose = readFileSync(join(import.meta.dirname, '..', '..', 'docker-compose.yml'), 'utf8');
     // `\r?`: no Windows o checkout pode vir com CRLF (core.autocrlf).
