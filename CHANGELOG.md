@@ -10,6 +10,12 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Nova sessão escolhe a conta.** Com mais de uma conta do Claude Code, a gaveta da sala mostra, ao lado do botão
+  **Nova sessão**, um seletor com as contas pelo nome. Ele já vem na conta de quem está na sala (ou na padrão, com a
+  sala vazia), como antes; trocar a conta abre a sessão nela. Com uma conta só, nada muda.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido

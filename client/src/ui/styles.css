@@ -6741,7 +6741,8 @@ html.is-replay #world {
   margin-left: auto;
 }
 
-.ui-day__select {
+.ui-day__select,
+.ui-new-acc {
   height: 30px;
   min-width: 132px;
   padding: 0 30px 0 10px;
@@ -6756,7 +6757,8 @@ html.is-replay #world {
   cursor: pointer;
 }
 
-.ui-day__select:hover {
+.ui-day__select:hover,
+.ui-new-acc:hover {
   border-color: rgba(160, 176, 210, 0.36);
 }
 
@@ -6765,9 +6767,18 @@ html.is-replay #world {
   opacity: 0.75;
 }
 
-.ui-day__select option {
+.ui-day__select option,
+.ui-new-acc option {
   background: #141821;
   color: var(--ui-text);
+}
+
+/* Seletor de conta da Nova sessão: da altura dos botões ao lado, encolhe com o nome comprido. */
+.ui-new-acc {
+  height: 28px;
+  min-width: 0;
+  max-width: 220px;
+  text-overflow: ellipsis;
 }
 
 .ui-day__source {

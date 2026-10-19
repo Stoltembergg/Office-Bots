@@ -43,6 +43,7 @@ import { PermissionCard } from './permission';
 import { canRenameRoom } from './roomrename';
 import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, providerOf } from './provider';
 import { ptyControllable } from './ptyapi';
+import { newSessionAccounts } from './newsession';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
@@ -814,6 +815,9 @@ class RoomView {
   private feed: KeyedList<FeedItem>;
   private feedSec: ReturnType<typeof section>;
   private newBtn: HTMLButtonElement;
+  private newAcc: HTMLSelectElement;
+  /** Conta marcada no seletor da Nova sessão (vale até trocar de sala). */
+  private newAccPicked: string | undefined;
   private newMsg: HTMLElement;
 
   constructor(
@@ -821,6 +825,13 @@ class RoomView {
     private pty: PtyControl,
   ) {
     this.newBtn = h('button', { class: 'ui-btn', type: 'button', text: tr('Nova sessão'), title: tr('Abre um Claude Code novo nesta pasta, num terminal interativo'), on: { click: () => this.newSession() } });
+    this.newAcc = h('select', {
+      class: 'ui-new-acc',
+      attrs: { 'aria-label': tr('Conta da nova sessão') },
+      title: tr('Conta do Claude Code em que a nova sessão abre'),
+      hidden: true,
+      on: { change: () => (this.newAccPicked = this.newAcc.value) },
+    });
     this.newMsg = h('p', { class: 'ui-actions__msg is-error', role: 'status', hidden: true });
     this.swatch = h('span', { class: 'ui-room-hero__swatch', attrs: { 'aria-hidden': 'true' } });
     this.name = h('h2', { class: 'ui-hero__name' });
@@ -881,7 +892,7 @@ class RoomView {
         h('div', { class: 'ui-hero__text' }, h('div', { class: 'ui-room-hero__title' }, this.name, this.renameBtn), h('span', { class: 'ui-copy-row' }, this.path, copyButton(() => this.last?.path ?? '', tr('Copiar caminho')))),
       ),
       this.gone,
-      h('div', { class: 'ui-status' }, accsEl, h('span', { class: 'ui-status__actions' }, this.newBtn, centerBtn)),
+      h('div', { class: 'ui-status' }, accsEl, h('span', { class: 'ui-status__actions' }, this.newAcc, this.newBtn, centerBtn)),
       this.newMsg,
       this.agentsSec.el,
       this.tasksSec.el,
@@ -897,8 +908,8 @@ class RoomView {
   private newSession(): void {
     const r = this.last;
     if (!r) return;
-    // Só conta do Claude Code (nem Codex nem demo); sem nenhuma na sala, o servidor usa a padrão.
-    const account = (this.ctx.store.snapshot?.agents ?? []).find((a) => a.roomId === r.id && ptyControllable(a))?.account;
+    // Com o seletor à mostra, vale a conta dele; senão a de quem estiver na sala (sem ninguém, o servidor usa a padrão).
+    const account = this.newAcc.hidden ? this.roomAccount(r.id) : this.newAcc.value || undefined;
     setHidden(this.newMsg, true);
     this.pty.newSession(r.path, account).catch((err: Error) => {
       setText(this.newMsg, tr('Não deu: {0}', [err.message]));
@@ -906,9 +917,29 @@ class RoomView {
     });
   }
 
+  /** Conta do Claude Code de quem está na sala (nem Codex nem demo). */
+  private roomAccount(roomId: string): string | undefined {
+    return (this.ctx.store.snapshot?.agents ?? []).find((a) => a.roomId === roomId && ptyControllable(a))?.account;
+  }
+
+  /** Seletor de conta da Nova sessão: só aparece com o terminal ligado e mais de uma conta do Claude Code. */
+  private renderNewAccount(roomId: string): void {
+    const { options, value } = newSessionAccounts(this.ctx.store.snapshot?.accounts ?? [], this.roomAccount(roomId), this.newAccPicked);
+    const show = this.pty.enabled && options.length > 1;
+    setHidden(this.newAcc, !show);
+    if (!show) return;
+    const labels = options.map((a) => accountChipLabel(a, a.id, 'claude'));
+    const cur = [...this.newAcc.options];
+    if (cur.length !== options.length || cur.some((o, i) => o.value !== options[i].id || o.text !== labels[i])) {
+      this.newAcc.replaceChildren(...options.map((a, i) => h('option', { text: labels[i], attrs: { value: a.id } })));
+    }
+    if (value !== undefined && this.newAcc.value !== value) this.newAcc.value = value;
+  }
+
   open(id: string): void {
     if (this.id === id) return;
     this.id = id;
+    this.newAccPicked = undefined;
     this.last = null;
     this.agents.clear();
     this.tasks.clear();
@@ -931,6 +962,7 @@ class RoomView {
     setHidden(this.gone, !!live);
     setHidden(this.renameBtn, !live || !canRenameRoom(this.ctx, r.id));
     setHidden(this.newBtn, !this.pty.enabled);
+    this.renderNewAccount(r.id);
 
     const snap = this.ctx.store.snapshot;
     const agents = (snap?.agents ?? []).filter((a) => a.roomId === r.id);
