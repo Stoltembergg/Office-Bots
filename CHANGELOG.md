@@ -10,6 +10,12 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Contagem regressiva no idioma escolhido.** Em inglês, espanhol e francês, a contagem até o reinício do uso (e as
+  outras contagens regressivas) saía com o "em" em português ("resets at 18:50 (em 3 h 52 min)"); em francês, as
+  durações de dias usavam "d" no lugar de "j".
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
