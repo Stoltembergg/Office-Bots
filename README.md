@@ -631,7 +631,11 @@ Codex account chip is hollow and carries the **CODEX** tag.
 
 omp sessions show up like Claude Code's: character, project room, activity, title, model, tokens,
 subagents (omp's `task`) and terminal. The omp account chip is hollow, with the top corners cut off, and carries the
-**OMP** tag. There's no 5-hour and weekly usage: omp doesn't report it.
+**OMP** tag. At the top, the omp account card shows the 5-hour and weekly usage of the provider of the model in use
+(e.g. Anthropic), read from `omp usage --json` every 5 min while an omp session is open — omp queries the provider,
+with its own credentials and cache; Habblaud only runs the command. A provider without these windows (Ollama, free
+Codex) shows up as "no 5 h or weekly usage". `HABBLAUD_OMP_USAGE=0` turns it off; `HABBLAUD_OMP_BIN` points to the
+executable; in Docker it's always off.
 
 - **Without installing anything**, Habblaud reads the files omp writes in `~/.omp/agent/sessions/`. The session joins the
   office with the first record in the file and leaves when omp writes the end-of-session record. If the process dies without
@@ -781,6 +785,8 @@ Everything works without configuring anything. If you need to adjust something, 
 | `HABBLAUD_CODEX_BIN` | `codex` from PATH (on Windows, `codex.exe`) | The Codex binary that delivers the messages (`codex queue`), in Node mode or in `npm run codex:bridge`. |
 | `HABBLAUD_OMP` | on | `0` turns off omp (oh-my-pi) in the office. |
 | `HABBLAUD_OMP_DIRS` | automatic detection | omp folders, comma-separated (in place of `PI_CODING_AGENT_DIR` and `~/.omp/agent`). |
+| `HABBLAUD_OMP_USAGE` | on (off in Docker) | `0` turns off the plan usage of omp accounts (Habblaud stops running `omp usage --json`). |
+| `HABBLAUD_OMP_BIN` | `omp` from PATH, otherwise `~/.bun/bin/omp` | The omp executable used for plan usage (a path or a name on the PATH). |
 | `HABBLAUD_OMP_PERMISSOES` | off | In **omp's** environment, not Habblaud's: `1` makes the extension decide tools through the office (use with `omp --approval-mode yolo`). See [omp (oh-my-pi)](#omp-oh-my-pi). |
 | `HABBLAUD_UPDATE_CHECK` | on | `0` turns off the new-version check (a request to the repository's releases on GitHub every 6 h). |
 | `HABBLAUD_LANG` | system language (except English), otherwise `pt-BR` | Language of the texts the server builds (activities, notices, logs): `pt-BR`, `en`, `es` or `fr`. The interface follows the browser or the choice in Settings › Language. See [Languages](#languages). |
@@ -1000,6 +1006,9 @@ metadata (letter, email, organization) is read on the host by `docker:up` and pa
   account and sign in, and only what is listed in [what leaves your computer](docs/world/privacidade.md) (in Portuguese);
   `HABBLAUD_WORLD=0` turns it all off.
   So is the [phone with login](#phone-with-login-and-https-approving-requests), which only exists after `npm run remote:setup`.
+  With [omp](#omp-oh-my-pi), Habblaud runs `omp usage --json` for the account's usage card: omp is the one querying the
+  providers (Anthropic, OpenAI…), with its own credentials and cache; Habblaud only reads the reply and drops the
+  e-mails and ids that come with it. `HABBLAUD_OMP_USAGE=0` turns it off.
 - **No credentials:** Habblaud doesn't read passwords or access tokens. From each account's `.claude.json` it only uses the
   email, the organization and the `/usage` cache; live usage comes from the mod (or the statusline tap).
 - **Masked secrets:** tokens and passwords in known formats (`Bearer`, `-u usuário:senha`, `TOKEN=`, `sk-…`,

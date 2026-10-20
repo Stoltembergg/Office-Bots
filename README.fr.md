@@ -662,7 +662,11 @@ seulement : Codex n'indique pas le coût). La pastille du compte Codex est évid
 
 Les sessions omp apparaissent comme celles de Claude Code : personnage, salle du projet, activité, titre, modèle, tokens,
 sous-agents (les `task` d'omp) et terminal. La pastille du compte omp est évidée, avec les coins du haut coupés, et porte
-le badge **OMP**. Il n'y a pas d'utilisation sur 5 heures et sur la semaine : omp ne l'indique pas.
+le badge **OMP**. En haut, la carte du compte omp affiche l'utilisation sur 5 heures et sur la semaine du fournisseur du
+modèle utilisé (par ex. Anthropic), lue dans `omp usage --json` toutes les 5 min tant qu'une session omp est ouverte —
+c'est omp qui interroge le fournisseur, avec ses identifiants et son cache ; Habblaud ne fait que lancer la commande. Un
+fournisseur sans ces fenêtres (Ollama, Codex gratuit) apparaît comme « pas d'utilisation sur 5 h ni sur la semaine ».
+`HABBLAUD_OMP_USAGE=0` la désactive ; `HABBLAUD_OMP_BIN` indique l'exécutable ; dans Docker, elle est toujours désactivée.
 
 - **Sans rien installer**, Habblaud lit les fichiers qu'omp écrit dans `~/.omp/agent/sessions/`. La session entre dans le
   bureau avec le premier enregistrement du fichier et sort quand omp écrit la clôture. Si le processus meurt sans clôturer
@@ -819,6 +823,8 @@ Tout fonctionne sans rien configurer. Si vous avez besoin d'ajuster quelque chos
 | `HABBLAUD_CODEX_BIN` | `codex` du PATH (sous Windows, `codex.exe`) | Le binaire de Codex qui remet les messages (`codex queue`), en mode Node ou dans `npm run codex:bridge`. |
 | `HABBLAUD_OMP` | activé | `0` désactive omp (oh-my-pi) dans le bureau. |
 | `HABBLAUD_OMP_DIRS` | détection automatique | Dossiers d'omp, séparés par des virgules (à la place de `PI_CODING_AGENT_DIR` et `~/.omp/agent`). |
+| `HABBLAUD_OMP_USAGE` | activé (désactivé dans Docker) | `0` désactive l'utilisation du forfait des comptes omp (Habblaud ne lance plus `omp usage --json`). |
+| `HABBLAUD_OMP_BIN` | `omp` du PATH, sinon `~/.bun/bin/omp` | L'exécutable d'omp utilisé pour l'utilisation du forfait (un chemin ou un nom dans le PATH). |
 | `HABBLAUD_OMP_PERMISSOES` | désactivé | Dans l'environnement **d'omp**, pas celui de Habblaud : `1` fait décider les outils par l'extension depuis le bureau (à utiliser avec `omp --approval-mode yolo`). Voir [omp (oh-my-pi)](#omp-oh-my-pi). |
 | `HABBLAUD_UPDATE_CHECK` | activé | `0` désactive la vérification de nouvelle version (une requête aux releases du dépôt sur GitHub toutes les 6 h). |
 | `HABBLAUD_LANG` | langue du système (sauf l'anglais), sinon `pt-BR` | Langue des textes générés par le serveur (activités, alertes, journaux) : `pt-BR`, `en`, `es` ou `fr`. L'interface suit le navigateur ou le choix fait dans Réglages › Langue. Voir [Langues](#langues). |
@@ -1047,6 +1053,9 @@ avec `no-new-privileges`. Les métadonnées des comptes (lettre, e-mail, organis
   du compte et l'ouverture de session, et seulement ce qui figure dans [ce qui sort](docs/world/privacidade.md) (en
   portugais) ; `HABBLAUD_WORLD=0` désactive tout.
   Le [téléphone avec connexion](#téléphone-avec-connexion-et-https-valider-les-demandes) aussi : il n'existe qu'après `npm run remote:setup`.
+  Avec [omp](#omp-oh-my-pi), Habblaud lance `omp usage --json` pour la carte d'utilisation du compte : c'est omp qui
+  interroge les fournisseurs (Anthropic, OpenAI…), avec ses propres identifiants et son cache ; Habblaud ne fait que
+  lire la réponse et écarte les e-mails et identifiants qui l'accompagnent. `HABBLAUD_OMP_USAGE=0` la désactive.
 - **Sans identifiants :** Habblaud ne lit ni mots de passe ni tokens d'accès. Du `.claude.json` de chaque compte, il
   n'utilise que l'e-mail, l'organisation et le cache de `/usage` ; l'utilisation en direct vient du mod (ou de la
   dérivation de statusline).
