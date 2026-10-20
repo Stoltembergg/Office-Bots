@@ -3273,4 +3273,30 @@ export const EN: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Stamp left at the front desk: {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Go into the building or get closer to the door to stamp.",
   "O carimbo não foi deixado. Tente de novo.": "The stamp wasn't left. Try again.",
+
+  // server/config.ts
+  "HABBLAUD_OPENCODE_URL recusada: não é uma URL. OpenCode desligado.": "HABBLAUD_OPENCODE_URL refused: not a URL. OpenCode is off.",
+  "HABBLAUD_OPENCODE_URL recusada: use http:// ou https://. OpenCode desligado.": "HABBLAUD_OPENCODE_URL refused: use http:// or https://. OpenCode is off.",
+  "HABBLAUD_OPENCODE_URL recusada: só a origem (http://127.0.0.1:4096), sem usuário, caminho nem parâmetros. OpenCode desligado.": "HABBLAUD_OPENCODE_URL refused: origin only (http://127.0.0.1:4096), no user, path or query. OpenCode is off.",
+  "erro de leitura": "read error",
+  "HABBLAUD_OPENCODE_PASSWORD_FILE não pôde ser lido ({0}). OpenCode desligado.": "HABBLAUD_OPENCODE_PASSWORD_FILE could not be read ({0}). OpenCode is off.",
+
+  // server/index.ts
+  "   OpenCode: ligado em {0} ({1}).": "   OpenCode: on at {0} ({1}).",
+  "com senha": "with password",
+  "sem senha": "no password",
+
+  // server/sources/opencode/client.ts
+  "resposta sem corpo": "response without body",
+  "evento grande demais": "event too large",
+
+  // server/sources/opencode/source.ts
+  "Agente principal (OpenCode)": "Main agent (OpenCode)",
+  "Subagente (OpenCode)": "Subagent (OpenCode)",
+  "o servidor fechou a conexão de eventos": "the server closed the event connection",
+  "OpenCode ({0}): conectado (versão {1}).": "OpenCode ({0}): connected (version {1}).",
+  "OpenCode ({0}): sem resposta ({1}). Tentando de novo.": "OpenCode ({0}): no response ({1}). Trying again.",
+  "OpenCode: falha na varredura: {0}": "OpenCode: scan failed: {0}",
+  "senha recusada ({0})": "password refused ({0})",
+  "sem dados por muito tempo": "no data for a long time",
 };

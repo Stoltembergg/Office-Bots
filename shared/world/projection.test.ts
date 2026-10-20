@@ -322,6 +322,25 @@ describe('projeção: regras', () => {
     expect(agentsOf(u).map((a) => a.provider).sort()).toEqual(['claude', 'codex']);
   });
 
+  it('agentes do OpenCode ficam fora (principal, subagente e os de uma sala mista): nada deles sai, nem id nem andar', () => {
+    const rooms = [room('/p/claude'), room('/p/opencode')];
+    const agents = [
+      agent('m1', '/p/claude'),
+      agent('s1', '/p/claude', { kind: 'sub', parentId: 'm1' }),
+      agent('oc1', '/p/opencode', { provider: 'opencode' }),
+      agent('oc2', '/p/opencode', { kind: 'sub', provider: 'opencode', parentId: 'oc1' }),
+      agent('oc3', '/p/claude', { provider: 'opencode' }),
+    ];
+    const ids = new FakeIds();
+    const u = project(input(rooms, agents), ids, NOW);
+    expect(validate(u)).toEqual([]);
+    expect(agentsOf(u).map((a) => a.provider).sort()).toEqual(['claude', 'claude']);
+    expect(u.floors).toHaveLength(1);
+    expect(ids.calls.some((c) => c.startsWith('oc'))).toBe(false);
+    expect(ids.calls).not.toContain('/p/opencode');
+    expect(JSON.stringify(u)).not.toContain('/p/opencode');
+  });
+
   it('tokens só com tokensVisible, arredondados a 2 algarismos', () => {
     const base = input([room('/p/a')], [agent('m1', '/p/a')], { tokens: { day: 1_234_567, week: 98_765_432.7 } });
     expect(project(base, new FakeIds(), NOW).tokens).toEqual({ day: 1_200_000, week: 99_000_000 });

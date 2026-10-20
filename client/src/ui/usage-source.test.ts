@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountInfo } from '../../../shared/types';
-import { cardState, codexUsageNote, showsUsageAge, sourceLabel, usageMessage, usageSubtitle } from './usage';
+import { cardState, codexUsageNote, showsUsageAge, sourceLabel, usageCardAccounts, usageMessage, usageSubtitle } from './usage';
 
 const MIN = 60_000;
 type Acc = Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider' | 'email' | 'plan' | 'configDir'>;
@@ -48,5 +48,16 @@ describe('cartão de uso de uma conta do Codex', () => {
     expect(usageSubtitle({ email: 'a@b.c', configDir: '~/.claude' })).toBe('a@b.c');
     expect(usageSubtitle({ configDir: '~/.claude' })).toBe('~/.claude');
     expect(codexUsageNote({ usageStatus: 'ok' }, 0)).toBe('');
+  });
+});
+
+describe('painel de uso', () => {
+  it('a conta do OpenCode não ganha cartão (nem o "Como ativar" do mod)', () => {
+    const accounts = [
+      { id: '.claude', provider: 'claude' as const },
+      { id: 'opencode', provider: 'opencode' as const },
+      { id: '.codex', provider: 'codex' as const },
+    ];
+    expect(usageCardAccounts(accounts).map((a) => a.id)).toEqual(['.claude', '.codex']);
   });
 });

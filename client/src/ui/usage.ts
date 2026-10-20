@@ -201,6 +201,11 @@ export function codexUsageNote(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'p
   return tr('O Codex só grava o uso enquanto alguma sessão roda: estes números são da última leitura ({0}).', [age]);
 }
 
+/** Contas com cartão de uso. As do OpenCode ficam de fora: o uso delas não vem do Claude Code, e o cartão ofereceria o "Como ativar" do mod. */
+export function usageCardAccounts<T extends Pick<AccountInfo, 'provider'>>(accounts: readonly T[]): T[] {
+  return accounts.filter((a) => a.provider !== 'opencode');
+}
+
 export class UsageCards {
   readonly el: HTMLElement;
   private list: KeyedList<AccountInfo>;
@@ -218,7 +223,7 @@ export class UsageCards {
   }
 
   render(): void {
-    const accounts = this.ctx.store.snapshot?.accounts ?? [];
+    const accounts = usageCardAccounts(this.ctx.store.snapshot?.accounts ?? []);
     this.list.sync(accounts);
     this.el.classList.toggle('is-empty', accounts.length === 0);
     setStyleVar(this.el, '--count', String(accounts.length));

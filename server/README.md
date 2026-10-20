@@ -355,6 +355,16 @@ do Codex levam `provider: 'codex'` (ausente = Claude Code). Ids: `<conta>:<threa
   `/ack` (mesma trava das mensagens). `canMessage` = há entregador (binário achado, ou auxiliar visto há até 10 s).
   Retorno 0 = entrou na fila da sessão (`delivered`); o Codex consome a fila a cada ~10 s, quando a sessão fica ociosa.
 
+## OpenCode
+
+Ligado só com `HABBLAUD_OPENCODE_URL`. A fonte (`sources/opencode/`, `provider: 'opencode'`) é só leitura: `GET /api/info`, `/api/session`, `/api/session/active`, `/api/session/:id` e o SSE `GET /api/event`, com basic auth `opencode:<senha>` quando há senha (`HABBLAUD_OPENCODE_PASSWORD_FILE` vence `HABBLAUD_OPENCODE_PASSWORD`). Nada é escrito no servidor.
+
+- **Boot**: `beginBoot`/`endBoot` em volta de `/api/session/active` e das sessões recentes (as mais novas primeiro; paradas há mais de 30 min ficam de fora). Sessão rodando que não veio na lista é buscada pelo id.
+- **Ao vivo**: o SSE alimenta `session.created`/`deleted`/`renamed`, `session.execution.*`, `session.step.*` (tokens), `session.tool.*` e `session.text.ended`. Evento de sessão desconhecida dispara `GET /api/session/:id`.
+- **Sessões** viram agentes principais na sala do `location.directory`. `parentID` (ou `metadata.ocgo.thread`) faz o subagente sair do principal; se `thread` for o id de uma sessão do Claude Code que já está no escritório, o subagente fica sob ela (decidido na entrada). Subagente que termina manda o 📦.
+- **Queda**: a primeira falha avisa uma vez; os agentes saem depois de 15 s sem servidor e voltam com ele. A espera de reconexão cresce de 1 s a 30 s; stream mudo por 120 s conta como queda.
+- `transcriptPathOf` é `undefined` (não há transcrição no disco). O terminal fica para a próxima etapa.
+
 ## Habblaud World
 
 Ligado por padrão, apontando para `server.habblaud.com` (`DEFAULT_WORLD_URL` em `config.ts`); nada sai do computador
@@ -484,6 +494,9 @@ em `shared/world/city.ts` (fonte da verdade; o servidor do mundo guarda a cópia
 | `HABBLAUD_CODEX` | ligado | `0` desliga a fonte do Codex |
 | `HABBLAUD_CODEX_DIRS` | — | pastas do Codex separadas por vírgula; substitui a detecção (`CODEX_HOME` e `~/.codex*`) |
 | `HABBLAUD_CODEX_BIN` | `codex` do PATH | binário do Codex para o `codex queue` (modo Node e `npm run codex:bridge`) |
+| `HABBLAUD_OPENCODE_URL` | — | origem do `opencode serve` (por exemplo `http://127.0.0.1:4096`); sem ela o OpenCode fica desligado. Só a origem: sem usuário, caminho nem parâmetros |
+| `HABBLAUD_OPENCODE_PASSWORD_FILE` | — | arquivo com a senha do servidor (basic auth, usuário `opencode`); vence `HABBLAUD_OPENCODE_PASSWORD` |
+| `HABBLAUD_OPENCODE_PASSWORD` | — | senha do servidor, quando não há arquivo |
 | `HABBLAUD_MENSAGENS` | ligado (com o terminal) | `0`, `false`, `off` ou `no` desligam só as mensagens pelo escritório |
 | `HABBLAUD_CLAUDE_DIRS` | — | config dirs separados por vírgula; substitui a detecção (`~/.claude*` com `projects/` ou `sessions/` + `CLAUDE_CONFIG_DIR`) |
 | `HABBLAUD_DATA_DIR` | `~/.habblaud` (Docker: `/data`) | estado do Habblaud (nomes e personagens dos projetos persistidos em `names.json`, linha do tempo em `timeline/`, estatísticas do Meu dia em `stats/`, última verificação de versão em `updates.json`) |

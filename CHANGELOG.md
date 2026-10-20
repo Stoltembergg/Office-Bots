@@ -10,6 +10,10 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Novo
+
+- **OpenCode no escritório (opcional).** Com `HABBLAUD_OPENCODE_URL` apontando para o `opencode serve`, as sessões dele entram no escritório como agentes principais, na sala da pasta do projeto, e os subagentes como subagentes do principal, com as atividades das ferramentas. Se o servidor cai, os agentes saem e voltam quando ele volta, sem poluir o log. Só leitura por enquanto e desligado por padrão.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido

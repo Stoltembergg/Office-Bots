@@ -3274,4 +3274,30 @@ export const ES: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Sello dejado en la recepción: {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Entra al edificio o acércate más a la puerta para sellar.",
   "O carimbo não foi deixado. Tente de novo.": "El sello no se dejó. Inténtalo de nuevo.",
+
+  // server/config.ts
+  "HABBLAUD_OPENCODE_URL recusada: não é uma URL. OpenCode desligado.": "HABBLAUD_OPENCODE_URL rechazada: no es una URL. OpenCode desactivado.",
+  "HABBLAUD_OPENCODE_URL recusada: use http:// ou https://. OpenCode desligado.": "HABBLAUD_OPENCODE_URL rechazada: usa http:// o https://. OpenCode desactivado.",
+  "HABBLAUD_OPENCODE_URL recusada: só a origem (http://127.0.0.1:4096), sem usuário, caminho nem parâmetros. OpenCode desligado.": "HABBLAUD_OPENCODE_URL rechazada: solo el origen (http://127.0.0.1:4096), sin usuario, ruta ni parámetros. OpenCode desactivado.",
+  "erro de leitura": "error de lectura",
+  "HABBLAUD_OPENCODE_PASSWORD_FILE não pôde ser lido ({0}). OpenCode desligado.": "HABBLAUD_OPENCODE_PASSWORD_FILE no se pudo leer ({0}). OpenCode desactivado.",
+
+  // server/index.ts
+  "   OpenCode: ligado em {0} ({1}).": "   OpenCode: activo en {0} ({1}).",
+  "com senha": "con contraseña",
+  "sem senha": "sin contraseña",
+
+  // server/sources/opencode/client.ts
+  "resposta sem corpo": "respuesta sin cuerpo",
+  "evento grande demais": "evento demasiado grande",
+
+  // server/sources/opencode/source.ts
+  "Agente principal (OpenCode)": "Agente principal (OpenCode)",
+  "Subagente (OpenCode)": "Subagente (OpenCode)",
+  "o servidor fechou a conexão de eventos": "el servidor cerró la conexión de eventos",
+  "OpenCode ({0}): conectado (versão {1}).": "OpenCode ({0}): conectado (versión {1}).",
+  "OpenCode ({0}): sem resposta ({1}). Tentando de novo.": "OpenCode ({0}): sin respuesta ({1}). Reintentando.",
+  "OpenCode: falha na varredura: {0}": "OpenCode: falló el escaneo: {0}",
+  "senha recusada ({0})": "contraseña rechazada ({0})",
+  "sem dados por muito tempo": "sin datos durante mucho tiempo",
 };

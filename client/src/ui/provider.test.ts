@@ -71,6 +71,13 @@ describe('ferramenta (Claude Code ou Codex)', () => {
     expect(emptyOfficeHint([])).toBe('Abra o Claude Code em qualquer projeto e veja seu agente chegar.');
   });
 
+  it('escritório vazio: a conta do OpenCode não entra nos atalhos (a dica não muda por causa dela)', () => {
+    const c = { short: 'C' };
+    const o = { short: 'O', provider: 'opencode' as const };
+    expect(emptyOfficeHint([c, o])).toBe(emptyOfficeHint([c]));
+    expect(emptyOfficeHint([o])).toBe(emptyOfficeHint([]));
+  });
+
   it('relógio de 1 s enquanto há pedido do Codex esperando', () => {
     const agent = (permission?: AgentInfo['permission'], status: AgentInfo['status'] = 'waiting') => ({ status, permission }) as AgentInfo;
     const p = { id: 'p', tool: 'Bash', title: 'Bash(ls)', text: 'Listando', icon: '💻', createdAt: 0, expiresAt: 25_000 };

@@ -3290,4 +3290,30 @@ export const FR: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Tampon laissé à l'accueil : {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Entrez dans l'immeuble ou approchez-vous de la porte pour tamponner.",
   "O carimbo não foi deixado. Tente de novo.": "Le tampon n'a pas été laissé. Réessayez.",
+
+  // server/config.ts
+  "HABBLAUD_OPENCODE_URL recusada: não é uma URL. OpenCode desligado.": "HABBLAUD_OPENCODE_URL refusée : ce n'est pas une URL. OpenCode désactivé.",
+  "HABBLAUD_OPENCODE_URL recusada: use http:// ou https://. OpenCode desligado.": "HABBLAUD_OPENCODE_URL refusée : utilisez http:// ou https://. OpenCode désactivé.",
+  "HABBLAUD_OPENCODE_URL recusada: só a origem (http://127.0.0.1:4096), sem usuário, caminho nem parâmetros. OpenCode desligado.": "HABBLAUD_OPENCODE_URL refusée : seule l'origine (http://127.0.0.1:4096), sans utilisateur, chemin ni paramètres. OpenCode désactivé.",
+  "erro de leitura": "erreur de lecture",
+  "HABBLAUD_OPENCODE_PASSWORD_FILE não pôde ser lido ({0}). OpenCode desligado.": "HABBLAUD_OPENCODE_PASSWORD_FILE n'a pas pu être lu ({0}). OpenCode désactivé.",
+
+  // server/index.ts
+  "   OpenCode: ligado em {0} ({1}).": "   OpenCode : activé sur {0} ({1}).",
+  "com senha": "avec mot de passe",
+  "sem senha": "sans mot de passe",
+
+  // server/sources/opencode/client.ts
+  "resposta sem corpo": "réponse sans corps",
+  "evento grande demais": "événement trop volumineux",
+
+  // server/sources/opencode/source.ts
+  "Agente principal (OpenCode)": "Agent principal (OpenCode)",
+  "Subagente (OpenCode)": "Sous-agent (OpenCode)",
+  "o servidor fechou a conexão de eventos": "le serveur a fermé la connexion d'événements",
+  "OpenCode ({0}): conectado (versão {1}).": "OpenCode ({0}) : connecté (version {1}).",
+  "OpenCode ({0}): sem resposta ({1}). Tentando de novo.": "OpenCode ({0}) : pas de réponse ({1}). Nouvelle tentative.",
+  "OpenCode: falha na varredura: {0}": "OpenCode : échec de l'analyse : {0}",
+  "senha recusada ({0})": "mot de passe refusé ({0})",
+  "sem dados por muito tempo": "aucune donnée depuis longtemps",
 };

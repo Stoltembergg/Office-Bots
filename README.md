@@ -228,6 +228,10 @@ Then **open Codex and approve the Habblaud hooks in `/hooks`**: Codex only runs 
 approve it (Habblaud never writes that approval). With Habblaud in Docker, to send messages to Codex sessions,
 also keep `npm run codex:bridge` running on the Mac (see [Codex](#codex)).
 
+### 5. OpenCode in the office (optional)
+
+If you run [OpenCode](https://opencode.ai) as a server (`opencode serve`), its sessions join the office as main agents (in the room of their project folder), and their subagents as subagents of the main one. To turn it on, set `HABBLAUD_OPENCODE_URL` (e.g. `http://127.0.0.1:4096`) and, if the server has a password, `HABBLAUD_OPENCODE_PASSWORD_FILE` (or `HABBLAUD_OPENCODE_PASSWORD`); see [Configuration](#configuration). For now Habblaud only reads from the server. When it goes away, the agents leave the office and come back when it returns. It isn't wired into Docker yet: use Node mode.
+
 ### Open on your phone (optional)
 
 By default Habblaud only accepts connections from the computer it runs on. To open it on your phone (on the same Wi-Fi), with Docker:
@@ -729,6 +733,9 @@ Everything works without configuring anything. If you need to adjust something, 
 | `HABBLAUD_CODEX` | on | `0` turns off Codex in the office. |
 | `HABBLAUD_CODEX_DIRS` | automatic detection | Codex folders, comma-separated (instead of `~/.codex*` and `CODEX_HOME`). |
 | `HABBLAUD_CODEX_BIN` | `codex` from PATH (on Windows, `codex.exe`) | The Codex binary that delivers the messages (`codex queue`), in Node mode or in `npm run codex:bridge`. |
+| `HABBLAUD_OPENCODE_URL` | off | Address of the `opencode serve` server (e.g. `http://127.0.0.1:4096`), in Node mode. Origin only: no user, path or query. Without it, OpenCode stays off. |
+| `HABBLAUD_OPENCODE_PASSWORD_FILE` | — | File with the server password (basic auth, user `opencode`). Read when Habblaud starts; it wins over `HABBLAUD_OPENCODE_PASSWORD`. |
+| `HABBLAUD_OPENCODE_PASSWORD` | — | The server password, when there's no file. |
 | `HABBLAUD_UPDATE_CHECK` | on | `0` turns off the new-version check (a request to the repository's releases on GitHub every 6 h). |
 | `HABBLAUD_LANG` | system language (except English), otherwise `pt-BR` | Language of the texts the server builds (activities, notices, logs): `pt-BR`, `en`, `es` or `fr`. The interface follows the browser or the choice in Settings › Language. See [Languages](#languages). |
 | `HABBLAUD_ACCOUNTS` | — | JSON to customize name, letter or color, matched by the account folder name. E.g. `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |

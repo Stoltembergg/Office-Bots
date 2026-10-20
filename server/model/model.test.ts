@@ -425,6 +425,15 @@ describe('Office', () => {
     expect(office.get('acc:1')!.shells).toBeUndefined();
   });
 
+  it('subagente com conta própria (OpenCode sob um agente do Claude Code) leva a dela; sem ela, a do pai', () => {
+    const { office, now } = makeOffice();
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: now(), status: 'working' });
+    office.addSub({ id: 's1:own', parentId: 'acc:1', sessionId: 's1', role: 'Explore', background: false, startedAt: now(), account: 'opencode' });
+    office.addSub({ id: 's1:par', parentId: 'acc:1', sessionId: 's1', role: 'Plan', background: false, startedAt: now() });
+    expect(office.get('s1:own')?.account).toBe('opencode');
+    expect(office.get('s1:par')?.account).toBe('acc');
+  });
+
   it('subagente concluído fica 25 s; principal offline fica 20 s e leva a sala junto', () => {
     const { office, advance, now } = makeOffice();
     office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/a', role: 'x', startedAt: now(), status: 'working' });

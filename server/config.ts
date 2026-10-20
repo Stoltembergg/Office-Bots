@@ -52,6 +52,10 @@ export interface ServerConfig {
   updateCheck: boolean;
   /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
   codex: boolean;
+  /** Servidor do OpenCode observado (sources/opencode/); ausente = desligada (sem HABBLAUD_OPENCODE_URL). */
+  opencode?: OpenCodeConfig;
+  /** Por que a fonte do OpenCode ficou desligada com a configuração errada (vai para o log ao iniciar). */
+  opencodeWarning?: string;
   /** Segunda porta, com login, para o celular na rede local (http/remote.ts); ausente = desligada. */
   remote?: RemoteConfig;
   /** Por que o acesso remoto ficou desligado quando as variáveis estão incompletas. */
@@ -78,6 +82,47 @@ export interface WorldConfig {
   dev: boolean;
   /** Por que HABBLAUD_WORLD_URL foi recusada (vai para o log ao iniciar). */
   warning?: string;
+}
+
+export interface OpenCodeConfig {
+  /** Origem do servidor (HABBLAUD_OPENCODE_URL, sem barra no fim), ex.: http://127.0.0.1:4096. */
+  url: string;
+  /** Senha do basic auth (usuário `opencode`): do arquivo de HABBLAUD_OPENCODE_PASSWORD_FILE ou de HABBLAUD_OPENCODE_PASSWORD. */
+  password?: string;
+}
+
+/**
+ * A fonte do OpenCode só liga com HABBLAUD_OPENCODE_URL (origem http(s), sem usuário, caminho nem parâmetros). A senha
+ * vem do arquivo HABBLAUD_OPENCODE_PASSWORD_FILE (preferido) ou da variável HABBLAUD_OPENCODE_PASSWORD. Arquivo ilegível
+ * desliga a fonte (nunca tenta sem a senha que o servidor pediu).
+ */
+export function parseOpenCodeConfig(env: NodeJS.ProcessEnv): { config?: OpenCodeConfig; warning?: string } {
+  const raw = env.HABBLAUD_OPENCODE_URL?.trim();
+  if (!raw) return {};
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { warning: tr('HABBLAUD_OPENCODE_URL recusada: não é uma URL. OpenCode desligado.') };
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return { warning: tr('HABBLAUD_OPENCODE_URL recusada: use http:// ou https://. OpenCode desligado.') };
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+    return { warning: tr('HABBLAUD_OPENCODE_URL recusada: só a origem (http://127.0.0.1:4096), sem usuário, caminho nem parâmetros. OpenCode desligado.') };
+  }
+  const file = env.HABBLAUD_OPENCODE_PASSWORD_FILE?.trim();
+  let password: string | undefined;
+  if (file) {
+    try {
+      const path = file === '~' || file.startsWith('~/') ? join(env.HOME || homedir(), file.slice(1)) : resolve(file);
+      password = readFileSync(path, 'utf8').trim() || undefined;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? tr('erro de leitura');
+      return { warning: tr('HABBLAUD_OPENCODE_PASSWORD_FILE não pôde ser lido ({0}). OpenCode desligado.', [code]) };
+    }
+  } else {
+    password = env.HABBLAUD_OPENCODE_PASSWORD?.trim() || undefined;
+  }
+  return { config: { url: url.origin, ...(password ? { password } : {}) } };
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -230,6 +275,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   const host = env.HABBLAUD_HOST?.trim() || '127.0.0.1';
   const pkg = readPackage(rootDir);
   const remote = parseRemoteConfig(env, inDocker);
+  const opencode = parseOpenCodeConfig(env);
   return {
     port: Number.isFinite(port) && port > 0 && port < 65536 ? port : 4747,
     host,
@@ -249,6 +295,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    opencode: opencode.config,
+    opencodeWarning: opencode.warning,
     remote: remote.config,
     remoteWarning: remote.warning,
     world: parseWorldConfig(env, argv),
