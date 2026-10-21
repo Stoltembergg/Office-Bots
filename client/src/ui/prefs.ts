@@ -1,7 +1,7 @@
 // Preferências da interface, persistidas em localStorage ('habblaud:prefs').
 // Puro: o armazenamento é injetado (testável em node).
 import { DEFAULT_SOUND_SETTINGS, sanitizeSoundSettings, type SoundSettings } from '../audio/scheduler';
-import type { DaylightMode, WorldOptions } from '../world/api';
+import type { CoreLayout, DaylightMode, WorldOptions } from '../world/api';
 import { DEFAULT_WORLD_OPTIONS } from '../world/api';
 
 export const PREFS_KEY = 'habblaud:prefs';
@@ -13,6 +13,8 @@ export interface UiPrefs {
   /** Ciclo dia/noite: automático (hora local), sempre dia ou sempre noite. */
   daylight: DaylightMode;
   theme: NonNullable<WorldOptions['theme']>;
+  /** Salas comuns: completas ou compactas (vale ao recarregar a página). */
+  coreLayout: CoreLayout;
   /** Sons sintetizados (interruptor geral; desligado por padrão). */
   sound: boolean;
   /** Volume mestre e categorias dos sons. */
@@ -33,6 +35,7 @@ export const DEFAULT_PREFS: UiPrefs = {
   liveliness: DEFAULT_WORLD_OPTIONS.liveliness,
   daylight: 'auto',
   theme: 'auto',
+  coreLayout: 'full',
   sound: false,
   sounds: DEFAULT_SOUND_SETTINGS,
   browserNotifications: false,
@@ -59,6 +62,7 @@ export function sanitizePrefs(raw: unknown): UiPrefs {
     // preferências antigas: o interruptor "dia e noite" desligado vira "sempre dia"
     daylight: oneOf(o.daylight, ['auto', 'day', 'night'] as const, o.dayNight === false ? 'day' : d.daylight),
     theme: oneOf(o.theme, ['auto', 'none', 'christmas', 'halloween'] as const, d.theme),
+    coreLayout: oneOf(o.coreLayout, ['full', 'compact'] as const, d.coreLayout),
     sound: bool(o.sound, d.sound),
     sounds: sanitizeSoundSettings(o.sounds),
     browserNotifications: bool(o.browserNotifications, d.browserNotifications),
