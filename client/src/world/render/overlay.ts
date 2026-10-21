@@ -8,7 +8,9 @@ import { TILE } from '../../art/api';
 import type { WorldOptions } from '../api';
 import type { Camera } from '../camera';
 import { COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
+import type { RoomActivity } from '../sim/behavior';
 import type { Character } from '../sim/character';
+import type { RoomState } from '../sim/room-state';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
@@ -438,7 +440,7 @@ export class Overlay {
       if (room) {
         // endereço antigo de uma mudança: o nome já está na sala nova
         if (!room.present || room.ghost || (anim && anim.walls < 0.6)) continue;
-        this.drawRoomPill(room.info.name, cx, cy, colW - 8, room.accounts, this.countIn(room.id), room.theme.accent, room.lightOn);
+        this.drawRoomPill(room, cx, cy, colW - 8, now);
       } else if (CORE_NAMES[vis.id]) {
         this.drawCorePill(CORE_NAMES[vis.id], cx, cy, colW - 8);
       }
@@ -509,16 +511,18 @@ export class Overlay {
     }
   }
 
-  private drawRoomPill(name: string, cx: number, cy: number, maxW: number, accounts: string[], count: number, accent: string, lit: boolean): void {
+  private drawRoomPill(room: RoomState, cx: number, cy: number, maxW: number, now: number): void {
     const { ctx } = this;
-    let dots = accounts.filter((a) => this.sim.accounts.has(a));
+    const name = room.info.name;
+    const count = this.countIn(room.id);
+    let dots = room.accounts.filter((a) => this.sim.accounts.has(a));
     let countText = count > 0 ? String(count) : '';
     let cw = countText ? this.measure(LABEL_FONT, countText) + 14 : 0;
     // nome cortado para caber na largura da coluna; com pouco espaço, o nome vale mais que a
     // contagem e as bolinhas; sem espaço nem para 3 letras, pílula compacta (só contagem)
-    let text = this.fit(ROOM_FONT, name, Math.min(180, maxW - (18 + dots.length * 10 + cw)));
+    let text = this.fit(ROOM_FONT, name, Math.min(180, maxW - (28 + dots.length * 10 + cw)));
     if (text.length < Math.min(7, name.length)) {
-      const alone = this.fit(ROOM_FONT, name, maxW - 18);
+      const alone = this.fit(ROOM_FONT, name, maxW - 28);
       if (alone.length >= 4) {
         text = alone;
         dots = [];
@@ -526,16 +530,16 @@ export class Overlay {
         cw = 0;
       }
     }
-    const extras = 18 + dots.length * 10 + cw;
+    const extras = 28 + dots.length * 10 + cw;
     // Só vira pílula compacta quando o nome precisou ser cortado (nomes curtos como "app" cabem inteiros).
     const compact = text !== name && text.length < 4;
     const tw = compact ? 0 : this.measure(ROOM_FONT, text);
-    const w = Math.round(compact ? Math.max(12, 10 + cw + dots.length * 10) : tw + extras);
+    const w = Math.round(compact ? Math.max(22, 20 + cw + dots.length * 10) : tw + extras);
     const h = 22;
     const x = Math.round(cx - w / 2);
     const y = Math.round(cy - h - 4);
     ctx.save();
-    ctx.globalAlpha = lit ? 1 : 0.8;
+    ctx.globalAlpha = room.lightOn ? 1 : 0.8;
     ctx.fillStyle = 'rgba(16,20,32,0.28)';
     ctx.beginPath();
     ctx.roundRect(x, y + 2, w, h, 7);
@@ -544,16 +548,17 @@ export class Overlay {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 7);
     ctx.fill();
-    ctx.fillStyle = accent;
+    ctx.fillStyle = room.theme.accent;
     ctx.beginPath();
     ctx.roundRect(x, y, 4, h, [7, 0, 0, 7]);
     ctx.fill();
-    let dx = x + 10;
+    this.drawActivityDot(room.activity, x + 13, y + h / 2, now);
+    let dx = x + 20;
     if (!compact) {
       ctx.font = ROOM_FONT;
-      ctx.fillStyle = '#f3f5fa';
-      ctx.fillText(text, x + 10, y + h / 2 + 1);
-      dx = x + 10 + tw + 8;
+      ctx.fillStyle = room.activity === 'rest' ? '#aab2c2' : '#f3f5fa';
+      ctx.fillText(text, x + 20, y + h / 2 + 1);
+      dx = x + 20 + tw + 8;
     }
     for (const id of dots) {
       accountDot(ctx, dx + 3, y + h / 2, 3.5, this.sim.accounts.get(id)!);
@@ -570,6 +575,27 @@ export class Overlay {
     }
     ctx.restore();
     this.place(x, y, w, h);
+  }
+
+  /** Bolinha de estado da placa: verde pulsando (trabalhando), laranja piscando (precisa de você), cinza (repouso). */
+  private drawActivityDot(activity: RoomActivity, x: number, y: number, now: number): void {
+    if (activity === 'empty') return;
+    const { ctx } = this;
+    const wave = 0.5 + 0.5 * Math.sin(now / (activity === 'waiting' ? 160 : 450));
+    const color = activity === 'waiting' ? '#ffa94d' : activity === 'busy' ? '#5ee08a' : '#8a93a6';
+    if (activity !== 'rest') {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.globalAlpha *= 0.25 + 0.3 * wave;
+      ctx.beginPath();
+      ctx.arc(x, y, 3.5 + 2.5 * wave, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   private drawCorePill(name: string, cx: number, cy: number, maxW: number): void {

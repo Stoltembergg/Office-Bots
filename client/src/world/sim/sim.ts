@@ -1,7 +1,7 @@
 // Simulação do escritório: concilia snapshots do servidor com os personagens e salas do mundo,
 // planeja comportamentos e executa as filas de passos a cada frame.
 import { partsKey } from '../../../../shared/appearance';
-import type { AgentInfo, OfficeSnapshot, Provider, RoomInfo } from '../../../../shared/types';
+import type { AgentInfo, AgentStatus, OfficeSnapshot, Provider, RoomInfo } from '../../../../shared/types';
 import type { ArtModule, Dir, RoomTheme } from '../../art/api';
 import type { WorldOptions } from '../api';
 import { COL_W, COMPACT_DELAY_MS, DISMANTLE_DELAY_MS, FOOT_DX, FOOT_DY, MISSING_DEBOUNCE_MS, RUN_SPEED, TILE, WALK_SPEED } from '../constants';
@@ -24,6 +24,7 @@ import {
   isLongIdle,
   modeFor,
   pickIdleActivity,
+  roomActivity,
   shouldRun,
   type IdleActivity,
   type Mode,
@@ -614,7 +615,15 @@ export class Sim {
 
   private updateRooms(now: number): void {
     let dirty = false;
+    const statuses = new Map<string, AgentStatus[]>();
+    for (const ch of this.chars.values()) {
+      if (ch.leaving || ch.gone) continue;
+      const list = statuses.get(ch.roomId);
+      if (list) list.push(ch.info.status);
+      else statuses.set(ch.roomId, [ch.info.status]);
+    }
     for (const room of this.rooms.values()) {
+      room.setActivity(roomActivity(statuses.get(room.id) ?? []), now);
       if (room.phase === 'building' && room.progress(now) >= 1) room.setPhase('ready', now);
       if (room.phase === 'dismantling' && room.progress(now) >= 1) {
         room.setPhase('gone', now);

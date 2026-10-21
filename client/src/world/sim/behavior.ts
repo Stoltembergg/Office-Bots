@@ -142,6 +142,21 @@ export function shouldRun(pathTiles: number, mode: Mode): boolean {
   return false;
 }
 
+/** Estado da sala na placa e na luz: alguém precisa de você, alguém trabalha, todos ociosos (repouso) ou vazia. */
+export type RoomActivity = 'waiting' | 'busy' | 'rest' | 'empty';
+
+export function roomActivity(statuses: Iterable<AgentStatus>): RoomActivity {
+  let any = false;
+  let busy = false;
+  for (const s of statuses) {
+    if (s === 'waiting') return 'waiting';
+    if (s === 'working' || s === 'shell') busy = true;
+    if (s !== 'offline') any = true;
+  }
+  if (busy) return 'busy';
+  return any ? 'rest' : 'empty';
+}
+
 /** É o último personagem (não saindo) pertencente à sala? */
 export function isLastInRoom(roomId: string, selfId: string, chars: Iterable<{ id: string; roomId: string; leaving: boolean }>): boolean {
   for (const c of chars) if (c.id !== selfId && c.roomId === roomId && !c.leaving) return false;

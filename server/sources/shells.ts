@@ -15,6 +15,8 @@ import type { ShellOutcome } from '../../shared/activity';
 export const SHELL_MAX_AGE_MS = 24 * 3_600_000;
 /** Registro "idle" + shell em segundo plano sem notificação há menos disso = status 'shell' (CLIs antigas). */
 export const SHELL_FALLBACK_MAX_AGE_MS = 12 * 3_600_000;
+/** Só Bash em segundo plano mais velhos que isso (servidor de dev, watch): o agente não espera por eles, fica ocioso. */
+export const SHELL_LONG_RUNNING_MS = 10 * 60_000;
 /** Monitor: expira sozinho depois do timeout_ms (padrão 5 min, teto 1 h) + esta folga. */
 const MONITOR_DEFAULT_TIMEOUT_MS = 300_000;
 const MONITOR_MAX_TIMEOUT_MS = 3_600_000;

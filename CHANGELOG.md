@@ -10,6 +10,18 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Estado da sala na placa e na luz:** a placa de cada sala de projeto ganha uma bolinha — verde pulsando quando
+  alguém trabalha, laranja piscando quando alguém precisa de você e cinza quando todos estão ociosos. Em repouso, a
+  sala fica à meia-luz (os monitores continuam acesos); a luz apagada continua sendo "todo mundo foi embora".
+
+### Corrigido
+
+- **Servidor de dev em segundo plano não deixa mais o agente "esperando o shell" para sempre.** Com só Bash em segundo
+  plano rodando há mais de 10 minutos (servidor de dev, watch), o agente volta a ficar ocioso; o shell continua
+  listado nos detalhes.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
