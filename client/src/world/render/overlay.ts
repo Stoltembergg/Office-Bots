@@ -27,7 +27,8 @@ const SAY_FONT = `500 10.5px ${UI_FONT}`;
 const FLOAT_FONT = `800 12px ${UI_FONT}`;
 const CHIP_FONT = `700 8px ${UI_FONT}`;
 const BADGE_FONT = `700 8px ${UI_FONT}`;
-const ROOM_FONT = `700 12px ${UI_FONT}`;
+const ACTIVITY_COLORS: Readonly<Record<RoomActivity, string>> = { busy: '#5ee08a', waiting: '#ffa94d', rest: '#8a93a6', empty: '#4a5162' };
+const ROOM_FONT =`700 12px ${UI_FONT}`;
 const CORE_FONT = `600 11px ${UI_FONT}`;
 const CORE_FONT_SMALL = `600 9.5px ${UI_FONT}`;
 const signFont = (size: number) => `700 ${size}px ${UI_FONT}`;
@@ -520,9 +521,9 @@ export class Overlay {
     let cw = countText ? this.measure(LABEL_FONT, countText) + 14 : 0;
     // nome cortado para caber na largura da coluna; com pouco espaço, o nome vale mais que a
     // contagem e as bolinhas; sem espaço nem para 3 letras, pílula compacta (só contagem)
-    let text = this.fit(ROOM_FONT, name, Math.min(180, maxW - (28 + dots.length * 10 + cw)));
+    let text = this.fit(ROOM_FONT, name, Math.min(180, maxW - (18 + dots.length * 10 + cw)));
     if (text.length < Math.min(7, name.length)) {
-      const alone = this.fit(ROOM_FONT, name, maxW - 28);
+      const alone = this.fit(ROOM_FONT, name, maxW - 18);
       if (alone.length >= 4) {
         text = alone;
         dots = [];
@@ -530,11 +531,11 @@ export class Overlay {
         cw = 0;
       }
     }
-    const extras = 28 + dots.length * 10 + cw;
+    const extras = 18 + dots.length * 10 + cw;
     // Só vira pílula compacta quando o nome precisou ser cortado (nomes curtos como "app" cabem inteiros).
     const compact = text !== name && text.length < 4;
     const tw = compact ? 0 : this.measure(ROOM_FONT, text);
-    const w = Math.round(compact ? Math.max(22, 20 + cw + dots.length * 10) : tw + extras);
+    const w = Math.round(compact ? Math.max(12, 10 + cw + dots.length * 10) : tw + extras);
     const h = 22;
     const x = Math.round(cx - w / 2);
     const y = Math.round(cy - h - 4);
@@ -548,17 +549,13 @@ export class Overlay {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 7);
     ctx.fill();
-    ctx.fillStyle = room.theme.accent;
-    ctx.beginPath();
-    ctx.roundRect(x, y, 4, h, [7, 0, 0, 7]);
-    ctx.fill();
-    this.drawActivityDot(room.activity, x + 13, y + h / 2, now);
-    let dx = x + 20;
+    this.drawActivityBar(room.activity, x, y, h, now);
+    let dx = x + 10;
     if (!compact) {
       ctx.font = ROOM_FONT;
       ctx.fillStyle = room.activity === 'rest' ? '#aab2c2' : '#f3f5fa';
-      ctx.fillText(text, x + 20, y + h / 2 + 1);
-      dx = x + 20 + tw + 8;
+      ctx.fillText(text, x + 10, y + h / 2 + 1);
+      dx = x + 10 + tw + 8;
     }
     for (const id of dots) {
       accountDot(ctx, dx + 3, y + h / 2, 3.5, this.sim.accounts.get(id)!);
@@ -577,25 +574,18 @@ export class Overlay {
     this.place(x, y, w, h);
   }
 
-  /** Bolinha de estado da placa: verde pulsando (trabalhando), laranja piscando (precisa de você), cinza (repouso). */
-  private drawActivityDot(activity: RoomActivity, x: number, y: number, now: number): void {
-    if (activity === 'empty') return;
+  /** Faixa de estado à esquerda da placa: verde pulsando (trabalhando), laranja piscando (precisa de você), cinza (repouso). */
+  private drawActivityBar(activity: RoomActivity, x: number, y: number, h: number, now: number): void {
     const { ctx } = this;
     const wave = 0.5 + 0.5 * Math.sin(now / (activity === 'waiting' ? 160 : 450));
-    const color = activity === 'waiting' ? '#ffa94d' : activity === 'busy' ? '#5ee08a' : '#8a93a6';
-    if (activity !== 'rest') {
-      ctx.save();
-      ctx.fillStyle = color;
-      ctx.globalAlpha *= 0.25 + 0.3 * wave;
-      ctx.beginPath();
-      ctx.arc(x, y, 3.5 + 2.5 * wave, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    ctx.fillStyle = color;
+    ctx.save();
+    ctx.fillStyle = ACTIVITY_COLORS[activity];
+    if (activity === 'waiting') ctx.globalAlpha *= 0.45 + 0.55 * wave;
+    else if (activity === 'busy') ctx.globalAlpha *= 0.75 + 0.25 * wave;
     ctx.beginPath();
-    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.roundRect(x, y, 5, h, [7, 0, 0, 7]);
     ctx.fill();
+    ctx.restore();
   }
 
   private drawCorePill(name: string, cx: number, cy: number, maxW: number): void {

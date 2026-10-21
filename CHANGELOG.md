@@ -12,9 +12,10 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
-- **Estado da sala na placa e na luz:** a placa de cada sala de projeto ganha uma bolinha — verde pulsando quando
-  alguém trabalha, laranja piscando quando alguém precisa de você e cinza quando todos estão ociosos. Em repouso, a
-  sala fica à meia-luz (os monitores continuam acesos); a luz apagada continua sendo "todo mundo foi embora".
+- **Estado da sala na placa e na luz:** a faixa à esquerda da placa de cada sala de projeto passa a mostrar o estado
+  (no lugar da cor do tema): verde quando alguém trabalha, laranja piscando quando alguém precisa de você e cinza
+  quando todos estão ociosos. Em repouso, a sala fica à meia-luz (os monitores continuam acesos); a luz apagada
+  continua sendo "todo mundo foi embora".
 
 ### Corrigido
 
