@@ -3,7 +3,11 @@ import type { RoomInfo } from '../../../../shared/types';
 import type { RoomTheme } from '../../art/api';
 import { BUILD_MS, DISMANTLE_MS } from '../constants';
 import type { AreaLayout } from '../layout/types';
-import { lightLevel } from './behavior';
+import { lightLevel, type RoomActivity } from './behavior';
+
+/** Meia-luz da sala em repouso (acima de 0,3: os monitores continuam acesos). */
+const REST_LIGHT = 0.6;
+const REST_FADE_MS = 1_500;
 
 /**
  * - building: animação de construção;
@@ -31,6 +35,9 @@ export class RoomState {
   switchClaim: string | null = null;
   /** Quando todas as condições de desmontagem ficaram verdadeiras (0 = não estão). */
   readyToDismantleAt = 0;
+  /** Estado dos agentes da sala (placa e meia-luz), atualizado pelo mundo. */
+  activity: RoomActivity = 'busy';
+  restAt = -1e9;
   /** Contas presentes (para as bolinhas da placa), atualizadas pelo mundo. */
   accounts: string[] = [];
   /** Itens do quadro kanban. */
@@ -94,7 +101,16 @@ export class RoomState {
     this.lightAt = now;
   }
 
+  setActivity(activity: RoomActivity, now: number): void {
+    if (this.activity === activity) return;
+    if ((activity === 'rest') !== (this.activity === 'rest')) this.restAt = now;
+    this.activity = activity;
+  }
+
+  /** Luz da sala: a do interruptor, mais fraca (meia-luz) quando todos estão ociosos. */
   light(now: number): number {
-    return lightLevel(this.lightOn, now - this.lightAt);
+    const t = Math.min(1, Math.max(0, (now - this.restAt) / REST_FADE_MS));
+    const dim = this.activity === 'rest' ? 1 - (1 - REST_LIGHT) * t : REST_LIGHT + (1 - REST_LIGHT) * t;
+    return lightLevel(this.lightOn, now - this.lightAt) * dim;
   }
 }

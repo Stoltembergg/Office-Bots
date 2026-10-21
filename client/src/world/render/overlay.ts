@@ -8,7 +8,9 @@ import { TILE } from '../../art/api';
 import type { WorldOptions } from '../api';
 import type { Camera } from '../camera';
 import { COL_W, CORRIDOR_Y, SOUTH_Y } from '../constants';
+import type { RoomActivity } from '../sim/behavior';
 import type { Character } from '../sim/character';
+import type { RoomState } from '../sim/room-state';
 import { shellAgeKey, shellBubbleAlpha, shellBubbleText, STORM_LIFT, unitHash } from '../sim/shell';
 import type { Sim } from '../sim/sim';
 import { buildAnim } from './anim';
@@ -25,7 +27,8 @@ const SAY_FONT = `500 10.5px ${UI_FONT}`;
 const FLOAT_FONT = `800 12px ${UI_FONT}`;
 const CHIP_FONT = `700 8px ${UI_FONT}`;
 const BADGE_FONT = `700 8px ${UI_FONT}`;
-const ROOM_FONT = `700 12px ${UI_FONT}`;
+const ACTIVITY_COLORS: Readonly<Record<RoomActivity, string>> = { busy: '#5ee08a', waiting: '#ffa94d', rest: '#8a93a6', empty: '#4a5162' };
+const ROOM_FONT =`700 12px ${UI_FONT}`;
 const CORE_FONT = `600 11px ${UI_FONT}`;
 const CORE_FONT_SMALL = `600 9.5px ${UI_FONT}`;
 const signFont = (size: number) => `700 ${size}px ${UI_FONT}`;
@@ -438,7 +441,7 @@ export class Overlay {
       if (room) {
         // endereço antigo de uma mudança: o nome já está na sala nova
         if (!room.present || room.ghost || (anim && anim.walls < 0.6)) continue;
-        this.drawRoomPill(room.info.name, cx, cy, colW - 8, room.accounts, this.countIn(room.id), room.theme.accent, room.lightOn);
+        this.drawRoomPill(room, cx, cy, colW - 8, now);
       } else if (CORE_NAMES[vis.id]) {
         this.drawCorePill(CORE_NAMES[vis.id], cx, cy, colW - 8);
       }
@@ -509,9 +512,11 @@ export class Overlay {
     }
   }
 
-  private drawRoomPill(name: string, cx: number, cy: number, maxW: number, accounts: string[], count: number, accent: string, lit: boolean): void {
+  private drawRoomPill(room: RoomState, cx: number, cy: number, maxW: number, now: number): void {
     const { ctx } = this;
-    let dots = accounts.filter((a) => this.sim.accounts.has(a));
+    const name = room.info.name;
+    const count = this.countIn(room.id);
+    let dots = room.accounts.filter((a) => this.sim.accounts.has(a));
     let countText = count > 0 ? String(count) : '';
     let cw = countText ? this.measure(LABEL_FONT, countText) + 14 : 0;
     // nome cortado para caber na largura da coluna; com pouco espaço, o nome vale mais que a
@@ -535,7 +540,7 @@ export class Overlay {
     const x = Math.round(cx - w / 2);
     const y = Math.round(cy - h - 4);
     ctx.save();
-    ctx.globalAlpha = lit ? 1 : 0.8;
+    ctx.globalAlpha = room.lightOn ? 1 : 0.8;
     ctx.fillStyle = 'rgba(16,20,32,0.28)';
     ctx.beginPath();
     ctx.roundRect(x, y + 2, w, h, 7);
@@ -544,14 +549,11 @@ export class Overlay {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 7);
     ctx.fill();
-    ctx.fillStyle = accent;
-    ctx.beginPath();
-    ctx.roundRect(x, y, 4, h, [7, 0, 0, 7]);
-    ctx.fill();
+    this.drawActivityBar(room.activity, x, y, h, now);
     let dx = x + 10;
     if (!compact) {
       ctx.font = ROOM_FONT;
-      ctx.fillStyle = '#f3f5fa';
+      ctx.fillStyle = room.activity === 'rest' ? '#aab2c2' : '#f3f5fa';
       ctx.fillText(text, x + 10, y + h / 2 + 1);
       dx = x + 10 + tw + 8;
     }
@@ -570,6 +572,20 @@ export class Overlay {
     }
     ctx.restore();
     this.place(x, y, w, h);
+  }
+
+  /** Faixa de estado à esquerda da placa: verde pulsando (trabalhando), laranja piscando (precisa de você), cinza (repouso). */
+  private drawActivityBar(activity: RoomActivity, x: number, y: number, h: number, now: number): void {
+    const { ctx } = this;
+    const wave = 0.5 + 0.5 * Math.sin(now / (activity === 'waiting' ? 160 : 450));
+    ctx.save();
+    ctx.fillStyle = ACTIVITY_COLORS[activity];
+    if (activity === 'waiting') ctx.globalAlpha *= 0.45 + 0.55 * wave;
+    else if (activity === 'busy') ctx.globalAlpha *= 0.75 + 0.25 * wave;
+    ctx.beginPath();
+    ctx.roundRect(x, y, 5, h, [7, 0, 0, 7]);
+    ctx.fill();
+    ctx.restore();
   }
 
   private drawCorePill(name: string, cx: number, cy: number, maxW: number): void {

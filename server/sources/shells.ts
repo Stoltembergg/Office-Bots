@@ -15,6 +15,16 @@ import type { ShellOutcome } from '../../shared/activity';
 export const SHELL_MAX_AGE_MS = 24 * 3_600_000;
 /** Registro "idle" + shell em segundo plano sem notificação há menos disso = status 'shell' (CLIs antigas). */
 export const SHELL_FALLBACK_MAX_AGE_MS = 12 * 3_600_000;
+/** Só Bash em segundo plano mais velhos que isso (servidor de dev, watch): o agente não espera por eles, fica ocioso. */
+export const SHELL_LONG_RUNNING_MS = 10 * 60_000;
+
+/** Servidores de dev, watchers e afins: não terminam sozinhos, então ninguém espera por eles. */
+const LONG_RUNNING_COMMAND =
+  /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch|preview)\b|vite(?!\s+build)\b|next\s+(?:dev|start)\b|nuxt\s+(?:dev|preview)\b|nodemon\b|tsx\s+watch\b|webpack\s+serve\b|ng\s+serve\b|http-server\b|live-server\b|(?:python3?\s+-m\s+)?http\.server\b|(?:uvicorn|gunicorn|flask\s+run|rails\s+s(?:erver)?|php\s+artisan\s+serve|manage\.py\s+runserver)\b|docker(?:-|\s+)compose\s+up(?![^|;&]*\s-d\b)|tail\s+-f\b)|--watch\b/;
+
+export function isLongRunningCommand(command: string | undefined): boolean {
+  return !!command && LONG_RUNNING_COMMAND.test(command);
+}
 /** Monitor: expira sozinho depois do timeout_ms (padrão 5 min, teto 1 h) + esta folga. */
 const MONITOR_DEFAULT_TIMEOUT_MS = 300_000;
 const MONITOR_MAX_TIMEOUT_MS = 3_600_000;
@@ -282,6 +292,14 @@ export class ShellTracker {
   /** Há Bash em segundo plano rodando (iniciado há menos de `maxAgeMs`)? Monitores não contam (como no Claude Code). */
   hasBackgroundShell(now: number, maxAgeMs = SHELL_FALLBACK_MAX_AGE_MS): boolean {
     for (const job of this.jobs.values()) if (job.background && job.kind === 'shell' && now - job.startedAt < maxAgeMs) return true;
+    return false;
+  }
+
+  /** Há Bash em segundo plano que o agente pode estar esperando (nem processo de longa duração, nem velho demais)? */
+  awaitsBackgroundShell(now: number): boolean {
+    for (const job of this.jobs.values()) {
+      if (job.background && job.kind === 'shell' && now - job.startedAt < SHELL_LONG_RUNNING_MS && !isLongRunningCommand(job.command)) return true;
+    }
     return false;
   }
 

@@ -12,9 +12,14 @@ import {
   lightLevel,
   modeFor,
   pickIdleActivity,
+  roomActivity,
   screenModeFor,
   shouldRun,
 } from './behavior';
+import { RoomState } from './room-state';
+import type { RoomInfo } from '../../../../shared/types';
+import type { RoomTheme } from '../../art/api';
+import type { AreaLayout } from '../layout/types';
 import { SpotRegistry } from './spots';
 import { Elevator } from './elevator';
 import { buildAnim, furnitureScale, sweepDelay } from '../render/anim';
@@ -158,6 +163,24 @@ describe('assentos e reservas', () => {
 });
 
 describe('salas, luz e elevador', () => {
+  it('estado da sala: precisa de você > trabalhando (shell conta) > repouso > vazia', () => {
+    expect(roomActivity(['idle', 'working', 'waiting'])).toBe('waiting');
+    expect(roomActivity(['done', 'shell'])).toBe('busy');
+    expect(roomActivity(['idle', 'done'])).toBe('rest');
+    expect(roomActivity(['offline'])).toBe('empty');
+    expect(roomActivity([])).toBe('empty');
+  });
+
+  it('sala em repouso fica à meia-luz (monitores acesos) e volta ao normal com alguém trabalhando', () => {
+    const room = new RoomState({ id: 'r', name: 'r', path: '', slot: 0, seed: 1, createdAt: 0 } as RoomInfo, {} as RoomTheme, {} as AreaLayout, 'ready', 0, true, 0);
+    expect(room.light(0)).toBe(1);
+    room.setActivity('rest', 1000);
+    expect(room.light(1000)).toBe(1);
+    expect(room.light(10_000)).toBeCloseTo(0.6);
+    room.setActivity('busy', 20_000);
+    expect(room.light(30_000)).toBe(1);
+  });
+
   it('último da sala é quem apaga a luz', () => {
     const chars = [
       { id: 'a', roomId: 'r', leaving: true },
