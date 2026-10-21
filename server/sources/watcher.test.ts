@@ -566,6 +566,17 @@ describe('ClaudeWatcher — esperando o shell', () => {
     expect(a.shells).toHaveLength(1);
   });
 
+  it('servidor de dev em segundo plano: ocioso desde o início, sem aviso de espera', () => {
+    writeLines(c.transcript('sess-d'), backgroundTurn(c.now() - 10_000, 'toolu_d', 'bdev1', { command: 'pnpm dev', description: 'Sobe o servidor de dev', run_in_background: true }));
+    c.openSession(706, 'sess-d', { status: 'shell' });
+    c.watcher.boot();
+    c.poll();
+    const a = c.agent('.claude:706')!;
+    expect(a.status).toBe('idle');
+    expect(a.shells).toHaveLength(1);
+    expect(c.notices.some((n) => n.text.includes('esperando o shell'))).toBe(false);
+  });
+
   it('boot em "shell": balão sem aviso; só a mensagem (sem fila) encerra; falha => error e aviso de alerta amarelo', () => {
     const t0 = c.now();
     writeLines(c.transcript('sess-f'), backgroundTurn(t0 - 30_000, 'toolu_m', 'bmig1', { command: 'php artisan migrate', description: 'Migração do banco', run_in_background: true }));

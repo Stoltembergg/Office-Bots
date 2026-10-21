@@ -18,9 +18,10 @@ do meio (0.**3**.0).
 
 ### Corrigido
 
-- **Servidor de dev em segundo plano não deixa mais o agente "esperando o shell" para sempre.** Com só Bash em segundo
-  plano rodando há mais de 10 minutos (servidor de dev, watch), o agente volta a ficar ocioso; o shell continua
-  listado nos detalhes.
+- **Servidor de dev em segundo plano não deixa mais o agente "esperando o shell".** Bash em segundo plano que não
+  termina sozinho (`pnpm dev`, `vite`, `next dev`, `nodemon`, `--watch`, `docker compose up` sem `-d`...) não conta
+  como espera desde o início; qualquer outro, depois de 10 minutos. O agente fica ocioso e o shell continua listado
+  nos detalhes.
 
 ## [1.0.3] - 2026-10-16
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { notificationOutcome, SHELL_MAX_AGE_MS, ShellTracker, toShellJob, type ShellStart } from './shells';
+import { isLongRunningCommand, notificationOutcome, SHELL_MAX_AGE_MS, ShellTracker, toShellJob, type ShellStart } from './shells';
 
 const T0 = Date.parse('2026-10-07T08:50:00Z');
 
@@ -118,5 +118,16 @@ describe('ShellTracker', () => {
     expect(s.merge(older.openBackground())).toBe(true);
     expect(s.list().map(toShellJob)).toEqual([expect.objectContaining({ id: 'brod', startedAt: T0 + 5 })]);
     expect(s.notify({ taskId: 'brod', status: 'failed', at: T0 + 20 })).toMatchObject({ outcome: 'failed' });
+  });
+});
+
+describe('isLongRunningCommand', () => {
+  it('servidores de dev e watchers sim; builds, testes e compose -d não', () => {
+    for (const cmd of ['pnpm dev', 'npm run dev', 'npm run dev:client', 'yarn start', 'bun run preview', 'npx vite', 'next dev -p 3000', 'cd app && nodemon server.js', 'tsx watch src/index.ts', 'vitest --watch', 'docker compose up', 'python -m http.server 8000', 'php artisan serve', 'tail -f log.txt']) {
+      expect(isLongRunningCommand(cmd), cmd).toBe(true);
+    }
+    for (const cmd of [undefined, '', 'pnpm build', 'npm test', 'vite build', 'vendor/bin/phpunit --group cms', 'docker compose up -d', 'php artisan migrate', 'npm run devtools-check']) {
+      expect(isLongRunningCommand(cmd), String(cmd)).toBe(false);
+    }
   });
 });

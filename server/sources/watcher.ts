@@ -14,7 +14,7 @@ import type { AccountsService } from '../accounts/service';
 import { errMsg, log } from '../log';
 import type { Office, TranscriptSummary } from '../model/office';
 import { compareVersions, registryStatus, RegistryReader, SHELL_STATUS_VERSION, type RegistryEntry } from './registry';
-import { SHELL_FALLBACK_MAX_AGE_MS, SHELL_LONG_RUNNING_MS, SHELL_MAX_AGE_MS, ShellTracker, toShellJob, type ShellFinish } from './shells';
+import { SHELL_FALLBACK_MAX_AGE_MS, SHELL_MAX_AGE_MS, ShellTracker, toShellJob, type ShellFinish } from './shells';
 import type { AgentSource } from './source';
 import {
   BOOT_RECENT_MS,
@@ -348,7 +348,7 @@ export class ClaudeWatcher implements AgentSource {
       // CLIs antigas não gravam "shell": ocioso com Bash em segundo plano sem notificação = esperando o shell.
       if (status === 'idle' && t.shells.hasBackgroundShell(now, SHELL_FALLBACK_MAX_AGE_MS)) status = 'shell';
     }
-    if (status === 'shell' && t.shells.hasBackgroundShell(now, SHELL_MAX_AGE_MS) && !t.shells.hasBackgroundShell(now, SHELL_LONG_RUNNING_MS)) status = 'idle';
+    if (status === 'shell' && t.shells.hasBackgroundShell(now, SHELL_MAX_AGE_MS) && !t.shells.awaitsBackgroundShell(now)) status = 'idle';
     office.setStatus(key, status, st.waitingFor);
     office.fillWorkingActivity(key);
     office.fillShellActivity(key);
