@@ -72,6 +72,11 @@ export interface OfficeDeps {
   messages?: () => ReadonlySet<string>;
   /** Verificação de versão nova no GitHub (ver OfficeSnapshot.meta.updates). */
   updates?: () => UpdateStatus;
+  /**
+   * Principal ocioso por este tempo sai do escritório com a sessão aberta (HABBLAUD_IDLE_LEAVE_MIN) e volta quando
+   * sair de ocioso. Ausente ou 0 = fica enquanto a sessão estiver aberta.
+   */
+  idleLeaveMs?: number;
   now?: () => number;
 }
 
@@ -123,6 +128,13 @@ interface AgentRecord {
   synthWait?: { id: string; prev?: Activity };
   /** Balão "Esperando o shell" sintetizado neste episódio do status 'shell' (e a atividade que ele cobriu). */
   shellWait?: { id: string; prev?: Activity };
+  /**
+   * Saiu por inatividade (idleLeaveMs) com a sessão aberta: no snapshot vai como 'offline' durante OFFLINE_GRACE_MS
+   * (o cliente o leva até o elevador) e depois some, até sair de ocioso.
+   */
+  away?: { at: number; hidden: boolean };
+  /** Chegou no boot já ocioso: a inatividade conta do último evento do transcript, não da chegada. */
+  bootIdle?: boolean;
 }
 
 /** O que terminou (para a atividade 'ShellDone' e o aviso). */
@@ -344,6 +356,7 @@ export class Office {
     if (p.status === 'waiting') info.waitingFor = p.waitingFor ?? 'responder no terminal';
     const rec: AgentRecord = { info, history: [] };
     if (p.status === 'working') rec.turnStart = now;
+    if (this.booting && p.status === 'idle') rec.bootIdle = true;
     this.agents.set(p.id, rec);
     const acc = this.deps.accountName(p.account);
     this.notice('arrive', p.id, 'info', `👋 ${info.name} chegou em ${this.roomName(roomId)}${acc ? ` (${acc})` : ''}`, roomId);
@@ -367,6 +380,12 @@ export class Office {
     info.tasks = [];
     info.stats = zeroStats();
     delete info.title;
+    // /clear ou /resume é alguém no terminal: quem tinha saído por inatividade volta.
+    if (rec.away) {
+      info.statusSince = this.now();
+      this.comeBack(rec);
+    }
+    delete rec.bootIdle;
     this.addActivity(id, { id: `${id}#clear:${++this.seq}`, at: this.now(), ...SPECIAL.cleared() }, true);
     this.markDirty();
   }
@@ -382,10 +401,12 @@ export class Office {
     if (prev !== status) {
       info.status = status;
       info.statusSince = now;
+      delete rec.bootIdle;
     }
     if (reason) info.waitingFor = reason;
     else delete info.waitingFor;
     const room = this.roomName(info.roomId);
+    if (rec.away && status !== 'idle' && status !== 'offline') this.comeBack(rec);
 
     if (status === 'working' && (prev === 'idle' || prev === 'shell' || rec.turnStart === undefined)) rec.turnStart = now;
     if (status === 'shell' && prev !== 'shell') {
@@ -548,6 +569,15 @@ export class Office {
     if (!rec || rec.info.status === 'offline') return;
     const now = this.now();
     const info = rec.info;
+    if (rec.away) {
+      // Já tinha saído por inatividade: a sessão fechou sem ninguém ver; sai do modelo sem novo aviso.
+      info.status = 'offline';
+      info.statusSince = now;
+      rec.removeAt = now;
+      for (const sub of this.descendants(id)) sub.removeAt = now;
+      this.markDirty();
+      return;
+    }
     info.status = 'offline';
     info.statusSince = now;
     delete info.waitingFor;
@@ -566,6 +596,52 @@ export class Office {
     }
     this.notice('leave', id, 'info', `🚪 ${info.name} encerrou a sessão`, info.roomId);
     this.markDirty();
+  }
+
+  /** Principal ocioso há idleLeaveMs, sem subagente rodando: sai do escritório (a sessão segue aberta). */
+  private leaveIdle(rec: AgentRecord, now: number): void {
+    const info = rec.info;
+    rec.away = { at: now, hidden: false };
+    delete rec.bootIdle;
+    this.notice('leave', info.id, 'info', `💤 ${info.name} saiu de ${this.roomName(info.roomId)} por inatividade`, info.roomId);
+    this.markDirty();
+  }
+
+  /** Quem saiu por inatividade voltou a trabalhar (ou precisa de você): entra de novo. */
+  private comeBack(rec: AgentRecord): void {
+    const info = rec.info;
+    delete rec.away;
+    this.notice('arrive', info.id, 'info', `👋 ${info.name} voltou para ${this.roomName(info.roomId)}`, info.roomId);
+    this.markDirty();
+  }
+
+  /** Fora do snapshot: saiu por inatividade e já passou a saída (subagentes seguem o principal). */
+  private isHidden(rec: AgentRecord): boolean {
+    let cur: AgentRecord | undefined = rec;
+    for (let guard = 0; cur && guard < 16; guard++) {
+      if (cur.away?.hidden) return true;
+      cur = cur.info.parentId ? this.agents.get(cur.info.parentId) : undefined;
+    }
+    return false;
+  }
+
+  private checkIdleLeave(now: number): void {
+    const limit = this.deps.idleLeaveMs ?? 0;
+    for (const rec of this.agents.values()) {
+      if (rec.away) {
+        if (!rec.away.hidden && now - rec.away.at >= OFFLINE_GRACE_MS) {
+          rec.away.hidden = true;
+          this.markDirty();
+        }
+        continue;
+      }
+      const info = rec.info;
+      if (limit <= 0 || this.booting || info.kind !== 'main' || info.status !== 'idle') continue;
+      const since = rec.bootIdle ? Math.min(info.statusSince, info.lastEventAt) : info.statusSince;
+      if (now - since < limit) continue;
+      if (this.descendants(info.id).some((d) => d.info.status !== 'done')) continue;
+      this.leaveIdle(rec, now);
+    }
   }
 
   // ---------------------------------------------------------------- subagentes
@@ -909,6 +985,7 @@ export class Office {
       this.pendingNotices.push(...r.notices);
       if (r.changed || r.feed.length || r.notices.length) this.markDirty();
     }
+    this.checkIdleLeave(now);
     let removed = false;
     for (const [id, rec] of this.agents) {
       if (rec.removeAt !== undefined && now >= rec.removeAt) {
@@ -944,6 +1021,12 @@ export class Office {
   private build(): OfficeSnapshot {
     const now = this.now();
     const entries = new Map(this.rooms);
+    // Sala de quem saiu por inatividade, sem mais ninguém: apaga como se o último tivesse ido embora.
+    const shown = new Set<string>();
+    const records = [...this.agents.values()];
+    const visible = records.filter((r) => !this.isHidden(r));
+    for (const r of visible) shown.add(r.info.roomId);
+    for (const r of records) if (!shown.has(r.info.roomId)) entries.delete(r.info.roomId);
     for (const r of this.demoSnap?.rooms ?? []) entries.set(r.id, { path: r.path, createdAt: r.createdAt });
     this.slots.sync(entries.keys(), now);
     const rooms: RoomInfo[] = [...entries]
@@ -962,7 +1045,16 @@ export class Office {
       if (effect) room.effect = { ...effect };
     }
     const perms = this.deps.permissions?.();
-    const real = [...this.agents.values()].map((r) => applyPermission(cloneAgent(r.info), perms?.get(r.info.id)));
+    const real = visible.map((r) => {
+      const a = applyPermission(cloneAgent(r.info), perms?.get(r.info.id));
+      if (r.away) {
+        // Saindo por inatividade: o cliente o leva ao elevador como numa sessão encerrada.
+        a.status = 'offline';
+        a.statusSince = r.away.at;
+        delete a.waitingFor;
+      }
+      return a;
+    });
     const reach = this.deps.messages?.();
     // Mensagens pelo escritório: principais presentes cuja sessão está com o plugin conectado. No demo quem decide é
     // o simulador; com o recurso desligado, ninguém recebe.
@@ -974,7 +1066,8 @@ export class Office {
     });
     const trim = (a: AgentInfo): AgentInfo => (a.recent.length > SNAPSHOT_RECENT ? { ...a, recent: a.recent.slice(-SNAPSHOT_RECENT) } : a);
     const sessions = new Map<string, number>();
-    for (const a of real) if (a.kind === 'main' && a.status !== 'offline') sessions.set(a.account, (sessions.get(a.account) ?? 0) + 1);
+    // Quem saiu por inatividade continua com a sessão aberta: conta na conta.
+    for (const { info: a } of records) if (a.kind === 'main' && a.status !== 'offline') sessions.set(a.account, (sessions.get(a.account) ?? 0) + 1);
     return {
       rev: this.rev,
       serverTime: now,
