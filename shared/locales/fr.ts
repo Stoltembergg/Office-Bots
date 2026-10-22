@@ -3290,4 +3290,22 @@ export const FR: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Tampon laissé à l'accueil : {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Entrez dans l'immeuble ou approchez-vous de la porte pour tamponner.",
   "O carimbo não foi deixado. Tente de novo.": "Le tampon n'a pas été laissé. Réessayez.",
+
+  // client/src/ui/project-city.ts
+  "Cidade dos projetos": "Cité des projets",
+  "Distritos (discos)": "Quartiers (disques)",
+  "Nenhum projeto aberto agora. Cada pasta onde você abre o Claude Code ou o Codex vira um prédio.": "Aucun projet ouvert pour le moment. Chaque dossier où vous ouvrez Claude Code ou Codex devient un immeuble.",
+  "Prédios do distrito": "Immeubles du quartier",
+  "Fechar cidade dos projetos": "Fermer la cité des projets",
+  "Um prédio por projeto: mais commits, mais andares. Cada janela acesa é uma sessão. Clique num prédio para ver só as salas dele.": "Un immeuble par projet : plus de commits, plus d’étages. Chaque fenêtre allumée est une session. Cliquez sur un immeuble pour ne voir que ses salles.",
+  "Escritório mostrando só o projeto {0}.": "Bureau limité au projet {0}.",
+  "Escritório mostrando todos os projetos.": "Bureau avec tous les projets.",
+  "Prédio: {0}": "Immeuble : {0}",
+  "Mostrando só {0}. Clique para ver todos os projetos.": "Seul {0} est affiché. Cliquez pour voir tous les projets.",
+  "Este computador": "Cet ordinateur",
+  "Disco {0}": "Disque {0}",
+  "commit": "commit",
+  "commits": "commits",
+  "arquivo": "fichier",
+  "sem git": "sans git",
 };

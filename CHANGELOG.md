@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Cidade dos projetos.** Um botão novo na barra do topo mostra uma rua em pixel art com um prédio por projeto
+  aberto no escritório, numa rua por disco (C:, D:). Os worktrees entram no prédio do projeto, os andares crescem
+  com os commits do git e cada janela acesa é uma sessão. Clicar num prédio deixa no escritório só as salas daquele
+  projeto; o selo “Prédio” na barra volta a mostrar todos.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
