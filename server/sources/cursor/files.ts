@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expandHome } from '../../accounts/detect';
 
+/** Janela de presença sem HABBLAUD_IDLE_LEAVE_MIN (com ela, vale a variável: CursorSourceOptions.presenceMs). */
 export const CURSOR_RECENT_MS = 10 * 60_000;
 /** Hot window for status `working` (vs idle while still present). */
 export const CURSOR_WORKING_MS = 5 * 60_000;

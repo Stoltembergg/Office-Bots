@@ -101,7 +101,7 @@ const codex = codexDirs.length ? new CodexSource({ accounts, office, dirs: codex
 if (codex) agents.add(codex);
 // Cursor (chats em ~/.cursor/chats; HABBLAUD_CURSOR=0 desliga): fonte própria, depois da do Codex.
 const cursorRoots = config.cursor ? discoverCursorRoots(process.env, config.home) : [];
-const cursor = cursorRoots.length ? new CursorSource({ accounts, office, roots: cursorRoots }) : undefined;
+const cursor = cursorRoots.length ? new CursorSource({ accounts, office, roots: cursorRoots, presenceMs: config.idleLeaveMs }) : undefined;
 if (cursor) agents.add(cursor);
 // Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
 // (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.

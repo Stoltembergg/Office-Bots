@@ -1,8 +1,9 @@
 // Fonte de agentes do Cursor (AgentSource 'cursor', ver sources/source.ts): observa os chats de ~/.cursor/chats.
 //
 // Presença: o `meta.json` de cada chat (e o mtime do store.db, sem abrir o SQLite) diz a última atividade; chat
-// com atividade nos últimos CURSOR_RECENT_MS está "aberto". Sem atividade na janela = fechado, com a mesma folga de
-// 1,5 s das outras fontes. 'working' só na janela quente (CURSOR_WORKING_MS); presente e parado = 'idle'.
+// com atividade na janela de presença está "aberto": HABBLAUD_IDLE_LEAVE_MIN (a mesma saída por inatividade das outras
+// fontes, ver Office) ou, sem ela, CURSOR_RECENT_MS. Sem atividade na janela = fechado, com a mesma folga de 1,5 s das
+// outras fontes. 'working' só na janela quente (CURSOR_WORKING_MS); presente e parado = 'idle'.
 // Linha do tempo: parse incremental dos blobs JSON plaintext em store.db → addActivity / mergeHistory.
 // MVP: sem subagentes (isSubagent fica de fora), sem cwd não há sala, sem transcript para o terminal SSE, e uma
 // conta só (.cursor), mesmo com várias pastas.
@@ -15,7 +16,7 @@ import { errMsg, log } from '../../log';
 import type { Office, TranscriptSummary } from '../../model/office';
 import type { AgentSource } from '../source';
 import { detectCursorAccount } from './accounts';
-import { isCursorPresent, isCursorWorking, listCursorChats, type CursorChatMeta } from './files';
+import { CURSOR_RECENT_MS, isCursorPresent, isCursorWorking, listCursorChats, type CursorChatMeta } from './files';
 import { parseCursorStore } from './transcript';
 import { defaultCursorAuthPath, loadCursorUsage, type FetchFn } from './usage';
 
@@ -50,6 +51,11 @@ export interface CursorSourceOptions {
   office: Office;
   /** Pastas do Cursor (com `chats/`) lidas por este processo. */
   roots: string[];
+  /**
+   * Janela de presença: sem atividade por este tempo, o chat sai do escritório. O Cursor não diz se o chat está aberto,
+   * então é a única saída dele; vem de HABBLAUD_IDLE_LEAVE_MIN (ServerConfig.idleLeaveMs). Ausente = CURSOR_RECENT_MS.
+   */
+  presenceMs?: number;
   now?: () => number;
   pollMs?: number;
   /** Intervalo do poll de uso do plano (default 60 s). */
@@ -184,7 +190,7 @@ export class CursorSource implements AgentSource {
     const present = new Map<string, CursorChatMeta>();
     for (const root of this.opts.roots) {
       for (const meta of listCursorChats(root, now)) {
-        if (meta.isSubagent || !meta.cwd || !isCursorPresent(meta, now)) continue;
+        if (meta.isSubagent || !meta.cwd || !isCursorPresent(meta, now, this.opts.presenceMs || CURSOR_RECENT_MS)) continue;
         present.set(meta.chatId, meta);
       }
     }

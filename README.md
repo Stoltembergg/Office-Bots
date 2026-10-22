@@ -500,7 +500,7 @@ chip da conta do Codex é vazado e leva o selo **CODEX**.
 Se você usa o **Cursor** (IDE com agente), os chats ativos entram no escritório como personagens da conta `.cursor` (chip **R** e nome **Cursor** nos detalhes do agente). O Habblaud acha sozinho `~/.cursor` (precisa existir a pasta `chats/`) e lê só `meta.json` de cada conversa e o *mtime* de `store.db` — **sem abrir o SQLite** — para saber quem está aberto, ocioso ou digitando (atividade recente). Título e sala vêm do `meta.json` (`cwd`); subagentes e chats sem pasta de projeto ficam de fora.
 
 - **Só observação (fase 1):** não há terminal, histórico, hooks nem responder/mandar mensagem pelo escritório para o Cursor; atividades detalhadas e “precisa de você” vêm em fases futuras (hooks/terminal).
-- **Presença:** chat com atividade nos últimos 10 min aparece; parado há mais tempo some do escritório. “Trabalhando” vs ocioso usa uma janela curta (5 min) em cima disso.
+- **Presença:** o Cursor não diz se o chat está aberto, então ele aparece enquanto teve atividade dentro de `HABBLAUD_IDLE_LEAVE_MIN` (a mesma variável da saída por inatividade; sem ela, 10 min) e some depois disso. “Trabalhando” vs ocioso usa uma janela curta (5 min) em cima disso.
 - **Desligar ou apontar pastas:** `HABBLAUD_CURSOR=0` desliga a fonte; `HABBLAUD_CURSOR_DIRS` ou `HABBLAUD_CURSOR_DIR` (vírgula) substituem a detecção automática de `~/.cursor`.
 
 ### GitHub no escritório
@@ -624,7 +624,7 @@ Tudo funciona sem configurar nada. Se precisar ajustar, use variáveis de ambien
 | `HABBLAUD_CURSOR` | ligado | `0` desliga o Cursor no escritório (modo observação). |
 | `HABBLAUD_CURSOR_DIRS` / `HABBLAUD_CURSOR_DIR` | detecção automática (`~/.cursor` com `chats/`) | Pastas raiz do Cursor, separadas por vírgula (`HABBLAUD_CURSOR_DIRS` tem prioridade sobre `HABBLAUD_CURSOR_DIR`). |
 | `HABBLAUD_UPDATE_CHECK` | ligado | `0` desliga a verificação de versão nova (uma consulta às releases do repositório no GitHub a cada 6 h). |
-| `HABBLAUD_IDLE_LEAVE_MIN` | desligado | Minutos ocioso até o agente sair do escritório com a sessão ainda aberta (ex.: `10`). Volta sozinho quando trabalha de novo, precisa de você ou espera um shell. Sem valor, fica enquanto a sessão estiver aberta. |
+| `HABBLAUD_IDLE_LEAVE_MIN` | desligado | Minutos ocioso até o agente sair do escritório com a sessão ainda aberta (ex.: `10`). Volta sozinho quando trabalha de novo, precisa de você ou espera um shell. Sem valor, fica enquanto a sessão estiver aberta. No Cursor, que não diz se o chat está aberto, é a janela de presença (sem valor, 10 min). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar nome, letra ou cor, casado pelo nome da pasta da conta. Ex.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **No Docker**, valem `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,

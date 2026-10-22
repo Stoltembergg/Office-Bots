@@ -20,7 +20,7 @@ afterEach(() => {
   cleanups = [];
 });
 
-function setup() {
+function setup(presenceMs?: number) {
   const tmp = tempDir();
   cleanups.push(tmp.cleanup);
   const root = join(tmp.dir, '.cursor');
@@ -39,7 +39,7 @@ function setup() {
     now,
   });
   late.office = office;
-  const source = new CursorSource({ accounts, office, roots: [root], now });
+  const source = new CursorSource({ accounts, office, roots: [root], now, presenceMs });
   cleanups.unshift(() => source.stop());
 
   function chat(id: string, meta: Record<string, unknown>, project = 'hash1') {
@@ -111,6 +111,22 @@ describe('fonte do Cursor', () => {
     expect(ctx.agent(KEY)?.status).toBe('offline');
     ctx.advance(60_000);
     expect(ctx.poll().find((a) => a.id === KEY)).toBeUndefined();
+  });
+
+  it('janela de presença de HABBLAUD_IDLE_LEAVE_MIN (presenceMs) no lugar de CURSOR_RECENT_MS', () => {
+    const ctx = setup(30 * 60_000);
+    ctx.chat('chat-1', { updatedAtMs: ctx.now() - 10_000, cwd: '/p/a' });
+    ctx.source.start();
+    ctx.advance(CURSOR_RECENT_MS + 60_000);
+    ctx.poll();
+    ctx.advance(2_000);
+    ctx.poll();
+    expect(ctx.agent(KEY)?.status).toBe('idle');
+    ctx.advance(30 * 60_000);
+    ctx.poll();
+    ctx.advance(2_000);
+    ctx.poll();
+    expect(ctx.agent(KEY)?.status).toBe('offline');
   });
 
   it('chat sobrescrito (updatedAtMs novo) volta a ficar presente', () => {
