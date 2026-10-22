@@ -615,6 +615,23 @@ export class Office {
     this.markDirty();
   }
 
+  /** O principal fora por inatividade a que este agente pertence (ele mesmo ou um ancestral), se houver. */
+  private awayRoot(id: string): AgentRecord | undefined {
+    let cur = this.agents.get(id);
+    for (let guard = 0; cur && guard < 16; guard++) {
+      if (cur.away) return cur;
+      cur = cur.info.parentId ? this.agents.get(cur.info.parentId) : undefined;
+    }
+    return undefined;
+  }
+
+  /** O principal no topo da cadeia de subagentes. */
+  private rootOf(rec: AgentRecord): AgentRecord | undefined {
+    let cur: AgentRecord | undefined = rec;
+    for (let guard = 0; cur?.info.parentId && guard < 16; guard++) cur = this.agents.get(cur.info.parentId);
+    return cur;
+  }
+
   /** Fora do snapshot: saiu por inatividade e já passou a saída (subagentes seguem o principal). */
   private isHidden(rec: AgentRecord): boolean {
     let cur: AgentRecord | undefined = rec;
@@ -627,6 +644,15 @@ export class Office {
 
   private checkIdleLeave(now: number): void {
     const limit = this.deps.idleLeaveMs ?? 0;
+    if (limit <= 0 && ![...this.agents.values()].some((r) => r.away)) return;
+    // Pedido de permissão pendente (dele ou de um subagente) segura no escritório e traz de volta quem saiu.
+    const pending = new Set<AgentRecord>();
+    for (const id of this.deps.permissions?.().keys() ?? []) {
+      const away = this.awayRoot(id);
+      if (away) this.comeBack(away);
+      const rec = this.agents.get(id);
+      if (rec) pending.add(rec.info.parentId ? (this.rootOf(rec) ?? rec) : rec);
+    }
     for (const rec of this.agents.values()) {
       if (rec.away) {
         if (!rec.away.hidden && now - rec.away.at >= OFFLINE_GRACE_MS) {
@@ -638,7 +664,7 @@ export class Office {
       const info = rec.info;
       if (limit <= 0 || this.booting || info.kind !== 'main' || info.status !== 'idle') continue;
       const since = rec.bootIdle ? Math.min(info.statusSince, info.lastEventAt) : info.statusSince;
-      if (now - since < limit) continue;
+      if (now - since < limit || pending.has(rec)) continue;
       if (this.descendants(info.id).some((d) => d.info.status !== 'done')) continue;
       this.leaveIdle(rec, now);
     }
@@ -820,6 +846,9 @@ export class Office {
   noticePermission(id: string, what: string, kind: 'permission' | 'question' = 'permission'): void {
     const info = this.agents.get(id)?.info;
     if (!info) return;
+    // Pedido de quem saiu por inatividade (ou de um subagente dele): volta antes do registro de sessões dizer "waiting".
+    const away = this.awayRoot(id);
+    if (away) this.comeBack(away);
     const room = this.roomName(info.roomId);
     const text = kind === 'question' ? `❓ ${info.name} tem uma pergunta em ${room}: ${what}` : `🔐 ${info.name} pede permissão em ${room}: ${what}`;
     this.notice('wait', id, 'alert', text, info.roomId);
