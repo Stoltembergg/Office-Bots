@@ -36,6 +36,8 @@ services:
       HABBLAUD_UPDATE_CHECK: ${HABBLAUD_UPDATE_CHECK:-}
       # 0 desliga as sessões do Codex no escritório.
       HABBLAUD_CODEX: ${HABBLAUD_CODEX:-}
+      # Minutos ocioso até o agente sair do escritório com a sessão aberta (vazio = fica enquanto a sessão existir).
+      HABBLAUD_IDLE_LEAVE_MIN: ${HABBLAUD_IDLE_LEAVE_MIN:-}
     # Endurecimento: sistema de arquivos só leitura (exceto /data e /tmp), sem capabilities extras.
     read_only: true
     tmpfs:

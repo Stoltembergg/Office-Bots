@@ -200,10 +200,11 @@ describe('NameStore: personagem de cada sala', () => {
   });
 });
 
-function makeOffice(names = new NameStore(null)) {
+function makeOffice(names = new NameStore(null), idleLeaveMs?: number) {
   let clock = 1_000_000;
   const office = new Office({
     names,
+    idleLeaveMs,
     version: 't',
     startedAt: clock,
     accounts: (s) => [{ id: 'acc', short: 'C', name: 'Conta C', color: '#f08a3c', configDir: '/x', sessions: s.get('acc') ?? 0, usageStatus: 'disabled' }],
@@ -795,5 +796,126 @@ describe('Office: personagem do projeto', () => {
     expect(names.character('/p/api')?.owner).toBe('s2');
     office.switchSession('acc:2', 's2b');
     expect(names.character('/p/api')?.owner).toBe('s2b');
+  });
+});
+
+describe('Office: saída por inatividade', () => {
+  const MIN = 60_000;
+  const LEAVE = 10 * MIN;
+  const main = (office: Office, now: number, id = 'acc:1', cwd = '/p/loja', status: 'idle' | 'working' = 'idle') =>
+    office.addMain({ id, account: 'acc', sessionId: `s-${id}`, cwd, role: 'Agente principal', startedAt: now, status });
+
+  it('desligado (padrão): ocioso fica enquanto a sessão estiver aberta', () => {
+    const { office, advance, now } = makeOffice();
+    main(office, now());
+    advance(5 * 3600_000);
+    office.tick();
+    expect(office.commit().snapshot.agents.map((a) => a.status)).toEqual(['idle']);
+  });
+
+  it('ocioso há idleLeaveMs sai pelo elevador, some com a sala e volta ao trabalhar', () => {
+    const { office, advance, now } = makeOffice(undefined, LEAVE);
+    main(office, now());
+    const name = office.get('acc:1')!.name;
+    office.commit();
+    advance(LEAVE - 1);
+    office.tick();
+    expect(office.commit().snapshot.agents[0].status).toBe('idle');
+    advance(1);
+    office.tick();
+    let r = office.commit();
+    expect(r.notices.map((n) => n.text)).toEqual([`💤 ${name} saiu de loja por inatividade`]);
+    expect(r.snapshot.agents[0].status).toBe('offline');
+    expect(r.snapshot.rooms).toHaveLength(1);
+    // A sessão segue aberta: conta na conta e o modelo ainda a conhece.
+    expect(r.snapshot.accounts[0].sessions).toBe(1);
+    expect(office.get('acc:1')!.status).toBe('idle');
+    advance(OFFLINE_GRACE_MS);
+    office.tick();
+    r = office.commit();
+    expect(r.snapshot.agents).toEqual([]);
+    expect(r.snapshot.rooms).toEqual([]);
+    expect(r.snapshot.accounts[0].sessions).toBe(1);
+    // Ocioso continua ocioso: nada muda.
+    office.setStatus('acc:1', 'idle');
+    expect(office.commit().snapshot.agents).toEqual([]);
+    office.setStatus('acc:1', 'working');
+    r = office.commit();
+    expect(r.notices.map((n) => n.text)).toContain(`👋 ${name} voltou para loja`);
+    expect(r.snapshot.agents.map((a) => a.status)).toEqual(['working']);
+    expect(r.snapshot.rooms.map((x) => x.id)).toEqual(['/p/loja']);
+    // Concluiu de novo: o relógio recomeça.
+    office.setStatus('acc:1', 'idle');
+    advance(LEAVE - 1);
+    office.tick();
+    expect(office.commit().snapshot.agents[0].status).toBe('idle');
+  });
+
+  it('esperando você ou um shell, ou com subagente rodando, não sai', () => {
+    const { office, advance, now } = makeOffice(undefined, LEAVE);
+    main(office, now(), 'acc:1');
+    main(office, now(), 'acc:2');
+    main(office, now(), 'acc:3');
+    office.setStatus('acc:1', 'waiting', 'aprovar uma permissão');
+    office.setStatus('acc:2', 'shell');
+    office.addSub({ id: 's3:sub', parentId: 'acc:3', sessionId: 's-acc:3', role: 'Explore', background: true, startedAt: now() });
+    advance(LEAVE * 3);
+    office.tick();
+    expect(office.commit().snapshot.agents.filter((a) => a.kind === 'main').map((a) => a.status)).toEqual(['waiting', 'shell', 'idle']);
+  });
+
+  it('pedido de permissão traz de volta quem saiu', () => {
+    const { office, advance, now } = makeOffice(undefined, LEAVE);
+    main(office, now());
+    advance(LEAVE);
+    office.tick();
+    advance(OFFLINE_GRACE_MS);
+    office.tick();
+    expect(office.commit().snapshot.agents).toEqual([]);
+    office.setStatus('acc:1', 'waiting', 'aprovar uma permissão');
+    expect(office.commit().snapshot.agents.map((a) => a.status)).toEqual(['waiting']);
+  });
+
+  it('sala com outro agente presente continua; sessão fechada fora do escritório sai sem aviso', () => {
+    const { office, advance, now } = makeOffice(undefined, LEAVE);
+    main(office, now(), 'acc:1');
+    main(office, now(), 'acc:2', '/p/loja', 'working');
+    advance(LEAVE);
+    office.tick();
+    advance(OFFLINE_GRACE_MS);
+    office.tick();
+    let snap = office.commit().snapshot;
+    expect(snap.agents.map((a) => a.id)).toEqual(['acc:2']);
+    expect(snap.rooms.map((r) => r.id)).toEqual(['/p/loja']);
+    office.closeMain('acc:1');
+    expect(office.commit().notices).toEqual([]);
+    office.tick();
+    expect(office.has('acc:1')).toBe(false);
+    snap = office.commit().snapshot;
+    expect(snap.agents.map((a) => a.id)).toEqual(['acc:2']);
+  });
+
+  it('/clear de quem saiu o traz de volta, ocioso, com o relógio zerado', () => {
+    const { office, advance, now } = makeOffice(undefined, LEAVE);
+    main(office, now());
+    advance(LEAVE);
+    office.tick();
+    advance(OFFLINE_GRACE_MS);
+    office.tick();
+    office.switchSession('acc:1', 'outra');
+    office.tick();
+    expect(office.commit().snapshot.agents.map((a) => a.status)).toEqual(['idle']);
+  });
+
+  it('no boot, quem já estava ocioso conta do último evento do transcript', () => {
+    const { office, advance, now } = makeOffice(undefined, LEAVE);
+    const last = now() - 2 * 3600_000;
+    office.beginBoot();
+    office.addMain({ id: 'acc:1', account: 'acc', sessionId: 's1', cwd: '/p/loja', role: 'Agente principal', startedAt: last - 3600_000, status: 'idle' });
+    office.applyTranscript('acc:1', { tasks: [], stats: { toolCalls: 0, tokensIn: 0, tokensOut: 0, subagents: 0 }, lastAt: last });
+    office.endBoot();
+    advance(1_000);
+    office.tick();
+    expect(office.commit().snapshot.agents[0].status).toBe('offline');
   });
 });

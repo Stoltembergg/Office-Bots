@@ -50,6 +50,11 @@ export interface ServerConfig {
   updateCheck: boolean;
   /** Observa as sessões do Codex (sources/codex/); HABBLAUD_CODEX=0 desliga. */
   codex: boolean;
+  /**
+   * Agente principal ocioso por este tempo sai do escritório com a sessão ainda aberta e volta quando sair de ocioso
+   * (Office: OfficeDeps.idleLeaveMs). HABBLAUD_IDLE_LEAVE_MIN em minutos; ausente ou inválido = desligado (0).
+   */
+  idleLeaveMs: number;
 }
 
 export function isTruthy(v: string | undefined): boolean {
@@ -169,5 +174,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     repo: pkg.repo,
     updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
     codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    idleLeaveMs: parseIdleLeave(env.HABBLAUD_IDLE_LEAVE_MIN),
   };
+}
+
+/** HABBLAUD_IDLE_LEAVE_MIN (minutos, aceita fração) em ms; vazio, zero, negativo ou texto = 0 (desligado). */
+export function parseIdleLeave(v: string | undefined): number {
+  const min = Number(v?.trim() || 0);
+  return Number.isFinite(min) && min > 0 ? Math.round(min * 60_000) : 0;
 }

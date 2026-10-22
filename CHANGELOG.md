@@ -10,6 +10,12 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Saída por inatividade (opcional):** com `HABBLAUD_IDLE_LEAVE_MIN=10`, o agente ocioso há 10 min (sem
+  subagente rodando) sai pelo elevador mesmo com a sessão aberta, e a sala sem mais ninguém apaga a luz. Ele volta
+  quando trabalha de novo, precisa de você ou fica esperando um shell. Sem a variável, nada muda.
+
 ## [0.8.0] - 2026-10-09
 
 Para atualizar: `git pull` e `npm run docker:up`. Renomear salas e editar o personagem funcionam só pelo próprio

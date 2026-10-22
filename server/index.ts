@@ -87,6 +87,7 @@ const office = new Office({
   permissions: () => late.permissions?.snapshot() ?? new Map(),
   messages: config.messages ? () => late.messages?.reachable() ?? new Set() : undefined,
   updates: () => updates.status(),
+  idleLeaveMs: config.idleLeaveMs,
 });
 // Fontes de agentes, uma por ferramenta (sources/source.ts): a do Claude Code e, depois dela, a do Codex (quando há
 // pastas do Codex; HABBLAUD_CODEX=0 desliga), com o histórico dela no HistorySet abaixo e as contas registradas por
@@ -270,6 +271,9 @@ server.listen(config.port, config.host, () => {
     log.info(`   Codex: ${config.codex ? 'nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)' : 'desligado (HABBLAUD_CODEX=0)'}.`);
   }
   if (office.isDemo()) log.info('   Modo demonstração ligado (agentes simulados misturados aos reais).');
+  if (config.idleLeaveMs > 0) {
+    log.info(`   Saída por inatividade: ocioso há ${Math.round(config.idleLeaveMs / 60_000)} min sai do escritório (HABBLAUD_IDLE_LEAVE_MIN).`);
+  }
   if (config.terminal) log.info('   Terminal: ligado (acesso só local).');
   else log.info(`   Terminal: desligado (${terminalOffReason(process.env, config.host, config.inDocker)}).`);
   log.info(timeline ? `   Linha do tempo (timelapse): gravando em ${timelineDir}.` : '   Linha do tempo (timelapse): gravação desligada (HABBLAUD_TIMELINE).');
