@@ -11147,3 +11147,105 @@ html.is-replay #world {
 .ui-world-chip__visitors[hidden] {
   display: none;
 }
+
+/* ---------------------------------------------------------------- cidade dos projetos (ui/project-city.ts) */
+
+.ui-pcity {
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1100px, calc(100vw - 24px));
+}
+
+.ui-pcity__hint {
+  padding: 0 16px 8px;
+  color: var(--ui-muted);
+}
+
+.ui-pcity__tabs,
+.ui-pcity__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+.ui-pcity__tab,
+.ui-pcity__item {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line-strong);
+  background: var(--ui-bg-soft);
+  color: var(--ui-text);
+  font: 12px/1.3 var(--font-ui);
+  cursor: pointer;
+}
+
+.ui-pcity__tab:hover,
+.ui-pcity__item:hover {
+  background: var(--ui-bg-hover);
+}
+
+.ui-pcity__tab[aria-pressed='true'],
+.ui-pcity__item[aria-pressed='true'] {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+
+.ui-pcity__street {
+  position: relative;
+  margin: 0 16px 10px;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ui-line);
+}
+
+.ui-pcity__canvas {
+  display: block;
+  height: min(52vh, 480px);
+  image-rendering: pixelated;
+}
+
+.ui-pcity__canvas.is-pointer {
+  cursor: pointer;
+}
+
+.ui-pcity__tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--ui-bg-solid);
+  border: 1px solid var(--ui-line-strong);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ui-pcity__empty {
+  padding: 8px 16px 12px;
+  color: var(--ui-muted);
+}
+
+.ui-pcity-chip {
+  --chip: var(--ui-accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 5px 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chip) 32%, transparent);
+  background: color-mix(in srgb, var(--chip) 10%, transparent);
+  font: 600 10.5px/1 var(--font-ui);
+  color: color-mix(in srgb, var(--chip) 70%, #fff);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ui-pcity-chip:hover {
+  background: color-mix(in srgb, var(--chip) 20%, transparent);
+}
+
+.ui-pcity-chip__x .ui-px-icon {
+  width: 10px;
+  height: 10px;
+}

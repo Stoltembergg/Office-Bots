@@ -3274,4 +3274,22 @@ export const ES: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Sello dejado en la recepción: {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Entra al edificio o acércate más a la puerta para sellar.",
   "O carimbo não foi deixado. Tente de novo.": "El sello no se dejó. Inténtalo de nuevo.",
+
+  // client/src/ui/project-city.ts
+  "Cidade dos projetos": "Ciudad de los proyectos",
+  "Distritos (discos)": "Distritos (discos)",
+  "Nenhum projeto aberto agora. Cada pasta onde você abre o Claude Code ou o Codex vira um prédio.": "Ningún proyecto abierto ahora. Cada carpeta donde abres Claude Code o Codex se convierte en un edificio.",
+  "Prédios do distrito": "Edificios del distrito",
+  "Fechar cidade dos projetos": "Cerrar la ciudad de los proyectos",
+  "Um prédio por projeto: mais commits, mais andares. Cada janela acesa é uma sessão. Clique num prédio para ver só as salas dele.": "Un edificio por proyecto: más commits, más pisos. Cada ventana encendida es una sesión. Haz clic en un edificio para ver solo sus salas.",
+  "Escritório mostrando só o projeto {0}.": "Oficina mostrando solo el proyecto {0}.",
+  "Escritório mostrando todos os projetos.": "Oficina mostrando todos los proyectos.",
+  "Prédio: {0}": "Edificio: {0}",
+  "Mostrando só {0}. Clique para ver todos os projetos.": "Mostrando solo {0}. Haz clic para ver todos los proyectos.",
+  "Este computador": "Este ordenador",
+  "Disco {0}": "Disco {0}",
+  "commit": "commit",
+  "commits": "commits",
+  "arquivo": "archivo",
+  "sem git": "sin git",
 };

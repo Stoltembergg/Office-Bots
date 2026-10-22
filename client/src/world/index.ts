@@ -13,6 +13,7 @@ import { inRect } from './layout/geometry';
 import { attachInput, type Hit } from './input';
 import type { AgentInfo } from '../../../shared/types';
 import { rebaseSnapshot } from './playback';
+import { onlyProject } from '../../../shared/projects';
 import { Overlay } from './render/overlay';
 import { Renderer } from './render/renderer';
 import { Sim, type VisitLight } from './sim/sim';
@@ -61,6 +62,8 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore, o: Cr
   let assets: WorldAssets | null = null;
   /** Timelapse ligado: relógio próprio do mundo (`worldNow`), acelerado pelo fator de animação. */
   let playback: WorldPlayback | null = null;
+  /** Prédio aberto pela cidade dos projetos (raiz do projeto); null = o escritório com todos. */
+  let project: string | null = null;
   let worldNow = 0;
   const selectCbs = new Set<(s: Selection) => void>();
   const hoverCbs = new Set<(id: string | null) => void>();
@@ -247,8 +250,9 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore, o: Cr
   // ------------------------------------------------------------------ dados
 
   const onSnapshot = () => {
-    const snap = store.snapshot;
-    if (!snap) return;
+    const full = store.snapshot;
+    if (!full) return;
+    const snap = project ? onlyProject(full, project) : full;
     try {
       // No timelapse, os horários do snapshot vão para o relógio do mundo (world/playback.ts).
       if (playback) sim.applySnapshot(rebaseSnapshot(snap, worldNow - snap.serverTime), worldNow);
@@ -443,6 +447,15 @@ export function createWorld(canvas: HTMLCanvasElement, store: OfficeStore, o: Cr
       playback = p;
       worldNow = p ? p.clock() : 0;
       rebuild();
+    },
+    getProject: () => project,
+    setProject: (root) => {
+      if (root === project) return;
+      project = root;
+      // recomeça do zero, como no timelapse: quem é do prédio já aparece no lugar, sem desfile de saída
+      rebuild();
+      onSnapshot();
+      overview(false);
     },
     onSound: (cb) => {
       soundCbs.add(cb);

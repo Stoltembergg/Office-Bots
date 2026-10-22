@@ -91,6 +91,12 @@ export interface WorldApi {
    * snapshot do store é aplicado como carga inicial.
    */
   setPlayback?(p: WorldPlayback | null): void;
+  /**
+   * (Opcional, aditivo) Cidade dos projetos: com `root`, o escritório mostra só as salas daquele projeto (os worktrees
+   * inclusos; ver shared/projects.ts); null volta a mostrar todas. Recomeça o mundo, como setPlayback.
+   */
+  setProject?(root: string | null): void;
+  getProject?(): string | null;
   /** (Opcional, aditivo) Sons do ambiente: teclado de quem trabalha à vista, elevador, rodas. */
   onSound?(cb: (cue: SoundCue) => void): () => void;
   /**

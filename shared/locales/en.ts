@@ -3273,4 +3273,22 @@ export const EN: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Stamp left at the front desk: {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Go into the building or get closer to the door to stamp.",
   "O carimbo não foi deixado. Tente de novo.": "The stamp wasn't left. Try again.",
+
+  // client/src/ui/project-city.ts
+  "Cidade dos projetos": "Project city",
+  "Distritos (discos)": "Districts (drives)",
+  "Nenhum projeto aberto agora. Cada pasta onde você abre o Claude Code ou o Codex vira um prédio.": "No projects open right now. Every folder where you open Claude Code or Codex becomes a building.",
+  "Prédios do distrito": "Buildings in the district",
+  "Fechar cidade dos projetos": "Close project city",
+  "Um prédio por projeto: mais commits, mais andares. Cada janela acesa é uma sessão. Clique num prédio para ver só as salas dele.": "One building per project: more commits, more floors. Each lit window is a session. Click a building to see only its rooms.",
+  "Escritório mostrando só o projeto {0}.": "Office showing only the {0} project.",
+  "Escritório mostrando todos os projetos.": "Office showing all projects.",
+  "Prédio: {0}": "Building: {0}",
+  "Mostrando só {0}. Clique para ver todos os projetos.": "Showing only {0}. Click to see all projects.",
+  "Este computador": "This computer",
+  "Disco {0}": "Drive {0}",
+  "commit": "commit",
+  "commits": "commits",
+  "arquivo": "file",
+  "sem git": "no git",
 };
