@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Activity } from '../../shared/types';
+import type { Activity, PermissionRequestInfo } from '../../shared/types';
 import { nameKey } from '../../shared/appearance';
 import { hash32 } from '../../shared/hash';
 import { NAME_POOL } from '../../shared/names';
@@ -200,11 +200,12 @@ describe('NameStore: personagem de cada sala', () => {
   });
 });
 
-function makeOffice(names = new NameStore(null), idleLeaveMs?: number) {
+function makeOffice(names = new NameStore(null), idleLeaveMs?: number, perms = new Map<string, PermissionRequestInfo>()) {
   let clock = 1_000_000;
   const office = new Office({
     names,
     idleLeaveMs,
+    permissions: () => perms,
     version: 't',
     startedAt: clock,
     accounts: (s) => [{ id: 'acc', short: 'C', name: 'Conta C', color: '#f08a3c', configDir: '/x', sessions: s.get('acc') ?? 0, usageStatus: 'disabled' }],
@@ -893,6 +894,40 @@ describe('Office: saída por inatividade', () => {
     expect(office.has('acc:1')).toBe(false);
     snap = office.commit().snapshot;
     expect(snap.agents.map((a) => a.id)).toEqual(['acc:2']);
+  });
+
+  it('pedido de permissão pelo hook (antes do registro de sessões) traz de volta e segura no escritório', () => {
+    const perms = new Map<string, PermissionRequestInfo>();
+    const { office, advance, now } = makeOffice(undefined, LEAVE, perms);
+    main(office, now());
+    const name = office.get('acc:1')!.name;
+    advance(LEAVE);
+    office.tick();
+    advance(OFFLINE_GRACE_MS);
+    office.tick();
+    office.commit();
+    // O registro de permissões guarda o pedido e avisa o escritório; o status da sessão ainda diz "idle".
+    perms.set('acc:1', { id: 'p1', tool: 'Bash', title: 'Bash(npm test)', text: 'Rodando os testes', icon: '🧪', createdAt: now() } as PermissionRequestInfo);
+    office.noticePermission('acc:1', 'Rodando os testes');
+    let r = office.commit();
+    expect(r.notices.map((n) => n.text)).toContain(`👋 ${name} voltou para loja`);
+    expect(r.snapshot.agents.map((a) => [a.status, a.permission?.id])).toEqual([['waiting', 'p1']]);
+    // Pendente: não sai de novo, por mais que o registro de sessões siga em "idle".
+    advance(LEAVE * 2);
+    office.tick();
+    expect(office.commit().snapshot.agents.map((a) => a.status)).toEqual(['waiting']);
+  });
+
+  it('pedido pendente traz de volta no tick, mesmo sem o aviso do registro', () => {
+    const perms = new Map<string, PermissionRequestInfo>();
+    const { office, advance, now } = makeOffice(undefined, LEAVE, perms);
+    main(office, now());
+    advance(LEAVE);
+    office.tick();
+    expect(office.commit().snapshot.agents[0].status).toBe('offline');
+    perms.set('acc:1', { id: 'p2', tool: 'Bash', title: 'Bash(ls)', text: 'Listando', icon: '💻', createdAt: now() } as PermissionRequestInfo);
+    office.tick();
+    expect(office.commit().snapshot.agents.map((a) => a.status)).toEqual(['waiting']);
   });
 
   it('/clear de quem saiu o traz de volta, ocioso, com o relógio zerado', () => {
