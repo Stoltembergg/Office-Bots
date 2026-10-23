@@ -10,6 +10,11 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Configurações: os botões das categorias de som (Avisos, Teclado, Elevador, Rodas) voltam a ter o texto
+  centralizado.** O texto ficava encostado à esquerda.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
