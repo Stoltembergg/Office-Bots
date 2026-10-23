@@ -16,7 +16,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-7-3178c6?logo=typescript&logoColor=white" />
   <img alt="Docker" src="https://img.shields.io/badge/Docker-listo-2496ed?logo=docker&logoColor=white" />
   <img alt="Cero dependencias de runtime" src="https://img.shields.io/badge/dependencias%20de%20runtime-0-f08a3c" />
-  <img alt="Interfaz en portugués, inglés, español y francés" src="https://img.shields.io/badge/interface-PT%20%C2%B7%20EN%20%C2%B7%20ES%20%C2%B7%20FR-4aa8e8" />
+  <img alt="Interfaz en portugués, inglés, español, francés y coreano" src="https://img.shields.io/badge/interface-PT%20%C2%B7%20EN%20%C2%B7%20ES%20%C2%B7%20FR%20%C2%B7%20KO-4aa8e8" />
 </p>
 
 <p align="center">
@@ -436,7 +436,7 @@ las actividades y las animaciones de los agentes. El ciclo día/noche sigue sien
 
 ### Idiomas
 
-La interfaz está en **portugués, inglés, español y francés**. Sigue el idioma del navegador; en
+La interfaz está en **portugués, inglés, español, francés y coreano**. Sigue el idioma del navegador; en
 **Configuración › Idioma** puedes fijar uno (la elección queda guardada en este navegador). Los textos que arma el
 servidor (actividades, avisos, terminal, logs y los scripts de instalación) siguen `HABBLAUD_LANG` y, si no está
 definida, el idioma del sistema, salvo el inglés: muchas máquinas y todos los contenedores vienen en inglés por
@@ -764,7 +764,7 @@ Todo funciona sin configurar nada. Si necesitas ajustar algo, usa variables de e
 | `HABBLAUD_CODEX_DIRS` | detección automática | Carpetas de Codex, separadas por comas (en lugar de `~/.codex*` y `CODEX_HOME`). |
 | `HABBLAUD_CODEX_BIN` | `codex` del PATH (en Windows, `codex.exe`) | El binario de Codex que entrega los mensajes (`codex queue`), en modo Node o en `npm run codex:bridge`. |
 | `HABBLAUD_UPDATE_CHECK` | activada | `0` desactiva la comprobación de versión nueva (una consulta a las releases del repositorio en GitHub cada 6 h). |
-| `HABBLAUD_LANG` | idioma del sistema (salvo inglés); si no, `pt-BR` | Idioma de los textos que arma el servidor (actividades, avisos, logs): `pt-BR`, `en`, `es` o `fr`. La interfaz sigue al navegador o la elección en Configuración › Idioma. Consulta [Idiomas](#idiomas). |
+| `HABBLAUD_LANG` | idioma del sistema (salvo inglés); si no, `pt-BR` | Idioma de los textos que arma el servidor (actividades, avisos, logs): `pt-BR`, `en`, `es`, `fr` o `ko`. La interfaz sigue al navegador o la elección en Configuración › Idioma. Consulta [Idiomas](#idiomas). |
 | `HABBLAUD_ACCOUNTS` | — | JSON para personalizar el nombre, la letra o el color, emparejado por el nombre de la carpeta de la cuenta. P. ej.: `[{"id":".claude-conta2","name":"Trabalho","short":"T","color":"#5cc97b"}]`. |
 
 **En Docker**, valen `HABBLAUD_PORT`, `HABBLAUD_BIND`, `HABBLAUD_ALLOWED_HOSTS`, `HABBLAUD_DEMO`, `HABBLAUD_TERMINAL`,
