@@ -159,6 +159,8 @@ export class SettingsPopover implements UiComponent {
       [['auto', tr('Automático')], ...LOCALES.map((l): [LanguageChoice, string] => [l.id, l.name])],
       (v) => pickLanguage(v),
     );
+    // Muitos idiomas para uma linha só: as opções quebram em linhas em vez de se espremer.
+    this.language.row.classList.add('ui-set--langs');
     this.language.row.append(
       h('span', { class: 'ui-set__hint', text: tr('Os textos das atividades vêm do servidor: seguem HABBLAUD_LANG ou o idioma do sistema onde o Habblaud roda (o inglês, só com HABBLAUD_LANG=en).') }),
     );

@@ -37,7 +37,7 @@
 // - Exportar os dados (GET /v1/me/export): repassa o JSON como veio, sem guardar nada aqui.
 // - GET /api/world/status sem `refresh` é barato: responde com o que está em memória e, se o /v1/me venceu, relê em
 //   segundo plano (só espera a leitura quando ainda não há nada guardado).
-import { getLocale, tr } from '../../shared/i18n';
+import { getLocale, toWorldLocale, tr } from '../../shared/i18n';
 import {
   worldLastError,
   type WorldBuildingStop,
@@ -391,7 +391,7 @@ export class WorldService {
       const client = this.o.client!;
       const altcha = await this.altcha(client);
       if (!altcha.ok) return altcha;
-      const locale = input.locale ?? this.o.locale?.() ?? (getLocale() as WorldLocale);
+      const locale = input.locale ?? this.o.locale?.() ?? toWorldLocale(getLocale());
       return client.register({
         email: input.email,
         password: input.password,

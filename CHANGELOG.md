@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Interface em coreano (한국어).** Escolha em **Configurações › Idioma** (ou pelo idioma do navegador e, no
+  servidor, por `HABBLAUD_LANG=ko`). O Habblaud World ainda não tem coreano: a conta e os avisos do mundo seguem em
+  inglês, e a tabuleta “Fechado” da cidade, desenhada em pixels, aparece como “closed”. Os botões de idioma nas
+  Configurações agora quebram em linhas.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido

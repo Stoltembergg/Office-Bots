@@ -289,7 +289,7 @@ describe('canários invertidos: o escritório da visita só tem o que veio do mu
   });
 
   it('o mesmo nos outros idiomas (os rótulos traduzidos entram na lista)', () => {
-    for (const locale of ['en', 'es', 'fr'] as const) {
+    for (const locale of ['en', 'es', 'fr', 'ko'] as const) {
       setLocale(locale);
       const d = sampleBuildingDetail();
       const ok = allowed(d);
