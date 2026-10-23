@@ -10,6 +10,10 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Ajuda: a seção “Controles” ocupa a largura toda.** Ficava só na coluna da esquerda, com a da direita vazia.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
