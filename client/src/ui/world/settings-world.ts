@@ -10,7 +10,7 @@
 // A janela chama render() a cada quadro sujo: o miolo só é refeito quando a tela muda (senão o que foi digitado e o
 // foco se perderiam); o status é buscado ao abrir a janela, depois de cada ação e quando o meta.world do snapshot
 // muda, nunca dentro do render.
-import { getLocale, intlLocale, tr } from '../../../../shared/i18n';
+import { getLocale, intlLocale, toWorldLocale, tr } from '../../../../shared/i18n';
 import type { Appearance } from '../../art/api';
 import { access } from '../../net/access';
 import {
@@ -36,7 +36,7 @@ import { formatDateTime, relativeTime } from '../format';
 import { segmented, switchRow } from '../settings';
 import { INTRO_IDS, introLabel, isIntroId, type IntroId } from '../../../../shared/world/intro';
 import { parsePlayerName } from '../../../../shared/world/names-rules';
-import { PLAYER_NAME_LIMITS, toWorldLocale } from '../../../../shared/world/protocol';
+import { PLAYER_NAME_LIMITS } from '../../../../shared/world/protocol';
 import {
   APPEAL_EMAIL,
   characterProblem,

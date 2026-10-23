@@ -32,6 +32,11 @@ const DIACRITIC: Readonly<Record<string, readonly [string, Mark]>> = {
   ó: ['o', 'acute'], ô: ['o', 'circ'], õ: ['o', 'tilde'], ú: ['u', 'acute'], ç: ['c', 'cedilla'],
 };
 
+/** Se pixelText tem glifo para cada letra de `text` (coreano, por exemplo, não tem). */
+export function pixelTextCovers(text: string): boolean {
+  return [...text.toLowerCase()].every((c) => c in GLYPHS || c in DIACRITIC);
+}
+
 /** Largura em px de `text` desenhado por pixelText (3 px por letra + 1 px de espaço). */
 export function pixelTextWidth(text: string): number {
   return Math.max(0, [...text].length * 4 - 1);

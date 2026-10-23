@@ -12,7 +12,6 @@
 // (POST /api/world/delete-account e /confirm), baixar os dados (GET /api/world/export), o aviso de inatividade na
 // visibilidade, o id da conta no status e o selo "não verificado" do prédio.
 import type { AppearanceParts } from '../../../shared/appearance';
-import type { Locale } from '../../../shared/i18n';
 import type { OfficeSnapshot } from '../../../shared/types';
 import {
   isWorldThemeChoice,
@@ -30,7 +29,7 @@ import {
 import type { TraitId } from '../../../shared/world/traits';
 import type { IntroId } from '../../../shared/world/intro';
 import { parsePlayerName, playerNameKey } from '../../../shared/world/names-rules';
-import { GOODBYE_REASONS, UPLINK_ACK_ERRORS, type AwaySummary, type UplinkAckError, type WorldUplink } from '../../../shared/world/protocol';
+import { GOODBYE_REASONS, UPLINK_ACK_ERRORS, type AwaySummary, type UplinkAckError, type WorldLocale, type WorldUplink } from '../../../shared/world/protocol';
 import { parseAwaySummary, summaryHasNews } from '../../../shared/world/scene';
 import { seasonalThemeFor } from '../world/api';
 import { emailLooksValid, passwordProblem, traitsValid, DEFAULT_VISIBILITY } from '../ui/world/world-model';
@@ -125,7 +124,7 @@ export interface WorldClient {
   /** `refresh`: o servidor local relê /v1/me antes de responder (a lista de bloqueados, por exemplo). */
   status(refresh?: boolean): Promise<WorldResult<WorldStatus>>;
   /** `name`: o nome de jogador, reservado na lista de espera (422 name_invalid | name_blocked, 409 name_taken). */
-  register(body: { email: string; password: string; name: string; locale: Locale }): Promise<WorldResult>;
+  register(body: { email: string; password: string; name: string; locale: WorldLocale }): Promise<WorldResult>;
   verify(body: { email: string; code: string }): Promise<WorldResult>;
   login(body: { email: string; password: string }): Promise<WorldResult>;
   logout(): Promise<WorldResult>;
@@ -364,7 +363,7 @@ export class HttpWorldApi implements WorldClient {
     return s ? { ok: true, data: s } : { ok: false, code: 'unknown', status: 200 };
   }
 
-  register(body: { email: string; password: string; name: string; locale: Locale }) {
+  register(body: { email: string; password: string; name: string; locale: WorldLocale }) {
     return this.done(this.call('POST', '/register', body));
   }
   verify(body: { email: string; code: string }) {
@@ -847,7 +846,7 @@ export class FakeWorldApi implements WorldClient {
     }, false);
   }
 
-  register(body: { email: string; password: string; name: string; locale: Locale }): Promise<WorldResult> {
+  register(body: { email: string; password: string; name: string; locale: WorldLocale }): Promise<WorldResult> {
     return this.reply(() => {
       // Como o servidor de verdade: o nome é conferido antes da senha e fica reservado para a conta.
       const name = parsePlayerName(body.name);

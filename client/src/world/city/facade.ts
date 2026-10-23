@@ -12,7 +12,7 @@
 import { mulberry32 } from '../../../../shared/hash';
 import { tr } from '../../../../shared/i18n';
 import type { WorldBuildingPublic, WorldTheme } from '../../../../shared/world/protocol';
-import { pixelText, pixelTextWidth } from '../../art/pixelfont';
+import { pixelText, pixelTextCovers, pixelTextWidth } from '../../art/pixelfont';
 import { renderSeasonalProp, type SeasonalProp } from '../../art/seasonal';
 
 /** Medidas da fachada (px de mundo). */
@@ -585,7 +585,9 @@ function paintServiceGround(ctx: Ctx, g: Ctx, st: FacadeStyle, m: FacadeModel, t
 
 /** Tabuleta "Fechado" pendurada (texto no idioma de quem vê, em pixels). */
 function paintClosedSign(ctx: Ctx, cx: number, y: number): void {
-  const text = tr('Fechado');
+  const label = tr('Fechado');
+  // a fonte de pixels não tem todos os alfabetos: sem os glifos, a tabuleta sai em inglês em vez de vazia
+  const text = pixelTextCovers(label) ? label : 'closed';
   const tw = Math.min(40, pixelTextWidth(text));
   const w = tw + 6;
   const x = Math.round(cx - w / 2);

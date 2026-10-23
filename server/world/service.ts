@@ -37,7 +37,7 @@
 // - Exportar os dados (GET /v1/me/export): repassa o JSON como veio, sem guardar nada aqui.
 // - GET /api/world/status sem `refresh` é barato: responde com o que está em memória e, se o /v1/me venceu, relê em
 //   segundo plano (só espera a leitura quando ainda não há nada guardado).
-import { getLocale, tr } from '../../shared/i18n';
+import { getLocale, toWorldLocale, tr } from '../../shared/i18n';
 import {
   worldLastError,
   type WorldBuildingStop,
@@ -57,7 +57,6 @@ import {
   type Player,
   type PlayerInput,
   type Visibility,
-  toWorldLocale,
   type WorldLocale,
 } from '../../shared/world/protocol';
 import type { WorldConfig } from '../config';

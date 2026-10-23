@@ -8,6 +8,7 @@
 //   serverLocale).
 // Os textos de atividade são montados pelo servidor, então seguem o idioma do servidor.
 import { DICTIONARIES } from './locales/all';
+import { WORLD_LOCALES, type WorldLocale } from './world/protocol';
 
 export type Locale = 'pt-BR' | 'en' | 'es' | 'fr' | 'ko';
 
@@ -19,6 +20,11 @@ export const LOCALES: { id: Locale; name: string }[] = [
   { id: 'fr', name: 'Français' },
   { id: 'ko', name: '한국어' },
 ];
+
+/** Idioma da interface -> idioma do mundo; os que o mundo não conhece (coreano) vão em inglês. */
+export function toWorldLocale(l: Locale): WorldLocale {
+  return (WORLD_LOCALES as readonly string[]).includes(l) ? (l as WorldLocale) : 'en';
+}
 
 /** Chave da preferência salva no navegador. */
 export const LOCALE_STORAGE_KEY = 'habblaud:locale';

@@ -3,7 +3,7 @@
 // do protocolo conferidas contra o resto do código.
 import { describe, expect, it } from 'vitest';
 import * as appearance from '../appearance';
-import { LOCALES as UI_LOCALES } from '../i18n';
+import { LOCALES as UI_LOCALES, toWorldLocale } from '../i18n';
 import schemaJson from './schema.json';
 import { compileValidator } from './schema-validator';
 import {
@@ -28,7 +28,6 @@ import {
   VISIBILITY_DEFAULTS,
   WORLD_ERROR_CODES,
   WORLD_LOCALES,
-  toWorldLocale,
   type AppearanceParts,
   type DeleteConfirmRequest,
   type MeBuilding,
