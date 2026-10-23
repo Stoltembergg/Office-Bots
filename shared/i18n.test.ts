@@ -3,6 +3,7 @@ import { getLocale, intlLocale, normalizeLocale, serverLocale, setLocale, tr } f
 import { EN } from './locales/en';
 import { ES } from './locales/es';
 import { FR } from './locales/fr';
+import { KO } from './locales/ko';
 
 const placeholders = (s: string) => new Set(s.match(/\{\w+\}/g) ?? []);
 
@@ -21,6 +22,8 @@ describe('i18n', () => {
     expect(normalizeLocale('pt_PT')).toBe('pt-BR');
     expect(normalizeLocale('en-US')).toBe('en');
     expect(normalizeLocale('es_AR.UTF-8')).toBe('es');
+    expect(normalizeLocale('ko-KR')).toBe('ko');
+    expect(normalizeLocale('ko_KR.UTF-8')).toBe('ko');
     expect(normalizeLocale('de-DE')).toBeUndefined();
     expect(normalizeLocale('')).toBeUndefined();
     expect(normalizeLocale(null)).toBeUndefined();
@@ -63,7 +66,7 @@ describe('i18n', () => {
   });
 
   it('nenhuma tradução fica vazia nem perde ou inventa lacunas', () => {
-    for (const [lang, dict] of Object.entries({ en: EN, es: ES, fr: FR })) {
+    for (const [lang, dict] of Object.entries({ en: EN, es: ES, fr: FR, ko: KO })) {
       for (const [pt, t] of Object.entries(dict)) {
         expect(t.trim(), `${lang}: ${pt}`).not.toBe('');
         const original = placeholders(pt);

@@ -57,6 +57,7 @@ import {
   type Player,
   type PlayerInput,
   type Visibility,
+  toWorldLocale,
   type WorldLocale,
 } from '../../shared/world/protocol';
 import type { WorldConfig } from '../config';
@@ -391,7 +392,7 @@ export class WorldService {
       const client = this.o.client!;
       const altcha = await this.altcha(client);
       if (!altcha.ok) return altcha;
-      const locale = input.locale ?? this.o.locale?.() ?? (getLocale() as WorldLocale);
+      const locale = input.locale ?? this.o.locale?.() ?? toWorldLocale(getLocale());
       return client.register({
         email: input.email,
         password: input.password,

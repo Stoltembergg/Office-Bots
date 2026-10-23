@@ -36,7 +36,7 @@ import { formatDateTime, relativeTime } from '../format';
 import { segmented, switchRow } from '../settings';
 import { INTRO_IDS, introLabel, isIntroId, type IntroId } from '../../../../shared/world/intro';
 import { parsePlayerName } from '../../../../shared/world/names-rules';
-import { PLAYER_NAME_LIMITS } from '../../../../shared/world/protocol';
+import { PLAYER_NAME_LIMITS, toWorldLocale } from '../../../../shared/world/protocol';
 import {
   APPEAL_EMAIL,
   characterProblem,
@@ -599,7 +599,7 @@ export class WorldSettingsGroup {
       const problem = passwordProblem(password.input.value, mail);
       if (problem) return form.setError(passwordProblemText(problem), password.input);
       if (!accept.checked) return form.setError(tr('Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.'), accept);
-      const r = await this.run(form, 'register', (c) => c.register({ email: mail, password: password.input.value.normalize('NFC'), name: parsed.name, locale: getLocale() }), email.input);
+      const r = await this.run(form, 'register', (c) => c.register({ email: mail, password: password.input.value.normalize('NFC'), name: parsed.name, locale: toWorldLocale(getLocale()) }), email.input);
       if (!r) return;
       if (r.ok) return this.dispatch({ type: 'code_sent', email: mail, name: parsed.name });
       // Os erros do nome vão para o campo do nome (o `run` já mostrou o texto genérico do código).

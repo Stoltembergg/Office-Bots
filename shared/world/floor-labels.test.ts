@@ -14,12 +14,12 @@ describe('nomes dos andares', () => {
     expect([FLOOR_NAME_IDS[0], FLOOR_NAME_IDS[20], FLOOR_NAME_IDS[40]]).toEqual(['ipe', 'jade', 'aurora']);
   });
 
-  it('cada id tem rótulo próprio nos 4 idiomas', () => {
+  it('cada id tem rótulo próprio nos 5 idiomas', () => {
     expect(floorLabel('ipe')).toBe('Projeto Ipê');
     expect(floorLabel('lapislazuli')).toBe('Projeto Lápis-lazúli');
     const pt = FLOOR_NAME_IDS.map(floorLabel);
     expect(new Set(pt).size).toBe(60);
-    for (const [locale, prefix] of [['en', 'Project '], ['es', 'Proyecto '], ['fr', 'Projet ']] as const) {
+    for (const [locale, prefix] of [['en', 'Project '], ['es', 'Proyecto '], ['fr', 'Projet '], ['ko', '프로젝트 ']] as const) {
       setLocale(locale);
       const labels = FLOOR_NAME_IDS.map(floorLabel);
       expect(new Set(labels).size, locale).toBe(60);

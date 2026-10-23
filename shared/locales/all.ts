@@ -4,5 +4,6 @@ import type { Locale } from '../i18n';
 import { EN } from './en';
 import { ES } from './es';
 import { FR } from './fr';
+import { KO } from './ko';
 
-export const DICTIONARIES: Partial<Record<Locale, Readonly<Record<string, string>>>> = { en: EN, es: ES, fr: FR };
+export const DICTIONARIES: Partial<Record<Locale, Readonly<Record<string, string>>>> = { en: EN, es: ES, fr: FR, ko: KO };
