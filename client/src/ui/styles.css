@@ -2891,6 +2891,11 @@
   box-shadow: inset 0 0 0 1px rgba(124, 200, 255, 0.35);
 }
 
+.ui-set--langs .ui-seg {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+}
+
 /* ------------------------------------------------------------------ ajuda */
 
 .ui-dialog {
