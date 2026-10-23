@@ -135,7 +135,7 @@ export class HelpDialog {
         this.githubSection(),
         h(
           'section',
-          { class: 'ui-help__controls' },
+          { class: 'ui-help__shell' },
           h('h3', { text: tr('Controles') }),
           h(
             'ul',

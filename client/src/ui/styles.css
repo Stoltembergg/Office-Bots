@@ -3835,9 +3835,8 @@
   color: color-mix(in srgb, var(--st-shell) 55%, #fff);
 }
 
-/* Ajuda: legenda da espera e controles ocupam a largura toda. */
-.ui-help__shell,
-.ui-help__controls {
+/* Ajuda: legenda da espera. */
+.ui-help__shell {
   grid-column: 1 / -1;
 }
 
