@@ -211,13 +211,24 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     await expect(runtime.prompt(s.runtimeSessionId, input)).rejects.toMatchObject({ code: 'invalid' });
   }, workerOperationTimeoutMs);
   it('executa o SDK com Node embutido do Electron sem Node externo no filho', async () => {
-    await runtime.stop();
-    runtime = new PiRuntime({ entry: path.join(compiled, 'worker.mjs'), directory: path.join(root, 'embedded'), execPath: electronPath as unknown as string });
-    await runtime.initialize();
-    const c = config(); c.selection = { providerId: 'openai', accountId: 'not-authorized', modelId: 'gpt-4.1', thinkingLevel: 'off' };
-    const s = await runtime.create(c); await runtime.close(s.runtimeSessionId);
-    expect(events).toEqual([]);
-  });
+    // The Electron npm package may download its binary on first import; spawning it under the full suite can exceed Vitest's 5s default.
+    let phase = 'stop default Node worker';
+    const diagnosticTimer = setTimeout(() => {
+      console.error(`[PiRuntime Electron test] still waiting after 4.5s in phase: ${phase}`);
+    }, 4_500);
+    try {
+      await runtime.stop();
+      phase = 'initialize embedded Electron worker';
+      runtime = new PiRuntime({ entry: path.join(compiled, 'worker.mjs'), directory: path.join(root, 'embedded'), execPath: electronPath as unknown as string });
+      await runtime.initialize();
+      phase = 'create managed session';
+      const c = config(); c.selection = { providerId: 'openai', accountId: 'not-authorized', modelId: 'gpt-4.1', thinkingLevel: 'off' };
+      const s = await runtime.create(c);
+      phase = 'close managed session';
+      await runtime.close(s.runtimeSessionId);
+      expect(events).toEqual([]);
+    } finally { clearTimeout(diagnosticTimer); }
+  }, workerOperationTimeoutMs);
   it('worker padrão não usa credencial ambiente nem libera contas antes de M3', async () => {
     await runtime.stop();
     runtime = new PiRuntime({ entry: path.join(compiled, 'worker.mjs'), directory: path.join(root, 'sdk-default') });
