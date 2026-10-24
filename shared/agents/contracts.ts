@@ -17,3 +17,16 @@ export interface AgentProfile {
   archivedAt?: string;
 }
 export type AgentPatch = Partial<Pick<AgentProfile, 'name' | 'instructions' | 'appearanceSeed' | 'modelPolicy'>>;
+
+export type SessionState = 'idle' | 'queued' | 'running' | 'cancelling' | 'error' | 'closed';
+export interface SessionConfig { agentId: string; selection?: ModelSelection }
+export interface SessionInfo {
+  id: string;
+  origin: 'managed-pi';
+  runtimeSessionId: string;
+  projectId: string;
+  agentId: string;
+  selection: ModelSelection;
+  state: SessionState;
+}
+export interface PromptInput { messageId: string; text: string }
