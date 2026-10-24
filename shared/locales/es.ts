@@ -1597,6 +1597,7 @@ export const ES: Readonly<Record<string, string>> = {
 
   // server/accounts/service.ts
   "Falha ao detectar contas: {0}": "Error al detectar las cuentas: {0}",
+    "Cadastro inválido.": "Registro de catálogo no válido.",
   "Falha ao ler o uso do statusline: {0}": "Error al leer el uso de la statusline: {0}",
 
   // server/codex/http.ts

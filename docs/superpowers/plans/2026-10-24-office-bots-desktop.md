@@ -199,10 +199,13 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 **Arquivos:** criar shared/agents/{contracts,validation}.ts; server/agents/{runtime,manager,sessions,projects,profiles}.ts; server/agents/pi/{runtime,worker}.ts; testes adjacentes manager.test.ts, sessions.test.ts e pi/runtime.test.ts.
 **Consome:** contratos da seção 3 e supervisor M1. **Produz:** AgentRuntime Pi e SessionManager, sem UI dependente de tipos Pi.
 
-- [ ] Testar ProjectStore/AgentStore com diretório temporário: projeto com pasta válida, agente persistido e reaberto com mesmo id/personagem/política, múltiplos agentes com modelos diferentes e agente arquivado impedido de iniciar turno.
-- [ ] Testar com runtime falso: mensagem duplicada inicia um turno; terceiro turno global entra em fila; duas conversas do mesmo agente não executam simultaneamente; cancelar fila não executa prompt.
-- [ ] Testar resolução de modelo: fixed usa seleção do agente e rejeita override divergente; choose-on-start exige escolha explícita; conta removida/modelo indisponível bloqueia envio sem fallback.
+- [x] Testar ProjectStore/AgentStore com diretório temporário: projeto com pasta válida, agente persistido e reaberto com mesmo id/personagem/política, múltiplos agentes com modelos diferentes e agente arquivado impedido de iniciar turno.
+- [x] Testar com runtime falso: mensagem duplicada inicia um turno; terceiro turno global entra em fila; duas conversas do mesmo agente não executam simultaneamente; cancelar fila não executa prompt.
+- [x] Testar resolução de modelo: fixed usa seleção do agente e rejeita override divergente; choose-on-start exige escolha explícita; conta removida/modelo indisponível bloqueia envio sem fallback.
+- [x] M2.5: processo Pi com SDK 1.4.0, contrato validado de texto/uso, runId/seq, cancel/close e erro terminal após exit, usando provedor falso sem ferramentas.
 - [ ] Implementar adaptador SDK somente no worker; correlacionar runId/seq e normalizar eventos. Não carregar extensões arbitrárias do usuário automaticamente.
+- [x] M2.3: testar índice de metadados reaberto, seleção preservada, referências de catálogo, lock, quarentena e recuperação explícita de estados interrompidos. Store isolado; ainda não integrado ao manager/SDK.
+- [x] M2.4: integrar índice obrigatório ao SessionManager; persistir estado antes de executar/concluir e recuperar metadados como detached sem replay. Retomada SDK e migração futura permanecem pendentes.
 - [ ] Testar persistência: reabrir histórico, migração de índice, arquivo truncado em quarentena e referência inválida; sessões running após crash viram interrupted.
 - [ ] Implementar índice atômico, locks, recuperação e seleção persistente. Mudança de modelo fixo apenas por edição explícita do agente ocioso, válida para novas conversas; sessões anteriores preservam sua seleção. Nunca migrar contexto silenciosamente.
 - [ ] Rodar npx vitest run server/agents e npm run typecheck; registrar resultado e commit feat: add managed Pi sessions.
