@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { build } from 'esbuild';
+import electronPath from 'electron';
 import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -132,6 +133,14 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     await runtime.close(s.runtimeSessionId); await rejection;
     expect((await readdir(path.join(root, 'sdk', 'sessions'))).some(f => f.endsWith('.jsonl'))).toBe(true);
     await expect(runtime.prompt(s.runtimeSessionId, input)).rejects.toMatchObject({ code: 'invalid' });
+  });
+  it('executa o SDK com Node embutido do Electron sem Node externo no filho', async () => {
+    await runtime.stop();
+    runtime = new PiRuntime({ entry: path.join(compiled, 'worker.mjs'), directory: path.join(root, 'embedded'), execPath: electronPath as unknown as string });
+    await runtime.initialize();
+    const c = config(); c.selection = { providerId: 'openai', accountId: 'not-authorized', modelId: 'gpt-4.1', thinkingLevel: 'off' };
+    const s = await runtime.create(c); await runtime.close(s.runtimeSessionId);
+    expect(events).toEqual([]);
   });
   it('worker padrão não usa credencial ambiente nem libera contas antes de M3', async () => {
     await runtime.stop();
