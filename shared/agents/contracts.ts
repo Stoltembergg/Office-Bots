@@ -18,7 +18,7 @@ export interface AgentProfile {
 }
 export type AgentPatch = Partial<Pick<AgentProfile, 'name' | 'instructions' | 'appearanceSeed' | 'modelPolicy'>>;
 
-export type SessionState = 'idle' | 'queued' | 'running' | 'cancelling' | 'error' | 'closed';
+export type SessionState = 'idle' | 'queued' | 'running' | 'cancelling' | 'error' | 'closed' | 'interrupted';
 export interface SessionConfig { agentId: string; selection?: ModelSelection }
 export interface SessionInfo {
   id: string;
