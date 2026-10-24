@@ -40,6 +40,21 @@ function config(id = 'app-session', modelId = 'normal'): RuntimeSessionConfig {
   return { id, projectId: 'project', agentId: 'agent', cwd: root, selection: { providerId: 'test', accountId: 'chosen-account', modelId, thinkingLevel: 'off' } };
 }
 const input = { messageId: 'message', text: 'Olá' };
+const workerOperationTimeoutMs = 30_000;
+const workerEventTimeoutMs = 15_000;
+type PromptOutcome = { state: 'pending' } | { state: 'resolved' } | { state: 'rejected'; code?: string };
+function observePrompt(promise: Promise<void>) {
+  let outcome: PromptOutcome = { state: 'pending' };
+  const settled = promise.then(
+    () => { outcome = { state: 'resolved' }; },
+    error => {
+      const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
+        ? error.code : undefined;
+      outcome = code === undefined ? { state: 'rejected' } : { state: 'rejected', code };
+    },
+  );
+  return { settled, outcome: () => outcome };
+}
 
 describe('Pi isolado com SDK real e provedor falso', () => {
   it('cria sem inferência; transmite texto e uso com correlação e ordem', async () => {
@@ -100,7 +115,7 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     expect(events[0].sessionId).toBe('app-session');
     expect(events[0].seq).toBe(resumed.lastSeq + 1);
     expect(events.filter(e => e.type === 'message-start')).toHaveLength(1);
-  });
+  }, workerOperationTimeoutMs);
   it('bloqueia retomada quando há mensagem user persistida sem marcador app durável', async () => {
     const directory = path.join(root, 'sdk');
     const manager = await createPiSession(directory, config());
@@ -112,11 +127,14 @@ describe('Pi isolado com SDK real e provedor falso', () => {
   });
   it('cancelamento aguarda término real e produz um único terminal', async () => {
     const s = await runtime.create(config('slow-session', 'slow'));
-    const p = runtime.prompt(s.runtimeSessionId, input); const rejected = expect(p).rejects.toMatchObject({ code: 'cancelled' });
-    await expect.poll(() => events.some(e => e.type === 'text-delta')).toBe(true);
-    await runtime.cancel(s.runtimeSessionId); await rejected;
+    const observed = observePrompt(runtime.prompt(s.runtimeSessionId, input));
+    await expect.poll(() => events.some(e => e.type === 'text-delta') || observed.outcome().state !== 'pending',
+      { timeout: workerEventTimeoutMs }).toBe(true);
+    expect(observed.outcome()).toEqual({ state: 'pending' });
+    await runtime.cancel(s.runtimeSessionId); await observed.settled;
+    expect(observed.outcome()).toEqual({ state: 'rejected', code: 'cancelled' });
     expect(events.filter(e => e.type === 'message-end').map(e => e.payload.outcome)).toEqual(['cancelled']);
-  });
+  }, workerOperationTimeoutMs);
   it('não carrega extensões/contexto do projeto nem executa ferramentas', async () => {
     const dir = path.join(root, '.pi', 'extensions'); await mkdir(dir, { recursive: true });
     const marker = path.join(root, 'extension-ran');
@@ -151,12 +169,15 @@ describe('Pi isolado com SDK real e provedor falso', () => {
   });
   it('não aceita turno simultâneo no mesmo handle nem payload malformado', async () => {
     const s = await runtime.create(config('slow-session', 'slow'));
-    const p = runtime.prompt(s.runtimeSessionId, input); const rejected = expect(p).rejects.toThrow();
-    await expect.poll(() => events.some(e => e.type === 'text-delta')).toBe(true);
+    const observed = observePrompt(runtime.prompt(s.runtimeSessionId, input));
+    await expect.poll(() => events.some(e => e.type === 'text-delta') || observed.outcome().state !== 'pending',
+      { timeout: workerEventTimeoutMs }).toBe(true);
+    expect(observed.outcome()).toEqual({ state: 'pending' });
     await expect(runtime.prompt(s.runtimeSessionId, { ...input, messageId: 'another' })).rejects.toMatchObject({ code: 'busy' });
     await expect(runtime.create({ ...config(), extra: 'bad' } as RuntimeSessionConfig)).rejects.toMatchObject({ code: 'invalid' });
-    await runtime.cancel(s.runtimeSessionId); await rejected;
-  });
+    await runtime.cancel(s.runtimeSessionId); await observed.settled;
+    expect(observed.outcome()).toEqual({ state: 'rejected', code: 'cancelled' });
+  }, workerOperationTimeoutMs);
   it('mensagem inválida do worker encerra processo e não vaza dados brutos', async () => {
     await runtime.stop();
     runtime = new PiRuntime({ entry: path.join(compiled, 'malformed.mjs'), directory: root });
@@ -180,12 +201,15 @@ describe('Pi isolado com SDK real e provedor falso', () => {
   });
   it('close durante streaming aguarda cancelamento e não apaga o histórico SDK', async () => {
     const s = await runtime.create(config('slow-session', 'slow'));
-    const p = runtime.prompt(s.runtimeSessionId, input); const rejection = expect(p).rejects.toMatchObject({ code: 'cancelled' });
-    await expect.poll(() => events.some(e => e.type === 'text-delta')).toBe(true);
-    await runtime.close(s.runtimeSessionId); await rejection;
+    const observed = observePrompt(runtime.prompt(s.runtimeSessionId, input));
+    await expect.poll(() => events.some(e => e.type === 'text-delta') || observed.outcome().state !== 'pending',
+      { timeout: workerEventTimeoutMs }).toBe(true);
+    expect(observed.outcome()).toEqual({ state: 'pending' });
+    await runtime.close(s.runtimeSessionId); await observed.settled;
+    expect(observed.outcome()).toEqual({ state: 'rejected', code: 'cancelled' });
     expect((await readdir(path.join(root, 'sdk', 'sessions'))).some(f => f.endsWith('.jsonl'))).toBe(true);
     await expect(runtime.prompt(s.runtimeSessionId, input)).rejects.toMatchObject({ code: 'invalid' });
-  });
+  }, workerOperationTimeoutMs);
   it('executa o SDK com Node embutido do Electron sem Node externo no filho', async () => {
     await runtime.stop();
     runtime = new PiRuntime({ entry: path.join(compiled, 'worker.mjs'), directory: path.join(root, 'embedded'), execPath: electronPath as unknown as string });
@@ -201,6 +225,16 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     const s = await runtime.create(c);
     await expect(runtime.prompt(s.runtimeSessionId, input)).rejects.toMatchObject({ code: 'unavailable' });
     expect(await readdir(root)).not.toContain('auth.json');
+  });
+});
+
+describe('observação de prompts nos testes', () => {
+  it('captura rejeições nullish sem rejeitar a própria Promise observadora', async () => {
+    for (const reason of [undefined, null]) {
+      const observed = observePrompt(Promise.reject(reason));
+      await expect(observed.settled).resolves.toBeUndefined();
+      expect(observed.outcome()).toEqual({ state: 'rejected' });
+    }
   });
 });
 
