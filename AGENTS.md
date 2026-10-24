@@ -2,7 +2,7 @@
 
 ## Objetivo e estado atual
 
-Este repositório independente deriva do Habblaud e evolui para um aplicativo Windows/macOS em Electron, com conversas próprias executadas pelo Pi SDK e suporte ACP posterior. O escritório em pixel art continua sendo a interface central.
+Este repositório independente deriva do Habblaud e evolui para um aplicativo Windows/macOS em Electron, com conversas próprias executadas pelo Pi SDK e suporte ACP posterior. O escritório em pixel art continua sendo a interface central. Os personagens são agentes próprios persistentes, previamente criados pelo usuário em um projeto.
 
 A arquitetura desktop é planejada: não presuma que Electron, Pi, ACP, cofre de credenciais ou scripts desktop já existem. Confira os arquivos e o HEAD antes de agir. A descrição técnica upstream no final deste documento descreve a base importada, não todos os recursos futuros.
 
@@ -44,6 +44,20 @@ Não criar arquivos de fachada que aleguem capacidades inexistentes. Não fazer 
 - Retomada de histórico e conexão a sessão externa ativa são recursos diferentes. ACP só oferece o que foi negociado com o adaptador; não prometer anexação universal.
 - Sessão Pi mantém contexto na persistência do SDK; índice do app guarda referências e metadados. Não manter dois contextos concorrentes.
 - IDs/eventos incluem origem, sessão, execução e sequência. Não duplicar personagens entre watcher legado e runtime gerenciado.
+
+## Projetos, agentes e conversas
+
+- Fluxo do produto: instalar app → conectar provedor → criar projeto escolhendo uma pasta → criar agentes → opcionalmente fixar um modelo por agente → conversar com um agente cadastrado.
+- Projeto, agente e conversa são entidades distintas. Cada agente pertence a um projeto e preserva id, nome, instruções opcionais, aparência e política de modelo entre reinícios.
+- Criar uma conversa não cria um novo agente. Todas as conversas de um agente usam sua identidade/personagem; o histórico é organizado por agente.
+- Permitir políticas fixed e choose-on-start. fixed usa conta/provedor/modelo definidos pelo usuário no cadastro; choose-on-start exige escolha explícita na criação da conversa.
+- Nunca substituir o modelo fixo do agente por seleção global, modelo de outro agente ou fallback automático. Credencial ausente ou modelo indisponível bloqueia envio e pede uma escolha ao usuário.
+- Editar o modelo fixo é uma ação explícita com agente ocioso e vale para novas conversas. As conversas anteriores preservam a seleção registrada; informar esse comportamento ao editar.
+- No MVP há somente um turno ativo por agente, mesmo se ele tiver várias conversas. Manter o limite global de dois turnos simultâneos e fila visível.
+- Agente cadastrado não significa processo ativo. Exibir seu personagem ocioso no projeto aberto; abrir app, selecionar projeto/agente ou restaurar histórico não pode disparar inferência.
+- Arquivar preserva histórico e bloqueia novos turnos. Resolver trabalho ativo antes de arquivar; nunca apagar histórico por remoção de conta/provedor.
+- Sessões externas observadas permanecem identificadas por sua origem. Não criar agentes cadastrados a partir de cada sessão externa automaticamente.
+- Instruções do agente influenciam o contexto, mas não podem conceder permissões de ferramentas ou alterar a política de segurança.
 
 ## Escolha de modelo e autenticação
 
