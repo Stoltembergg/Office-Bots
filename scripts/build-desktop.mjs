@@ -6,6 +6,16 @@ await mkdir('dist/desktop', { recursive: true });
 
 await Promise.all([
   build({
+    entryPoints: ['server/agents/pi/worker.ts'],
+    outfile: 'dist/desktop/pi-worker.mjs',
+    bundle: true,
+    platform: 'node',
+    target: 'node24',
+    format: 'esm',
+    packages: 'external',
+    sourcemap: true,
+  }),
+  build({
     entryPoints: ['desktop/main.ts'],
     outfile: 'dist/desktop/main.mjs',
     bundle: true,
