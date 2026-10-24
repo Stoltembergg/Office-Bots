@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CURRENT_SESSION_VERSION } from '@earendil-works/pi-coding-agent';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { RuntimeSessionConfig } from '../runtime';
@@ -84,7 +84,7 @@ async function writeTranscript(
     version: CURRENT_SESSION_VERSION,
     id: config.runtimeSessionId,
     timestamp: '2026-01-01T00:00:00.000Z',
-    cwd: path.resolve(config.cwd),
+    cwd: await realpath(config.cwd),
     ...options.header,
   };
   const entries = data.map((item, index) => customEntry(item, `entry-${index + 1}`, index ? `entry-${index}` : null));
@@ -138,7 +138,7 @@ describe('persistência Pi com SessionManager real', () => {
     const file = manager.getSessionFile();
     expect(file).toBeTruthy();
     const lines = await readJsonl(file!);
-    expect(lines[0]).toMatchObject({ type: 'session', id: manager.getSessionId(), cwd: path.resolve(cwd) });
+    expect(lines[0]).toMatchObject({ type: 'session', id: manager.getSessionId(), cwd: await realpath(cwd) });
     expect(lines.slice(1)).toHaveLength(4);
 
     const opened = await resumePiSession(directory, resumeConfig(manager.getSessionId()));
