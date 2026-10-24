@@ -78,6 +78,33 @@ describe('desktop supervisor', () => {
     expect(server.stop).toHaveBeenCalledTimes(1);
   });
 
+  it('waits for agents and reuses their single owned process across windows', async () => {
+    const order: string[] = []; let release!: () => void;
+    const ready = new Promise<void>(r => { release = r; }); let destroyed = false, starts = 0, stops = 0;
+    const supervisor = createSupervisor({
+      startAgents: async () => { starts++; await ready; order.push('agents'); return { stop: async () => { stops++; } }; },
+      startServer: async () => { order.push('server'); return { url: 'http://localhost', stop: async () => {} }; },
+      createWindow: async () => { order.push('window'); return { close() {}, isDestroyed: () => destroyed, isMinimized: () => false, restore() {}, show() {}, focus() {} }; },
+    });
+    const starting = supervisor.start(); await Promise.resolve(); expect(order).toEqual([]);
+    release(); await starting; expect(order).toEqual(['agents', 'server', 'window']);
+    destroyed = true; await supervisor.reopenWindow(); expect(starts).toBe(1);
+    await supervisor.stop(); expect(stops).toBe(1);
+  });
+  it('cleans up agents if server startup fails', async () => {
+    let stopped = 0;
+    const supervisor = createSupervisor({ startAgents: async () => ({ stop: async () => { stopped++; } }),
+      startServer: async () => { throw new Error('server failed'); }, createWindow: async () => { throw new Error('must not open'); } });
+    await expect(supervisor.start()).rejects.toThrow('server failed'); expect(stopped).toBe(1);
+    await supervisor.stop(); expect(stopped).toBe(1);
+  });
+  it('cleans up both resources even when server cleanup rejects', async () => {
+    let agentsStopped = 0;
+    const supervisor = createSupervisor({ startAgents: async () => ({ stop: async () => { agentsStopped++; } }),
+      startServer: async () => ({ url: 'http://localhost', stop: async () => { throw new Error('cleanup failed'); } }),
+      createWindow: async () => { throw new Error('window failed'); } });
+    await expect(supervisor.start()).rejects.toThrow('window failed'); expect(agentsStopped).toBe(1);
+  });
   it('does not close another listener when its requested port is occupied', async () => {
     const occupied = createServer();
     occupied.listen(0, '127.0.0.1');
