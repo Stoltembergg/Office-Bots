@@ -30,3 +30,15 @@ export interface SessionInfo {
   state: SessionState;
 }
 export interface PromptInput { messageId: string; text: string }
+
+/** Public turn events. SDK objects, errors and tool arguments never pass through. */
+type EventBase = { schemaVersion: 1; origin: 'managed-pi'; sessionId: string; runId: string; seq: number; at: string };
+export type AgentEvent = EventBase & (
+  | { type: 'message-start'; payload: { messageId: string } }
+  | { type: 'text-delta'; payload: { text: string } }
+  | { type: 'message-end'; payload: { outcome: 'completed' | 'cancelled' | 'error' } }
+  | { type: 'state'; payload: { state: 'running' | 'idle' | 'error' } }
+  | { type: 'usage'; payload: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } }
+  | { type: 'error'; payload: { code: 'unavailable' | 'runtime-failed' } }
+);
+export type AgentEventData = AgentEvent extends infer E ? E extends AgentEvent ? Pick<E, 'type' | 'payload'> : never : never;
