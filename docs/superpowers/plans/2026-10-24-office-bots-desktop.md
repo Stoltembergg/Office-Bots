@@ -10,7 +10,7 @@
 
 **Spec:** Seções 1–4 deste documento constituem a especificação de produto e arquitetura deste plano.
 
-Data do plano inicial: 2026-10-24. Refinamento confirmado pelo usuário: agentes persistentes por projeto, com modelo fixo opcional por agente. Estado: planejamento; nenhuma funcionalidade desktop ou integração Pi foi implementada por este documento.
+Data do plano inicial: 2026-10-24. Refinamento confirmado pelo usuário: agentes persistentes por projeto, com modelo fixo opcional por agente. Estado da execução: M0 e M1 concluídos em 2026-10-24; M2–M6 pendentes. O runtime Pi ainda não foi implementado.
 Base examinada: Habblaud 1.0.3, main em faa1a012b5fbf632c66dc6801c5383e53a542406. Revalidar o HEAD ao iniciar a execução.
 Destino: https://github.com/Stoltembergg/Office-Bots (repositório independente, renomeado de habblaud).
 
@@ -191,7 +191,7 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 - [x] Escrever testes: readiness antes de abrir janela; porta ocupada não mata serviço alheio; segundo lançamento foca instância existente; remetente IPC externo é recusado.
 - [x] Extrair bootstrap e implementar supervisor com cleanup; portar recursos estáticos para pacote/ASAR e respeitar diretórios graváveis separados.
 - [x] Criar scripts desktop:dev, desktop:build, desktop:package e desktop:test; incluir typecheck desktop. Não renomear scripts web existentes.
-- [ ] Executar npm run desktop:test e npm run desktop:package em Windows e macOS; abrir build sem Node externo e registrar logs/evidência.
+- [x] Executar npm run desktop:test e npm run desktop:package em Windows e macOS; abrir build sem Node externo e registrar logs/evidência. CI passou em Ubuntu, Windows x64, macOS arm64 e macOS Intel.
 - [x] Commit: feat: add Electron desktop shell. Gate: escritório legado abre no pacote, encerra processos próprios e mantém `npm start` funcional.
 
 ### M2 — Contrato de sessões e worker Pi
