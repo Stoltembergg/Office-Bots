@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { PiRuntime } from './runtime';
+import { createPiSession } from './persistence';
 import { isAgentEvent } from '../../../shared/agents/validation';
 import type { AgentEvent } from '../../../shared/agents/contracts';
 import type { RuntimeSessionConfig } from '../runtime';
@@ -81,6 +82,15 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     expect(events[0].sessionId).toBe('app-session');
     expect(events[0].seq).toBe(resumed.lastSeq + 1);
     expect(events.filter(e => e.type === 'message-start')).toHaveLength(1);
+  });
+  it('bloqueia retomada quando há mensagem user persistida sem marcador app durável', async () => {
+    const directory = path.join(root, 'sdk');
+    const manager = await createPiSession(directory, config());
+    manager.appendMessage({ role: 'user', content: [{ type: 'text', text: input.text }], timestamp: Date.now() });
+
+    await expect(runtime.resume({ ...config(), runtimeSessionId: manager.getSessionId() }))
+      .rejects.toMatchObject({ code: 'resume-required' });
+    expect(events).toEqual([]);
   });
   it('cancelamento aguarda término real e produz um único terminal', async () => {
     const s = await runtime.create(config('slow-session', 'slow'));
