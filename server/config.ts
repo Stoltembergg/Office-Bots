@@ -11,6 +11,8 @@ import { parseGithubRepo } from './updates/checker';
 import { tr } from '../shared/i18n';
 
 export interface ServerConfig {
+  /** Profile that owns server defaults and side effects. */
+  profile: ServerProfile;
   port: number;
   host: string;
   /** `--dev`: Vite em middleware mode (HMR) no mesmo servidor. */
@@ -58,6 +60,17 @@ export interface ServerConfig {
   remoteWarning?: string;
   /** Habblaud World (server/world/): conta, personagem e, nas próximas fases, o prédio no mundo. */
   world: WorldConfig;
+}
+
+export type ServerProfile = 'web' | 'desktop';
+
+export interface ServerConfigOverrides {
+  profile?: ServerProfile;
+  host?: string;
+  /** 0 asks the OS to choose an available local port. */
+  port?: number;
+  dataDir?: string;
+  dev?: boolean;
 }
 
 export interface WorldConfig {
@@ -222,35 +235,55 @@ export function worldSocketUrl(base: string): string {
   return `${base.replace(/^http/, 'ws').replace(/\/+$/, '')}/v1/socket`;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): ServerConfig {
-  const home = env.HOME || homedir();
-  const inDocker = detectDocker(env);
-  const port = Number.parseInt(env.HABBLAUD_PORT ?? '', 10);
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv,
+  overrides: ServerConfigOverrides = {},
+): ServerConfig {
+  const profile = overrides.profile ?? 'web';
+  const effectiveEnv = profile === 'desktop'
+    ? { ...env, HABBLAUD_WORLD: '0', HABBLAUD_UPDATE_CHECK: '0' }
+    : env;
+  const dev = overrides.dev ?? argv.includes('--dev');
+  const effectiveArgv = dev
+    ? (argv.includes('--dev') ? argv : [...argv, '--dev'])
+    : argv.filter((arg) => arg !== '--dev');
+  const home = effectiveEnv.HOME || homedir();
+  const inDocker = detectDocker(effectiveEnv);
+  const requestedPort = overrides.port ?? Number.parseInt(effectiveEnv.HABBLAUD_PORT ?? '', 10);
+  const allowsEphemeralPort = profile === 'desktop' || overrides.port === 0;
+  const port = Number.isFinite(requestedPort)
+    && requestedPort >= 0
+    && requestedPort < 65536
+    && (requestedPort > 0 || allowsEphemeralPort)
+    ? requestedPort
+    : 4747;
   const rootDir = findRoot(dirname(fileURLToPath(import.meta.url)));
-  const host = env.HABBLAUD_HOST?.trim() || '127.0.0.1';
+  const host = overrides.host?.trim() || effectiveEnv.HABBLAUD_HOST?.trim() || '127.0.0.1';
   const pkg = readPackage(rootDir);
-  const remote = parseRemoteConfig(env, inDocker);
+  const remote = profile === 'desktop' ? { warning: undefined, config: undefined } : parseRemoteConfig(effectiveEnv, inDocker);
   return {
-    port: Number.isFinite(port) && port > 0 && port < 65536 ? port : 4747,
+    profile,
+    port: Number.isFinite(port) && port >= 0 && port < 65536 ? port : 4747,
     host,
-    dev: argv.includes('--dev'),
-    demo: isTruthy(env.HABBLAUD_DEMO),
+    dev,
+    demo: isTruthy(effectiveEnv.HABBLAUD_DEMO),
     inDocker,
     home,
-    claudeDirs: discoverClaudeDirs(env, home),
-    dataDir: resolve(env.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))),
-    usageDir: resolve(env.HABBLAUD_USAGE_DIR?.trim() || join(home, '.habblaud', 'usage')),
-    allowedHosts: parseAllowedHosts(env.HABBLAUD_ALLOWED_HOSTS),
-    terminal: terminalOffReason(env, host, inDocker) === undefined,
-    messages: messagesOffReason(env, host, inDocker) === undefined,
-    timeline: !env.HABBLAUD_TIMELINE?.trim() || isTruthy(env.HABBLAUD_TIMELINE),
+    claudeDirs: discoverClaudeDirs(effectiveEnv, home),
+    dataDir: resolve(overrides.dataDir?.trim() || effectiveEnv.HABBLAUD_DATA_DIR?.trim() || (inDocker ? '/data' : join(home, '.habblaud'))),
+    usageDir: resolve(effectiveEnv.HABBLAUD_USAGE_DIR?.trim() || join(home, '.habblaud', 'usage')),
+    allowedHosts: parseAllowedHosts(effectiveEnv.HABBLAUD_ALLOWED_HOSTS),
+    terminal: terminalOffReason(effectiveEnv, host, inDocker) === undefined,
+    messages: messagesOffReason(effectiveEnv, host, inDocker) === undefined,
+    timeline: !effectiveEnv.HABBLAUD_TIMELINE?.trim() || isTruthy(effectiveEnv.HABBLAUD_TIMELINE),
     rootDir,
     version: pkg.version,
     repo: pkg.repo,
-    updateCheck: !env.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(env.HABBLAUD_UPDATE_CHECK),
-    codex: !env.HABBLAUD_CODEX?.trim() || isTruthy(env.HABBLAUD_CODEX),
+    updateCheck: !effectiveEnv.HABBLAUD_UPDATE_CHECK?.trim() || isTruthy(effectiveEnv.HABBLAUD_UPDATE_CHECK),
+    codex: !effectiveEnv.HABBLAUD_CODEX?.trim() || isTruthy(effectiveEnv.HABBLAUD_CODEX),
     remote: remote.config,
     remoteWarning: remote.warning,
-    world: parseWorldConfig(env, argv),
+    world: parseWorldConfig(effectiveEnv, effectiveArgv),
   };
 }
