@@ -13,7 +13,10 @@ const config: ForgeConfig = {
   },
   makers: [
     new MakerZIP({}, ['darwin', 'linux', 'win32']),
-    new MakerSquirrel({ name: 'office-bots' }, ['win32']),
+    new MakerSquirrel(
+      { name: 'office-bots', authors: 'Office Bots contributors' },
+      ['win32'],
+    ),
     new MakerDMG({}, ['darwin']),
   ],
 };
