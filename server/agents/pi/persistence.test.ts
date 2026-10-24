@@ -177,6 +177,15 @@ describe('persistência Pi com SessionManager real', () => {
     expect(opened.binding).toMatchObject({ appSessionId: 'app-session', runtimeSessionId: 'new-empty-id' });
   });
 
+  it('bloqueia retomada se o transcript contém mensagem Pi sem marcador durável do app', async () => {
+    const config = createConfig();
+    const manager = await createPiSession(directory, config);
+    manager.appendMessage({ role: 'user', content: 'Untracked Pi input, never sent to a provider.', timestamp: Date.now() });
+
+    await expect(resumePiSession(directory, resumeConfig(manager.getSessionId())))
+      .rejects.toMatchObject({ code: 'resume-required' });
+  });
+
   it('persiste recibos, reservas crescentes e ignora custom entries de outras extensões ao reabrir', async () => {
     const manager = await createPiSession(directory, createConfig());
     const doneHash = await addSyntheticPrompt(manager, {
