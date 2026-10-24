@@ -129,7 +129,7 @@ export class PiBackend {
     const hash = inputHash(input.text), previous = s.messages.get(input.messageId);
     if (previous) {
       if (previous.inputHash !== hash) throw new WorkerFailure('invalid');
-      if (previous.outcome === 'completed') return Promise.resolve();
+      if (previous.outcome === 'completed') throw new WorkerFailure('invalid');
       throw new WorkerFailure(previous.outcome === 'cancelled' ? 'cancelled' : previous.outcome === 'interrupted' ? 'resume-required' : 'runtime-failed');
     }
     s.cancelled = false;

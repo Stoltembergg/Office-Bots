@@ -60,6 +60,24 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     expect(new Set(events.map(e => e.runId)).size).toBe(2);
     expect(events.map(e => e.seq)).toEqual(events.map((_, i) => i + 1));
   });
+  it('rejeita retry concluído sem matar o worker compartilhado', async () => {
+    const completed = await runtime.create(config('completed-session'));
+    const other = await runtime.create(config('other-session'));
+    await runtime.prompt(completed.runtimeSessionId, input);
+    const beforeRetry = events.length;
+
+    const duplicateResult = await runtime.prompt(completed.runtimeSessionId, input).then(
+      () => 'resolved', error => (error as { code?: string }).code ?? 'unknown');
+    const duplicateEvents = events.slice(beforeRetry).filter(e => e.sessionId === 'completed-session').map(e => e.type);
+    const otherResult = await runtime.prompt(other.runtimeSessionId, { messageId: 'other-message', text: 'Outra conversa' }).then(
+      () => 'resolved', error => (error as { code?: string }).code ?? 'unknown');
+    const otherOutcomes = events.filter(e => e.sessionId === 'other-session' && e.type === 'message-end')
+      .map(e => e.type === 'message-end' ? e.payload.outcome : '');
+
+    expect({ duplicateResult, duplicateEvents, otherResult, otherOutcomes }).toEqual({
+      duplicateResult: 'invalid', duplicateEvents: [], otherResult: 'resolved', otherOutcomes: ['completed'],
+    });
+  });
   it('retoma um transcript em novo worker sem replay e continua a sequência persistida', async () => {
     const directory = path.join(root, 'sdk');
     const created = await runtime.create(config());
