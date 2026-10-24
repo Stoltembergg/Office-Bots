@@ -10,7 +10,7 @@
 
 **Spec:** Seções 1–4 deste documento constituem a especificação de produto e arquitetura deste plano.
 
-Data: 2026-10-24. Estado: planejamento; nenhuma funcionalidade desktop ou integração Pi foi implementada por este documento.
+Data do plano inicial: 2026-10-24. Refinamento confirmado pelo usuário: agentes persistentes por projeto, com modelo fixo opcional por agente. Estado: planejamento; nenhuma funcionalidade desktop ou integração Pi foi implementada por este documento.
 Base examinada: Habblaud 1.0.3, main em faa1a012b5fbf632c66dc6801c5383e53a542406. Revalidar o HEAD ao iniciar a execução.
 Destino: https://github.com/Stoltembergg/Office-Bots (repositório independente, renomeado de habblaud).
 
@@ -18,9 +18,23 @@ Destino: https://github.com/Stoltembergg/Office-Bots (repositório independente,
 
 ### Experiência pretendida
 
-Instalar o app, selecionar uma pasta de projeto, conectar um provedor permitido, escolher explicitamente um modelo e conversar com um agente dentro do app. Mensagens, ferramentas, aprovações, erros e conclusão atualizam o chat e o personagem do escritório. Fechar e reabrir o app permite continuar a conversa persistida.
+Instalar o app, conectar um provedor permitido, criar um projeto escolhendo uma pasta e criar os agentes próprios desse projeto. O usuário pode definir um modelo fixo para cada agente e conversar com os agentes previamente cadastrados dentro do app. Mensagens, ferramentas, aprovações, erros e conclusão atualizam o chat e o personagem correspondente. Fechar e reabrir o app preserva projetos, agentes, configurações de modelo e conversas.
 
 O escritório em pixel art é a identidade do produto. Reaproveitar canvas, personagens, salas, animações e interface existentes. Não migrar para React nem reescrever a simulação para entregar o desktop.
+
+### Projetos, agentes persistentes e conversas
+
+Fluxo confirmado pelo usuário: instalar → conectar provedor → criar projeto e escolher pasta → criar agentes → opcionalmente fixar modelo por agente → conversar com um agente já criado.
+
+- Projeto é um cadastro persistente com id, nome e pasta aprovada. No MVP, cada agente pertence a um projeto; o runtime usa essa pasta como cwd e escopo de ferramentas.
+- Agente é uma entidade persistente criada pelo usuário, com id estável, nome, instruções opcionais, aparência do personagem e política de modelo. Criar uma nova conversa não cria outro agente nem muda seu personagem.
+- A política de modelo é fixed ou choose-on-start. Em fixed, o usuário escolhe conta, provedor, modelo e nível de raciocínio suportado no cadastro do agente; esses valores são usados nas novas conversas sem nova seleção. Em choose-on-start, o usuário escolhe explicitamente esses valores ao iniciar uma conversa.
+- Política fixed se aplica ao agente e não é substituída por um seletor global, pelo modelo de outro agente ou por decisões do runtime. Para trocar, o usuário edita o agente explicitamente quando ele estiver ocioso; a mudança vale para novas conversas. Conversas existentes preservam a seleção registrada; a UI informa isso antes de salvar.
+- Uma conversa pertence a um agente e guarda seu histórico e a seleção efetiva de modelo. Um agente pode ter várias conversas no histórico; no MVP, somente um turno por agente fica ativo, mesmo em conversas diferentes. A fila global continua limitada a dois turnos simultâneos.
+- Cadastro de agente não é processo em execução: os personagens dos agentes cadastrados do projeto aberto aparecem ociosos sem disparar inferência. Abrir o app, trocar de projeto ou selecionar um personagem nunca inicia uma tarefa automaticamente.
+- Clicar no personagem seleciona o agente e sua conversa recente, permitindo continuar ou iniciar outra. Os watchers de sessões externas mantêm identidade e ciclo de vida próprios; não transformar cada sessão externa em um cadastro de agente do usuário automaticamente.
+- Arquivar agente o remove da lista ativa e impede novos turnos; preservar histórico e configuração para consulta. Não apagar conversas ao remover uma conta/provedor. Credencial ausente ou modelo indisponível bloqueia o envio com orientação para o usuário, sem substituição automática.
+- Instruções configuradas no agente compõem o contexto do Pi, mas nunca podem alterar as permissões do app ou autorizar ferramentas por conta própria. Subagentes automáticos permanecem fora do MVP.
 
 ### Três origens de sessão
 
@@ -36,8 +50,8 @@ Pi com um modelo Claude não é Claude Code; Pi com um modelo do provedor Codex 
 
 - Windows x64 e macOS arm64/x64; suporte mínimo de versões de sistema definido na qualificação e publicado antes da beta.
 - Instalador independente de Node, npm e Docker na máquina do usuário.
-- Um runtime Pi; múltiplas conversas, um turno ativo por conversa; no máximo dois turnos simultâneos no MVP, com fila visível.
-- Chat em streaming, ferramentas, permissões, cancelamento, histórico persistente, seleção de projeto/provedor/modelo.
+- Um runtime Pi; projetos e agentes persistentes cadastrados pelo usuário; múltiplas conversas por agente, somente um turno ativo por agente e no máximo dois turnos simultâneos no MVP, com fila visível.
+- Chat em streaming, ferramentas, permissões, cancelamento, histórico persistente, cadastro de projeto/pasta e agentes com modelo fixo opcional.
 - Monitoramento legado preservado e opcional; não instalar hooks sem solicitação do usuário.
 - Autenticação conforme o suporte técnico e as condições de cada provedor. A primeira conversa real pode usar uma API key; OAuth tem qualificação própria e não é pré-requisito do shell desktop.
 - Sem conta obrigatória do nosso produto e sem backend de inferência próprio.
@@ -85,7 +99,8 @@ Decisão proposta: manter os recursos web legados via loopback e abrir a janela 
 | server/agents/runtime.ts, manager.ts | Fachada e coordenação de sessões |
 | server/agents/pi/runtime.ts, worker.ts | Integração exclusiva com SDK e processo worker |
 | server/agents/pi/tools.ts, permissions.ts | Ferramentas controladas e aprovações |
-| server/agents/sessions.ts, office-source.ts | Índice persistente e projeção de atividade |
+| server/agents/projects.ts, profiles.ts | Cadastros persistentes de projetos e agentes; política de modelo |
+| server/agents/sessions.ts, office-source.ts | Índice de conversas por agente e projeção dos personagens |
 | shared/agents/contracts.ts, validation.ts | Tipos e validação dos envelopes |
 | client/src/agents/transport.ts | Ponte desktop; ausência detectável no modo web |
 | client/src/ui/chat/ | Conversa, compositor, ferramentas e permissões |
@@ -101,8 +116,13 @@ Definir em shared/agents/contracts.ts, sem exportar tipos privados do SDK:
 ```text
 - RuntimeKind = 'pi' | 'acp'; SessionOrigin = 'managed-pi' | 'observed-cli' | 'external-acp'.
 - ModelSelection = {providerId: string; modelId: string; accountId: string; thinkingLevel?: string}.
-- SessionConfig = {projectId: string; cwd: string; selection: ModelSelection}.
-- SessionInfo = {id: string; origin: SessionOrigin; runtimeSessionId: string; projectId: string; selection: ModelSelection; state: SessionState}.
+- Project = {id: string; name: string; cwd: string}.
+- AgentModelPolicy = {mode: 'fixed'; selection: ModelSelection} | {mode: 'choose-on-start'}.
+- AgentProfile = {id: string; projectId: string; name: string; instructions?: string; appearanceSeed: string; modelPolicy: AgentModelPolicy; archivedAt?: string}.
+- SessionConfig = {agentId: string; selection?: ModelSelection}. O manager resolve projeto/cwd pelo cadastro confiável; em fixed rejeita override divergente e usa a seleção do perfil; em choose-on-start exige selection.
+- SessionInfo = {id: string; origin: SessionOrigin; runtimeSessionId: string; projectId: string; agentId?: string; selection: ModelSelection; state: SessionState}. agentId é obrigatório em managed-pi e ausente nas sessões externas sem vínculo explícito.
+- ProjectStore: create({name,cwd}): Promise<Project>; list(): Promise<Project[]>; get(id): Promise<Project>.
+- AgentStore: create({projectId,name,instructions?,appearanceSeed,modelPolicy}): Promise<AgentProfile>; list(projectId): Promise<AgentProfile[]>; get(id): Promise<AgentProfile>; update(id,patch): Promise<AgentProfile>; archive(id): Promise<void>. update não permite mudar id/projectId; bloqueia mudanças durante turno ativo.
 - SessionState = 'idle' | 'running' | 'waiting-permission' | 'cancelling' | 'interrupted' | 'error' | 'closed'.
 - PromptInput = {messageId: string; text: string}; reenvio do mesmo messageId não inicia outro turno.
 - AgentEvent = {schemaVersion: 1; sessionId: string; runId: string; seq: number; at: string; type: AgentEventType; payload: unknown}.
@@ -116,7 +136,7 @@ Definir em shared/agents/contracts.ts, sem exportar tipos privados do SDK:
 
 A API session.prompt resolve ao fim do turno; recibo de aceitação e eventos são separados. seq ordena eventos por sessão; um turno tem apenas um estado terminal. Uso desconhecido permanece ausente, sem valores inventados.
 
-Persistência: SDK é fonte de verdade do contexto Pi; índice próprio guarda referências, metadados e versão de esquema. Não manter duas cópias concorrentes do contexto. Usar app.getPath('userData'), escritas atômicas e um writer por sessão. Não abrir arquivos de sessões das CLIs com o SessionManager do Pi.
+Persistência: SDK é fonte de verdade do contexto Pi; índice próprio guarda referências, metadados, agentId e versão de esquema; cadastros de projetos e agentes têm armazenamento próprio versionado. Não manter duas cópias concorrentes do contexto. Usar app.getPath('userData'), escritas atômicas e um writer por sessão. Não abrir arquivos de sessões das CLIs com o SessionManager do Pi.
 
 ### Alternativas consideradas
 
@@ -126,7 +146,7 @@ Persistência: SDK é fonte de verdade do contexto Pi; índice próprio guarda r
 
 ## 4. Regras globais
 
-- Usuário escolhe provedor, conta e modelo. Nunca trocar automaticamente ou fazer fallback não configurado.
+- Usuário escolhe provedor, conta e modelo; pode fixá-los por agente. A seleção global não substitui o modelo fixo de um agente. Nunca trocar automaticamente ou fazer fallback não configurado.
 - OAuth autentica; Pi/ACP define como o agente opera. Não expor uma falsa escolha excludente 'OAuth ou ACP'.
 - Credenciais somente no cofre do sistema ou armazenamento cifrado protegido por ele. Falha do cofre bloqueia persistência; nunca salvar em texto puro silenciosamente.
 - BrowserWindow: nodeIntegration=false, contextIsolation=true, sandbox=true; preload com allowlist, validação de remetente e payload; sem shell/exec genérico exposto.
@@ -176,13 +196,15 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 
 ### M2 — Contrato de sessões e worker Pi
 
-**Arquivos:** criar shared/agents/{contracts,validation}.ts; server/agents/{runtime,manager,sessions}.ts; server/agents/pi/{runtime,worker}.ts; testes adjacentes manager.test.ts, sessions.test.ts e pi/runtime.test.ts.
+**Arquivos:** criar shared/agents/{contracts,validation}.ts; server/agents/{runtime,manager,sessions,projects,profiles}.ts; server/agents/pi/{runtime,worker}.ts; testes adjacentes manager.test.ts, sessions.test.ts e pi/runtime.test.ts.
 **Consome:** contratos da seção 3 e supervisor M1. **Produz:** AgentRuntime Pi e SessionManager, sem UI dependente de tipos Pi.
 
-- [ ] Testar com runtime falso: mensagem duplicada inicia um turno; terceiro turno global entra em fila; duas mensagens na mesma sessão não concorrem; cancelar fila não executa prompt.
+- [ ] Testar ProjectStore/AgentStore com diretório temporário: projeto com pasta válida, agente persistido e reaberto com mesmo id/personagem/política, múltiplos agentes com modelos diferentes e agente arquivado impedido de iniciar turno.
+- [ ] Testar com runtime falso: mensagem duplicada inicia um turno; terceiro turno global entra em fila; duas conversas do mesmo agente não executam simultaneamente; cancelar fila não executa prompt.
+- [ ] Testar resolução de modelo: fixed usa seleção do agente e rejeita override divergente; choose-on-start exige escolha explícita; conta removida/modelo indisponível bloqueia envio sem fallback.
 - [ ] Implementar adaptador SDK somente no worker; correlacionar runId/seq e normalizar eventos. Não carregar extensões arbitrárias do usuário automaticamente.
 - [ ] Testar persistência: reabrir histórico, migração de índice, arquivo truncado em quarentena e referência inválida; sessões running após crash viram interrupted.
-- [ ] Implementar índice atômico, locks, recuperação e seleção persistente. Mudança de modelo apenas por ação explícita em sessão ociosa; nunca migrar contexto silenciosamente.
+- [ ] Implementar índice atômico, locks, recuperação e seleção persistente. Mudança de modelo fixo apenas por edição explícita do agente ocioso, válida para novas conversas; sessões anteriores preservam sua seleção. Nunca migrar contexto silenciosamente.
 - [ ] Rodar npx vitest run server/agents e npm run typecheck; registrar resultado e commit feat: add managed Pi sessions.
 
 ### M3 — Ferramentas, aprovações e autenticação
@@ -199,13 +221,16 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 
 ### M4 — Chat dentro do escritório
 
-**Arquivos:** criar client/src/agents/transport.ts; client/src/ui/chat/{controller,view,composer,tools,permissions}.ts e chat.css; modificar client/src/ui/{drawer,settings,spawn}.ts e client/src/app.ts; criar server/agents/office-source.ts; integrar server/model/office.ts e server/sources/registry.ts conforme interfaces reais; atualizar shared/locales e CHANGELOG.md.
+**Arquivos:** criar client/src/agents/transport.ts; client/src/ui/chat/{controller,view,composer,tools,permissions}.ts e chat.css; criar client/src/ui/agents/{project-form,agent-form,agent-list}.ts e testes adjacentes; modificar client/src/ui/{drawer,settings,spawn}.ts e client/src/app.ts; criar server/agents/office-source.ts; integrar server/model/office.ts e server/sources/registry.ts conforme interfaces reais; atualizar shared/locales e CHANGELOG.md.
 **Interfaces:** transport expõe métodos tipados de SessionManager, AuthService e assinatura AgentEvent pelo preload; web sem ponte retorna capability indisponível, sem endpoint público substituto.
 
 - [ ] Testar clique em personagem abre a conversa correta; text-delta fora de ordem não corrompe resposta; mensagens são renderizadas como conteúdo sem HTML executável.
-- [ ] Implementar seletor de projeto por diálogo nativo, conta/provedor/modelo, nova conversa, histórico, envio, fila, cancelamento e estados de autenticação.
+- [ ] Implementar fluxo: conectar provedor, cadastrar projeto com pasta via diálogo nativo, cadastrar/editar/arquivar agentes e escolher modelo fixo opcional por agente. Mostrar nome, provedor e modelo efetivo no cadastro e no chat.
+- [ ] Implementar testes de UI: selecionar agente já cadastrado abre conversa correspondente; nova conversa mantém o mesmo personagem; edição da política informa que conversas anteriores preservam modelo; reiniciar app restaura agentes sem executar inferência.
+- [ ] Implementar nova conversa e histórico por agente, envio, fila, cancelamento e estados de autenticação. Em fixed, apresentar seleção do cadastro sem override global; em choose-on-start, solicitar seleção antes de criar a conversa.
 - [ ] Mostrar comandos, diffs, resultados e botões de permissão vinculados ao pedido exato; desabilitar respostas expiradas; conservar rascunho após erro recuperável.
 - [ ] Testar projeção Pi → escritório: running/trabalhando, waiting-permission/precisa de você, idle/ocioso, erro e encerramento; deduplicar IDs por origem e não duplicar personagem pelo watcher legado.
+- [ ] Exibir agentes cadastrados do projeto aberto com personagem persistente e estado ocioso quando não executam; criar/selecionar agente não chama modelo. Deduplicar a projeção por agentId e associar os eventos à conversa ativa.
 - [ ] Projetar apenas eventos confirmados; não simular status de ferramentas como fatos. Manter comportamento social visual e modo demo independentes da execução.
 - [ ] Rodar testes de client/src/ui/chat, server/agents e i18n:check; validar visualmente demo e execução de fixture em janelas pequenas/HiDPI. Commit feat: add managed agent chat to office.
 
@@ -251,7 +276,8 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 ### Pronto para MVP
 
 - [ ] Instalação limpa nos três alvos, sem runtime externo.
-- [ ] Conta/provedor/modelo escolhidos explicitamente; login e logout funcionais nos métodos habilitados.
+- [ ] Provedor conectado; projeto cadastrado com pasta; agentes próprios criados e preservados após restart; cada agente pode ter modelo fixo independente.
+- [ ] Política fixed respeitada em todas as conversas novas; histórico anterior mantém modelo efetivo; login e logout funcionais nos métodos habilitados.
 - [ ] Nova conversa, streaming, leitura, escrita/comando aprovado ou negado e cancelamento comprovados.
 - [ ] Histórico retomado após restart e crash sem executar de novo efeitos colaterais.
 - [ ] Personagem acompanha apenas eventos reais e não duplica sessões legadas.
