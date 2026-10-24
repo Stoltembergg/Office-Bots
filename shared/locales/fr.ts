@@ -1605,6 +1605,7 @@ export const FR: Readonly<Record<string, string>> = {
   "{0} {1}: {2}. Renomeie para valer de novo.": "{0} {1} : {2}. Renommez-le pour qu'il soit de nouveau pris en compte.",
   "variável do nome antigo ignorada": "variable de l'ancien nom ignorée",
   "variáveis do nome antigo ignoradas": "variables de l'ancien nom ignorées",
+    "Cadastro inválido.": "Enregistrement de catalogue invalide.",
   "{0} existe e não é uma pasta": "{0} existe et n'est pas un dossier",
   "não consegui levar ~/.{0} para ~/.habblaud ({1}); mova a pasta à mão.": "impossible de déplacer ~/.{0} vers ~/.habblaud ({1}) ; déplacez le dossier à la main.",
   "~/.{0} (nome antigo) agora é ~/.habblaud.": "~/.{0} (ancien nom) est maintenant ~/.habblaud.",

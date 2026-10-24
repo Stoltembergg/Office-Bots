@@ -23,3 +23,15 @@ Validação local Linux x64, Node 24.19.0/npm 11.9.0: `npm run typecheck`, `npm 
 CI GitHub Actions, Node 22.19.0: `npm ci`, `npm run typecheck`, `npm run desktop:test`, `npm run desktop:package` e smoke do pacote passaram em Ubuntu x64, Windows x64, macOS arm64 e macOS Intel. O job `verificar` também passou (`npm test` e `npm run build`).
 
 Limite local: a janela empacotada não pôde ser aberta neste container porque a política do sistema bloqueia o socket Unix usado por `app.requestSingleInstanceLock()` (`socket() failed: Operation not permitted`). O smoke do executável passou nos runners nativos da matriz. Assinatura dos instaladores, notarização macOS e QA manual de instalação permanecem para M6; estes checks não comprovam tais etapas. A revisão também corrigiu a ordem de cleanup na falha do Vite, a precedência de `dev: false` e o padrão web para `HABBLAUD_PORT=0`.
+
+## M2.1 — catálogo persistente de projetos e agentes
+
+Escopo: primeiro incremento do M2, na branch `feat/persistent-agent-catalog`, baseado no HEAD `f8896c7` do PR #1 (ainda aberto). Cadastro versionado em `catalog.json`, referências de projeto validadas, pasta canônica, política de modelo por agente, arquivamento preservando identidade e bloqueio de edição enquanto o runtime informar turno ativo. O consumidor deve fornecer a consulta síncrona de ocupação ao construir o store. Nenhuma inferência, conta, rota HTTP ou IPC foi adicionada.
+
+Decisão: compartilhar um catálogo versionado para projetos e agentes, com lock exclusivo por diretório e substituição atômica por rename. Colisão de writer falha sem sobrescrever; lock deixado por crash requer resolução explícita após confirmar que o processo terminou. Arquivo inválido ou versão desconhecida é preservado e bloqueia gravações. Recuperação/quarentena e sessões serão entregues em incrementos posteriores.
+
+M2 permanece em andamento: worker Pi, conversas, fila, deduplicação de mensagens e integração do guard de arquivamento ao início de turno ainda não foram implementados. O serviço de cadastro não está conectado à interface nesta etapa.
+
+Validação M2.1 em Linux x64, Node 24.19.0/npm 11.9.0: teste novo falhou inicialmente pela ausência do catálogo; após implementação, 9/9 testes de catálogo passaram. `npm run typecheck`, `npm test` (1.902 passaram, 2 skipped) e `npm run build` passaram. `git diff --check` passou. O checker i18n encontrou somente a lacuna preexistente do M1 `Encerrando o servidor desktop/web…` nos três idiomas; o novo erro de cadastro tem traduções en/es/fr.
+
+Revisão independente do incremento: sem achados bloqueantes. Limitações preservadas: rename fornece substituição atômica, sem garantia de durabilidade contra perda de energia (sem fsync); o futuro SessionManager deverá serializar admissão de turnos e mutações do catálogo — a consulta síncrona de ocupação sozinha não impede corrida com um turno iniciado durante a gravação assíncrona. A resolução de modelo na conversa, os locks de sessão e a recuperação continuam no M2.
