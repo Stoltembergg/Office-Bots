@@ -204,6 +204,7 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 - [x] Testar resolução de modelo: fixed usa seleção do agente e rejeita override divergente; choose-on-start exige escolha explícita; conta removida/modelo indisponível bloqueia envio sem fallback.
 - [ ] Implementar adaptador SDK somente no worker; correlacionar runId/seq e normalizar eventos. Não carregar extensões arbitrárias do usuário automaticamente.
 - [x] M2.3: testar índice de metadados reaberto, seleção preservada, referências de catálogo, lock, quarentena e recuperação explícita de estados interrompidos. Store isolado; ainda não integrado ao manager/SDK.
+- [x] M2.4: integrar índice obrigatório ao SessionManager; persistir estado antes de executar/concluir e recuperar metadados como detached sem replay. Retomada SDK e migração futura permanecem pendentes.
 - [ ] Testar persistência: reabrir histórico, migração de índice, arquivo truncado em quarentena e referência inválida; sessões running após crash viram interrupted.
 - [ ] Implementar índice atômico, locks, recuperação e seleção persistente. Mudança de modelo fixo apenas por edição explícita do agente ocioso, válida para novas conversas; sessões anteriores preservam sua seleção. Nunca migrar contexto silenciosamente.
 - [ ] Rodar npx vitest run server/agents e npm run typecheck; registrar resultado e commit feat: add managed Pi sessions.
