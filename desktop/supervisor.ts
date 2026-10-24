@@ -13,6 +13,7 @@ export interface DesktopWindow {
 }
 
 export interface SupervisorDependencies {
+  startAgents?(): Promise<{ stop(): Promise<void> }>;
   startServer(): Promise<ManagedServer>;
   createWindow(url: string): Promise<DesktopWindow> | DesktopWindow;
 }
@@ -26,6 +27,7 @@ export interface DesktopSupervisor {
 
 export function createSupervisor(dependencies: SupervisorDependencies): DesktopSupervisor {
   let server: ManagedServer | undefined;
+  let agents: { stop(): Promise<void> } | undefined;
   let mainWindow: DesktopWindow | undefined;
   let windowPromise: Promise<DesktopWindow> | undefined;
   let stopPromise: Promise<void> | undefined;
@@ -41,17 +43,22 @@ export function createSupervisor(dependencies: SupervisorDependencies): DesktopS
     if (windowPromise) return windowPromise;
 
     const pending = (async () => {
-      const ownsServer = !server;
-      const readyServer = server ?? await dependencies.startServer();
-      server = readyServer;
+      const ownsServer = !server, ownsAgents = !agents;
       try {
+        if (!agents && dependencies.startAgents) agents = await dependencies.startAgents();
+        const readyServer = server ?? await dependencies.startServer();
+        server = readyServer;
         mainWindow = await dependencies.createWindow(readyServer.url);
         return mainWindow;
       } catch (error) {
-        if (ownsServer) {
-          await readyServer.stop();
-          server = undefined;
-        }
+        const serverToStop = ownsServer ? server : undefined;
+        const agentsToStop = ownsAgents ? agents : undefined;
+        if (ownsServer) server = undefined;
+        if (ownsAgents) agents = undefined;
+        await Promise.allSettled([
+          Promise.resolve().then(() => serverToStop?.stop()),
+          Promise.resolve().then(() => agentsToStop?.stop()),
+        ]);
         throw error;
       }
     })();
@@ -82,11 +89,14 @@ export function createSupervisor(dependencies: SupervisorDependencies): DesktopS
         }
         const windowToClose = liveWindow();
         const serverToStop = server;
+        const agentsToStop = agents;
         mainWindow = undefined;
         server = undefined;
+        agents = undefined;
         const results = await Promise.allSettled([
           Promise.resolve().then(() => windowToClose?.close()),
           Promise.resolve().then(() => serverToStop?.stop()),
+          Promise.resolve().then(() => agentsToStop?.stop()),
         ]);
         const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
         if (failed) throw failed.reason;

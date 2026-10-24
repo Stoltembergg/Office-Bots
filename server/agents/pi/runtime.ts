@@ -20,11 +20,11 @@ export class PiRuntime implements ManagedRuntime {
   private dead = false;
   private stopping = false;
   private ready: Promise<void>;
-  constructor(options: { entry: string; directory: string }) {
+  constructor(options: { entry: string; directory: string; execPath?: string }) {
     // No ambient provider credentials, NODE_OPTIONS, loaders or CLI auth config.
-    const env: NodeJS.ProcessEnv = {};
+    const env: NodeJS.ProcessEnv = { ELECTRON_RUN_AS_NODE: '1' };
     for (const key of ['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP']) if (process.env[key]) env[key] = process.env[key];
-    this.child = fork(options.entry, [options.directory], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], serialization: 'json', env, execArgv: [] });
+    this.child = fork(options.entry, [options.directory], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], serialization: 'json', env, execArgv: [], execPath: options.execPath ?? process.execPath });
     let readyResolve!: () => void, readyReject!: (error: Error) => void;
     this.ready = new Promise<void>((yes, no) => { readyResolve = yes; readyReject = no; });
     void this.ready.catch(() => undefined);
@@ -73,6 +73,11 @@ export class PiRuntime implements ManagedRuntime {
       }
       this.child.kill('SIGKILL');
     });
+  }
+  async initialize(): Promise<void> {
+    if (this.dead || this.stopping) throw new SessionError('runtime-failed');
+    await this.ready;
+    if (this.dead || this.stopping) throw new SessionError('runtime-failed');
   }
   private publish(event: AgentEvent): void {
     for (const listener of this.listeners) { try { listener(structuredClone(event)); } catch { /* Presentation cannot interrupt execution. */ } }

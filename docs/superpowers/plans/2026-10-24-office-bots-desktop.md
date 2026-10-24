@@ -203,6 +203,7 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 - [x] Testar com runtime falso: mensagem duplicada inicia um turno; terceiro turno global entra em fila; duas conversas do mesmo agente não executam simultaneamente; cancelar fila não executa prompt.
 - [x] Testar resolução de modelo: fixed usa seleção do agente e rejeita override divergente; choose-on-start exige escolha explícita; conta removida/modelo indisponível bloqueia envio sem fallback.
 - [x] M2.5: processo Pi com SDK 1.4.0, contrato validado de texto/uso, runId/seq, cancel/close e erro terminal após exit, usando provedor falso sem ferramentas.
+- [x] M2.6: montar serviço único no Electron/supervisor, aguardar handshake, lançar worker com Node embutido e drenar persistência na saída. SDK no ASAR verificado sem inferência; resume ainda bloqueado.
 - [ ] Implementar adaptador SDK somente no worker; correlacionar runId/seq e normalizar eventos. Não carregar extensões arbitrárias do usuário automaticamente.
 - [x] M2.3: testar índice de metadados reaberto, seleção preservada, referências de catálogo, lock, quarentena e recuperação explícita de estados interrompidos. Store isolado; ainda não integrado ao manager/SDK.
 - [x] M2.4: integrar índice obrigatório ao SessionManager; persistir estado antes de executar/concluir e recuperar metadados como detached sem replay. Retomada SDK e migração futura permanecem pendentes.

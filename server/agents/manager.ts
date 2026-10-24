@@ -46,6 +46,9 @@ function same(a: ModelSelection, b: ModelSelection) {
 export class SessionManager {
   private readonly sessions = new Map<string, Session>();
   private initialization?: Promise<void>;
+  private stopping = false;
+  private shutdownPromise?: Promise<void>;
+  private readonly creations = new Set<Promise<SessionInfo>>();
   private queue: Turn[] = [];
   private readonly active = new Set<Turn>();
   constructor(private readonly catalog: CatalogStore, private readonly runtime: ManagedRuntime,
@@ -78,20 +81,34 @@ export class SessionManager {
     try { if (await this.isAvailable(structuredClone(chosen))) return; } catch { /* Fail closed. */ }
     throw new SessionError('unavailable');
   }
-  async create(config: SessionConfig): Promise<SessionInfo> {
+  create(config: SessionConfig): Promise<SessionInfo> {
+    if (this.stopping) return Promise.reject(new SessionError('closed'));
+    const operation = this.createSession(config);
+    this.creations.add(operation);
+    void operation.then(() => this.creations.delete(operation), () => this.creations.delete(operation));
+    return operation;
+  }
+  private assertRunning(): void { if (this.stopping) throw new SessionError('closed'); }
+  private async createSession(config: SessionConfig): Promise<SessionInfo> {
     const copy = structuredClone(config);
     await this.initialize();
+    this.assertRunning();
     const agent = await this.catalog.requireActiveAgent(copy.agentId);
     const chosen = agent.modelPolicy.mode === 'fixed' ? agent.modelPolicy.selection : copy.selection;
     if (!selection(chosen) || (copy.selection !== undefined && (!selection(copy.selection) || !same(chosen, copy.selection)))) throw new SessionError('invalid');
     await this.available(chosen);
     const project = await this.catalog.getProject(agent.projectId);
+    this.assertRunning();
     const id = randomUUID();
     let runtimeSessionId: string;
     try {
       ({ runtimeSessionId } = await this.runtime.create({ id, agentId: agent.id, projectId: project.id,
         cwd: project.cwd, selection: structuredClone(chosen), instructions: agent.instructions }));
-    } catch { throw new SessionError('runtime-failed'); }
+    } catch { throw new SessionError(this.stopping ? 'closed' : 'runtime-failed'); }
+    if (this.stopping) {
+      try { await this.runtime.close(runtimeSessionId); } catch { /* Owned process is stopping. */ }
+      throw new SessionError('closed');
+    }
     const info: SessionInfo = { id, origin: 'managed-pi', runtimeSessionId, projectId: project.id,
       agentId: agent.id, selection: structuredClone(chosen), state: 'idle' };
     try { await this.store.add(info); }
@@ -100,10 +117,16 @@ export class SessionManager {
       try { await this.runtime.close(runtimeSessionId); } catch { /* Supervisor owns final cleanup. */ }
       throw new SessionError('storage');
     }
+    if (this.stopping) {
+      try { await this.runtime.close(runtimeSessionId); } catch { /* Owned process is stopping. */ }
+      try { await this.store.setState(id, 'closed'); } catch { throw new SessionError('storage'); }
+      throw new SessionError('closed');
+    }
     this.sessions.set(id, { info, messages: new Map() });
     return structuredClone(info);
   }
   prompt(id: string, input: PromptInput): Promise<void> {
+    if (this.stopping) return Promise.reject(new SessionError('closed'));
     let s: Session;
     try { s = this.find(id); } catch (e) { return Promise.reject(e); }
     if (s.closingRequested || s.info.state === 'closed') return Promise.reject(new SessionError('closed'));
@@ -131,6 +154,7 @@ export class SessionManager {
     return promise;
   }
   private pump() {
+    if (this.stopping) return;
     while (this.active.size < 2) {
       const i = this.queue.findIndex(t => t.ready && !t.settled && !t.finishing && !t.cancelled && ![...this.active].some(a => a.session.info.agentId === t.session.info.agentId));
       if (i < 0) return;
@@ -197,7 +221,24 @@ export class SessionManager {
       await turn.cancellation;
     }
   }
+  /** Freeze admission synchronously. The owner must stop the runtime, then await
+   * this drain before reporting shutdown; no queued task may dispatch meanwhile.
+   */
+  shutdown(): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise;
+    this.stopping = true;
+    const turns = [...this.sessions.values()].flatMap(s => s.turn ? [s.turn] : []);
+    for (const turn of turns) if (!this.active.has(turn)) void this.cancel(turn.session.info.id).catch(() => undefined);
+    this.shutdownPromise = Promise.allSettled([...this.creations, ...turns.map(t => t.promise), ...[...this.sessions.values()].flatMap(s => s.closing ? [s.closing] : [])]).then(results => {
+      // Runtime interruption/cancellation is expected during exit. Failed disk
+      // commits are not a clean shutdown and must reach the owning supervisor.
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected' && r.reason instanceof SessionError && r.reason.code === 'storage');
+      if (failed) throw failed.reason;
+    });
+    return this.shutdownPromise;
+  }
   close(id: string): Promise<void> {
+    if (this.stopping) return Promise.reject(new SessionError('closed'));
     const s = this.find(id);
     if (s.closing) return s.closing;
     if (s.info.state === 'closed') return Promise.resolve();
