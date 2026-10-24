@@ -98,6 +98,7 @@ Não criar pastas vazias nesta tarefa de documentação. Confirmar nomes/assinat
 
 Definir em shared/agents/contracts.ts, sem exportar tipos privados do SDK:
 
+```text
 - RuntimeKind = 'pi' | 'acp'; SessionOrigin = 'managed-pi' | 'observed-cli' | 'external-acp'.
 - ModelSelection = {providerId: string; modelId: string; accountId: string; thinkingLevel?: string}.
 - SessionConfig = {projectId: string; cwd: string; selection: ModelSelection}.
@@ -111,6 +112,7 @@ Definir em shared/agents/contracts.ts, sem exportar tipos privados do SDK:
 - SessionManager: list(projectId?); get(id); create(config); resume(id); prompt(id,input); cancel(id); close(id). Roteia por runtime e valida capacidades.
 - PermissionDecision = {requestId: string; sessionId: string; runId: string; decision: 'allow-once' | 'deny'}.
 - CredentialStore: get(accountId): Promise<Credential | null>; set(accountId, credential): Promise<void>; delete(accountId): Promise<void>. Credential nunca atravessa o renderer.
+```
 
 A API session.prompt resolve ao fim do turno; recibo de aceitação e eventos são separados. seq ordena eventos por sessão; um turno tem apenas um estado terminal. Uso desconhecido permanece ausente, sem valores inventados.
 
