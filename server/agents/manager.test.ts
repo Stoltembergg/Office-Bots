@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { CatalogStore } from './catalog';
 import { SessionManager } from './manager';
+import { SessionStore } from './sessions';
 import type { ManagedRuntime, RuntimeSessionConfig } from './runtime';
 import type { ModelSelection } from '../../shared/agents/contracts';
 
@@ -29,7 +30,7 @@ beforeEach(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), 'office-manager-'));
   catalog = new CatalogStore(path.join(root, 'data'), id => manager.isAgentBusy(id));
   runtime = new FakeRuntime(); available = true;
-  manager = new SessionManager(catalog, runtime, async () => available);
+  manager = new SessionManager(catalog, runtime, async () => available, new SessionStore(path.join(root, 'data'), catalog));
 });
 afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 async function agent(mode: 'fixed' | 'choose-on-start' = 'fixed') {
