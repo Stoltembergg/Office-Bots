@@ -11,6 +11,7 @@ export function serve(backend: PiBackend): void {
         let result: unknown;
         switch (message.type) {
           case 'create': result = await backend.create(message.config); break;
+          case 'resume': result = await backend.resume(message.config); break;
           case 'prompt': await backend.prompt(message.runtimeSessionId, message.input, message.runId); break;
           case 'cancel': await backend.cancel(message.runtimeSessionId); break;
           case 'close': await backend.close(message.runtimeSessionId); break;

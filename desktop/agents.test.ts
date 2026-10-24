@@ -13,6 +13,7 @@ class Runtime implements ManagedRuntime {
   failReady = false;
   async initialize() { if (this.failReady) throw new Error('PRIVATE_RUNTIME_ERROR'); }
   async create(config: { id: string }) { this.created.push(config.id); return { runtimeSessionId: config.id }; }
+  async resume(config: { runtimeSessionId: string }) { return { runtimeSessionId: config.runtimeSessionId, lastSeq: 0, messages: [] }; }
   async prompt() { return new Promise<void>((resolve, reject) => this.calls.push({ resolve, reject })); }
   async cancel() {}
   async close() {}

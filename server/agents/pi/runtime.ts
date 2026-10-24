@@ -2,11 +2,20 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { AgentEvent, AgentEventData, PromptInput } from '../../../shared/agents/contracts';
 import { exactKeys, isAgentEvent, nonempty, record } from '../../../shared/agents/validation';
-import type { ManagedRuntime, RuntimeSessionConfig } from '../runtime';
+import type { ManagedRuntime, RuntimeMessageReceipt, RuntimeResumeConfig, RuntimeResumeResult, RuntimeSessionConfig } from '../runtime';
 import { SessionError } from '../manager';
 import { codes, isCommand, type Command, type WorkerCode } from './protocol';
 
 type Pending = { runtimeSessionId?: string; resolve: (result: unknown) => void; reject: (error: Error) => void; type: Command['type']; sessionId?: string };
+function validResumeResult(value: unknown, expectedId: string): value is RuntimeResumeResult {
+  if (!record(value) || !exactKeys(value, ['runtimeSessionId', 'lastSeq', 'messages']) || value.runtimeSessionId !== expectedId
+    || !Number.isSafeInteger(value.lastSeq) || (value.lastSeq as number) < 0 || !Array.isArray(value.messages)) return false;
+  const messages = value.messages as unknown[];
+  return messages.every(message => record(message) && exactKeys(message, ['messageId', 'inputHash', 'outcome'])
+    && nonempty(message.messageId) && typeof message.inputHash === 'string' && /^[a-f0-9]{64}$/.test(message.inputHash)
+    && ['completed', 'cancelled', 'error', 'interrupted'].includes(message.outcome as string))
+    && new Set(messages.map(message => (message as RuntimeMessageReceipt).messageId)).size === messages.length;
+}
 /** Trusted host API, never exposed directly over HTTP/renderer. The entry is an
  * app-owned built file. Death rejects pending work only after process exit;
  * this runtime never restarts or replays a request automatically.
@@ -61,12 +70,17 @@ export class PiRuntime implements ManagedRuntime {
           if (message.ok === true && pending.type === 'create'
             && (!record(message.result) || !exactKeys(message.result, ['runtimeSessionId']) || !nonempty(message.result.runtimeSessionId)
               || this.sessions.has(message.result.runtimeSessionId))) { this.child.kill('SIGKILL'); return; }
+          if (message.ok === true && pending.type === 'resume'
+            && (!validResumeResult(message.result, pending.runtimeSessionId!) || this.sessions.has(pending.runtimeSessionId!))) { this.child.kill('SIGKILL'); return; }
           if (message.ok === true && pending.type === 'prompt' && !this.sessions.get(pending.runtimeSessionId!)?.terminal) { this.child.kill('SIGKILL'); return; }
           this.pending.delete(message.id);
           if (message.ok === false) pending.reject(new SessionError(message.code as WorkerCode));
           else if (pending.type === 'create') {
             const result = message.result as { runtimeSessionId: string };
             this.sessions.set(result.runtimeSessionId, { id: pending.sessionId!, seq: 0 }); pending.resolve(result);
+          } else if (pending.type === 'resume') {
+            const result = message.result as RuntimeResumeResult;
+            this.sessions.set(result.runtimeSessionId, { id: pending.sessionId!, seq: result.lastSeq }); pending.resolve(result);
           } else pending.resolve(undefined);
           return;
         }
@@ -99,11 +113,21 @@ export class PiRuntime implements ManagedRuntime {
     await this.ready;
     if (this.dead || this.stopping) throw new SessionError('runtime-failed');
     return new Promise((resolve, reject) => {
-      this.pending.set(payload.id, { resolve, reject, type: payload.type, runtimeSessionId: payload.type === 'create' ? undefined : payload.runtimeSessionId, sessionId: payload.type === 'create' ? payload.config.id : undefined });
+      const pending: Pending = { resolve, reject, type: payload.type };
+      if (payload.type === 'create') pending.sessionId = payload.config.id;
+      else if (payload.type === 'resume') {
+        pending.runtimeSessionId = payload.config.runtimeSessionId;
+        pending.sessionId = payload.config.id;
+      } else pending.runtimeSessionId = payload.runtimeSessionId;
+      this.pending.set(payload.id, pending);
       this.child.send(payload, error => { if (error) this.child.kill('SIGKILL'); });
     });
   }
   async create(config: RuntimeSessionConfig): Promise<{ runtimeSessionId: string }> { return await this.request({ type: 'create', config }) as { runtimeSessionId: string }; }
+  async resume(config: RuntimeResumeConfig): Promise<RuntimeResumeResult> {
+    if ([...this.sessions.values()].some(session => session.id === config.id)) throw new SessionError('busy');
+    return await this.request({ type: 'resume', config }) as RuntimeResumeResult;
+  }
   async prompt(runtimeSessionId: string, input: PromptInput): Promise<void> {
     const s = this.sessions.get(runtimeSessionId);
     if (!s) throw new SessionError('invalid');

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { CatalogStore } from './catalog';
 import { SessionManager } from './manager';
 import { SessionStore } from './sessions';
-import type { ManagedRuntime, RuntimeSessionConfig } from './runtime';
+import type { ManagedRuntime, RuntimeResumeConfig, RuntimeResumeResult, RuntimeSessionConfig } from './runtime';
 import type { ModelSelection } from '../../shared/agents/contracts';
 
 const selected: ModelSelection = { providerId: 'openai', accountId: 'user', modelId: 'user-selected' };
@@ -18,6 +18,9 @@ class FakeRuntime implements ManagedRuntime {
   closeFailures = 0;
   closed: string[] = [];
   async create(config: RuntimeSessionConfig) { this.created.push(config); return { runtimeSessionId: config.id }; }
+  async resume(config: RuntimeResumeConfig): Promise<RuntimeResumeResult> {
+    return { runtimeSessionId: config.runtimeSessionId, lastSeq: 0, messages: [] };
+  }
   prompt(id: string, input: { messageId: string; text: string }): Promise<void> {
     return new Promise((resolve, reject) => this.calls.push({ id, ...input, resolve, reject }));
   }

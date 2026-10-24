@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
 import electronPath from 'electron';
 import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
@@ -57,6 +58,29 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     await runtime.prompt(s.runtimeSessionId, { ...input, messageId: 'message-2' });
     expect(new Set(events.map(e => e.runId)).size).toBe(2);
     expect(events.map(e => e.seq)).toEqual(events.map((_, i) => i + 1));
+  });
+  it('retoma um transcript em novo worker sem replay e continua a sequência persistida', async () => {
+    const directory = path.join(root, 'sdk');
+    const created = await runtime.create(config());
+    await runtime.prompt(created.runtimeSessionId, input);
+    const previousLastSeq = events.at(-1)!.seq;
+    await runtime.stop();
+    events = [];
+    runtime = new PiRuntime({ entry, directory });
+    runtime.subscribe(event => events.push(event));
+
+    const resumed = await runtime.resume({ ...config(), runtimeSessionId: created.runtimeSessionId });
+
+    expect(resumed.runtimeSessionId).toBe(created.runtimeSessionId);
+    expect(resumed.lastSeq).toBe(previousLastSeq);
+    expect(resumed.messages).toEqual([{ messageId: input.messageId,
+      inputHash: createHash('sha256').update(input.text).digest('hex'), outcome: 'completed' }]);
+    expect(events).toEqual([]);
+    await runtime.prompt(created.runtimeSessionId, { messageId: 'next-message', text: 'Continue' });
+    expect(events[0].type).toBe('message-start');
+    expect(events[0].sessionId).toBe('app-session');
+    expect(events[0].seq).toBe(resumed.lastSeq + 1);
+    expect(events.filter(e => e.type === 'message-start')).toHaveLength(1);
   });
   it('cancelamento aguarda término real e produz um único terminal', async () => {
     const s = await runtime.create(config('slow-session', 'slow'));
