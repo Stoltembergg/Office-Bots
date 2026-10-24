@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { tr } from '../../shared/i18n';
 import type { ModelSelection, PromptInput, SessionConfig, SessionInfo } from '../../shared/agents/contracts';
 import type { CatalogStore } from './catalog';
-import type { ManagedRuntime } from './runtime';
+import type { ManagedRuntime, RuntimeMessageReceipt, RuntimeResumeConfig } from './runtime';
 import type { SessionStore } from './sessions';
 
 export class SessionError extends Error {
@@ -26,7 +26,7 @@ type Turn = {
   settled: boolean;
   finishing?: Promise<void>;
 };
-type Session = { info: SessionInfo; messages: Map<string, Turn>; turn?: Turn; closing?: Promise<void>; closingRequested?: boolean; detached?: boolean; persistenceFailed?: boolean };
+type Session = { info: SessionInfo; messages: Map<string, Turn>; receipts: Map<string, RuntimeMessageReceipt>; turn?: Turn; resuming?: Promise<SessionInfo>; closing?: Promise<void>; closingRequested?: boolean; detached?: boolean; persistenceFailed?: boolean };
 const nonempty = (x: unknown): x is string => typeof x === 'string' && x.trim().length > 0;
 function selection(x: unknown): x is ModelSelection {
   if (!x || typeof x !== 'object') return false;
@@ -37,6 +37,14 @@ function selection(x: unknown): x is ModelSelection {
 }
 function same(a: ModelSelection, b: ModelSelection) {
   return a.providerId === b.providerId && a.accountId === b.accountId && a.modelId === b.modelId && a.thinkingLevel === b.thinkingLevel;
+}
+function inputHash(text: string): string { return createHash('sha256').update(text).digest('hex'); }
+function validReceipt(value: unknown): value is RuntimeMessageReceipt {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const r = value as Record<string, unknown>;
+  return Object.keys(r).every(k => ['messageId', 'inputHash', 'outcome'].includes(k))
+    && nonempty(r.messageId) && typeof r.inputHash === 'string' && /^[a-f0-9]{64}$/.test(r.inputHash)
+    && ['completed', 'cancelled', 'error', 'interrupted'].includes(r.outcome as string);
 }
 
 /** Durable lifecycle metadata; restored conversations stay detached/read-only.
@@ -59,7 +67,7 @@ export class SessionManager {
    */
   initialize(): Promise<void> {
     this.initialization ??= this.store.recover().then(infos => {
-      for (const info of infos) this.sessions.set(info.id, { info, messages: new Map(), detached: true });
+      for (const info of infos) this.sessions.set(info.id, { info, messages: new Map(), receipts: new Map(), detached: true });
     }).catch(() => { throw new SessionError('storage'); });
     return this.initialization;
   }
@@ -122,8 +130,54 @@ export class SessionManager {
       try { await this.store.setState(id, 'closed'); } catch { throw new SessionError('storage'); }
       throw new SessionError('closed');
     }
-    this.sessions.set(id, { info, messages: new Map() });
+    this.sessions.set(id, { info, messages: new Map(), receipts: new Map() });
     return structuredClone(info);
+  }
+  resume(id: string): Promise<SessionInfo> {
+    if (this.stopping) return Promise.reject(new SessionError('closed'));
+    const operation = this.resumeSession(id);
+    this.resumptions.add(operation);
+    void operation.then(() => this.resumptions.delete(operation), () => this.resumptions.delete(operation));
+    return operation;
+  }
+  private readonly resumptions = new Set<Promise<SessionInfo>>();
+  private async resumeSession(id: string): Promise<SessionInfo> {
+    await this.initialize();
+    this.assertRunning();
+    const s = this.find(id);
+    if (s.resuming) return s.resuming;
+    if (s.closingRequested || s.info.state === 'closed') throw new SessionError('closed');
+    if (!s.detached || s.turn) throw new SessionError('busy');
+    const operation = this.attach(s);
+    s.resuming = operation;
+    try { return await operation; }
+    finally { if (s.resuming === operation) s.resuming = undefined; }
+  }
+  private async attach(s: Session): Promise<SessionInfo> {
+    let agent, project;
+    try {
+      agent = await this.catalog.getAgent(s.info.agentId);
+      project = await this.catalog.getProject(s.info.projectId);
+    } catch { throw new SessionError('invalid'); }
+    if (agent.projectId !== s.info.projectId) throw new SessionError('invalid');
+    await this.available(s.info.selection);
+    this.assertRunning();
+    const config: RuntimeResumeConfig = { id: s.info.id, runtimeSessionId: s.info.runtimeSessionId,
+      agentId: s.info.agentId, projectId: s.info.projectId, cwd: project.cwd,
+      selection: structuredClone(s.info.selection), instructions: agent.instructions };
+    let result;
+    try { result = await this.runtime.resume(config); }
+    catch (error) { throw error instanceof SessionError ? error : new SessionError(this.stopping ? 'closed' : 'runtime-failed'); }
+    this.assertRunning();
+    if (!result || result.runtimeSessionId !== s.info.runtimeSessionId || !Number.isSafeInteger(result.lastSeq) || result.lastSeq < 0
+      || !Array.isArray(result.messages) || !result.messages.every(validReceipt)
+      || new Set(result.messages.map(message => message.messageId)).size !== result.messages.length) {
+      try { await this.runtime.close(s.info.runtimeSessionId); } catch { /* Runtime shutdown owns failed cleanup. */ }
+      throw new SessionError('runtime-failed');
+    }
+    s.receipts = new Map(result.messages.map(receipt => [receipt.messageId, structuredClone(receipt)]));
+    s.detached = false;
+    return structuredClone(s.info);
   }
   prompt(id: string, input: PromptInput): Promise<void> {
     if (this.stopping) return Promise.reject(new SessionError('closed'));
@@ -133,6 +187,12 @@ export class SessionManager {
     if (s.persistenceFailed) return Promise.reject(new SessionError('storage'));
     if (s.detached) return Promise.reject(new SessionError('resume-required'));
     if (!input || !nonempty(input.messageId) || !nonempty(input.text)) return Promise.reject(new SessionError('invalid'));
+    const receipt = s.receipts.get(input.messageId);
+    if (receipt) {
+      if (receipt.inputHash !== inputHash(input.text)) return Promise.reject(new SessionError('invalid'));
+      if (receipt.outcome === 'completed') return Promise.resolve();
+      return Promise.reject(new SessionError(receipt.outcome === 'cancelled' ? 'cancelled' : receipt.outcome === 'error' ? 'runtime-failed' : 'resume-required'));
+    }
     const old = s.messages.get(input.messageId);
     if (old) return old.input.text === input.text ? old.promise : Promise.reject(new SessionError('invalid'));
     if (s.turn) return Promise.reject(new SessionError('busy'));
@@ -229,7 +289,7 @@ export class SessionManager {
     this.stopping = true;
     const turns = [...this.sessions.values()].flatMap(s => s.turn ? [s.turn] : []);
     for (const turn of turns) if (!this.active.has(turn)) void this.cancel(turn.session.info.id).catch(() => undefined);
-    this.shutdownPromise = Promise.allSettled([...this.creations, ...turns.map(t => t.promise), ...[...this.sessions.values()].flatMap(s => s.closing ? [s.closing] : [])]).then(results => {
+    this.shutdownPromise = Promise.allSettled([...this.creations, ...this.resumptions, ...turns.map(t => t.promise), ...[...this.sessions.values()].flatMap(s => s.closing ? [s.closing] : [])]).then(results => {
       // Runtime interruption/cancellation is expected during exit. Failed disk
       // commits are not a clean shutdown and must reach the owning supervisor.
       const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected' && r.reason instanceof SessionError && r.reason.code === 'storage');
@@ -246,6 +306,7 @@ export class SessionManager {
     // Set the barrier before the first await; no new prompts may enter.
     s.closingRequested = true;
     const operation = Promise.resolve().then(async () => {
+      if (s.resuming) await s.resuming.catch(() => undefined);
       await this.cancel(id);
       if (turn) await turn.promise.catch(() => undefined);
       try {

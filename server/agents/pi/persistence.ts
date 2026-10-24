@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { CURRENT_SESSION_VERSION, SessionManager } from '@earendil-works/pi-coding-agent';
@@ -28,6 +29,18 @@ function keys(value: Record<string, unknown>, allowed: readonly string[]): boole
   return Object.keys(value).every(key => allowed.includes(key));
 }
 function nonempty(value: unknown): value is string { return typeof value === 'string' && value.trim().length > 0; }
+function userMessageText(entry: unknown): string | undefined {
+  if (!object(entry) || entry.type !== 'message' || !object(entry.message) || entry.message.role !== 'user') return undefined;
+  const content = entry.message.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return undefined;
+  let text = '';
+  for (const part of content) {
+    if (!object(part) || part.type !== 'text' || typeof part.text !== 'string') return undefined;
+    text += part.text;
+  }
+  return text;
+}
 function validSelection(value: unknown): value is RuntimeSessionConfig['selection'] {
   if (!object(value) || !keys(value, ['providerId', 'accountId', 'modelId', 'thinkingLevel'])) return false;
   return nonempty(value.providerId) && nonempty(value.accountId) && nonempty(value.modelId)
@@ -55,9 +68,10 @@ function bindingFor(manager: SessionManager, config: RuntimeSessionConfig): Bind
 function readRecovered(manager: SessionManager, config: RuntimeResumeConfig): Recovered {
   const starts = new Map<string, { inputHash: string; seqLimit: number }>();
   const results = new Map<string, { inputHash: string; outcome: (typeof outcomes)[number]; seq: number }>();
+  const entries = manager.getEntries();
   let binding: Binding | undefined;
   let lastSeq = 0;
-  for (const entry of manager.getEntries()) {
+  for (const entry of entries) {
     if (entry.type !== 'custom' || entry.customType !== customType) continue;
     const data: unknown = entry.data;
     if (!object(data) || data.schemaVersion !== 1) throw new WorkerFailure('invalid');
@@ -98,6 +112,16 @@ function readRecovered(manager: SessionManager, config: RuntimeResumeConfig): Re
   if (!binding || binding.appSessionId !== config.id || binding.runtimeSessionId !== config.runtimeSessionId
     || binding.projectId !== config.projectId || binding.agentId !== config.agentId
     || !sameSelection(binding.selection, config.selection)) throw new WorkerFailure('invalid');
+  const userMessages = entries.filter(entry => entry.type === 'message' && entry.message.role === 'user');
+  const startedMessages = [...starts.entries()];
+  if (userMessages.length !== startedMessages.length) throw new WorkerFailure('resume-required');
+  for (let i = 0; i < startedMessages.length; i++) {
+    const text = userMessageText(userMessages[i]);
+    const [, start] = startedMessages[i];
+    if (text === undefined || createHash('sha256').update(text).digest('hex') !== start.inputHash) {
+      throw new WorkerFailure('resume-required');
+    }
+  }
   const messages = [...starts].map(([messageId, start]): RuntimeMessageReceipt => ({
     messageId, inputHash: start.inputHash, outcome: results.get(messageId)?.outcome ?? 'interrupted',
   }));
