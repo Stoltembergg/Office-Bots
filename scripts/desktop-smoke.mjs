@@ -52,8 +52,8 @@ const result = await new Promise((resolveExit, reject) => {
   await rm(temporaryHome, { recursive: true, force: true });
 });
 
-if (timedOut || result.code !== 0 || !output.includes('OFFICE_BOTS_DESKTOP_SMOKE_OK')) {
+if (timedOut || result.code !== 0 || (!output.includes('OFFICE_BOTS_DESKTOP_SMOKE_OK') || !output.includes('OFFICE_BOTS_PI_WORKER_SMOKE_OK'))) {
   throw new Error(`Packaged desktop smoke failed (${JSON.stringify(result)}${timedOut ? ', timed out' : ''}):\n${output}`);
 }
 
-console.log('Packaged app opened, served the bundled client, and exited cleanly without external Node.');
+console.log('Packaged app opened, served the client, loaded the Pi SDK in its owned worker, and exited without external Node.');
