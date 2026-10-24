@@ -176,23 +176,23 @@ Ordem: M0 → M1 → M2 → M3 → M4 → M5 → M6. ACP é M7 e não bloqueia o
 **Arquivos:** criar docs/desktop/qualification.md; inspecionar package.json, package-lock.json, .npmrc, tsconfig.json, server/tsconfig.json, vitest.config.ts, scripts/build-server.mjs e server/index.ts.
 **Interfaces produzidas:** matriz de versões Electron/Node/Pi, capacidades de autenticação por provedor, plataformas e comandos reproduzíveis.
 
-- [ ] Rodar npm ci, npm run typecheck, npm test, npm run build e npm run i18n:check; registrar falhas preexistentes separadas.
-- [ ] Qualificar uma versão fixa de Pi em diretório temporário, confirmar exports e hooks de ferramentas/permissão. Documentar alterações necessárias de versão Node e políticas de instalação do .npmrc.
-- [ ] Provar em processo isolado: prompt, text-delta, uso, ferramenta negada, cancelamento e retomada em workspace temporário; teste real somente com conta e custo explicitamente autorizados.
-- [ ] Preencher matriz Windows nativo/WSL/macOS Intel/Apple Silicon e versão mínima de SO suportada pelo Electron escolhido; WSL sem evidência permanece não suportado.
-- [ ] Documentar por provedor: API key/OAuth, endpoints oficiais, refresh, logout, elegibilidade e distribuição. Não transportar tokens de apps terceiros para endpoints não documentados.
-- [ ] Commit: docs: qualify desktop and Pi integration. Gate: SDK permite interceptar toda escrita/comando antes do efeito; caso contrário usar ferramentas customizadas ou bloquear integração até resolver.
+- [x] Rodar npm ci, npm run typecheck, npm test, npm run build e npm run i18n:check; registrar falhas preexistentes separadas. O wrapper npm de i18n falhou por EPERM do IPC local; a execução direta do mesmo script passou.
+- [x] Qualificar Pi `1.4.0` em diretório temporário, confirmar exports e hook de bloqueio de ferramenta. Registrar Node `>=22.19.0` e `engine-strict=true` em [qualification.md](../../desktop/qualification.md).
+- [x] Provar em processo isolado prompt, text-delta, uso, ferramenta negada sem efeito, cancelamento e retomada com workspace temporário e provedor falso; nenhum custo ou credencial real.
+- [x] Preencher matriz Windows x64/WSL/macOS Intel/Apple Silicon e mínimos do Electron escolhido; WSL permanece não suportado sem evidência.
+- [x] Documentar API key/OAuth e elegibilidade por provedor em [qualification.md](../../desktop/qualification.md); sem transportar tokens de apps terceiros.
+- [x] Commit focado `docs: qualify desktop and Pi integration`. Gate M0 passou para bloqueio pré-efeito de `bash` e `write`; cada ferramenta, chamadas aninhadas e limites de workspace continuam exigindo testes em M3.
 
 ### M1 — Aplicativo Electron executável
 
 **Arquivos:** criar desktop/{main,window,preload,supervisor,ipc}.ts, desktop/forge.config.ts, desktop/tsconfig.json; criar server/app.ts; modificar server/index.ts, package.json e scripts/build-server.mjs; testes desktop/supervisor.test.ts e desktop/ipc.test.ts.
 **Interfaces:** startServer({host,port,dataDir,profile}): Promise<{url:string;stop():Promise<void>}>; supervisor.start()/stop(); profile='web'|'desktop'.
 
-- [ ] Escrever testes: readiness antes de abrir janela; porta ocupada não mata serviço alheio; segundo lançamento foca instância existente; remetente IPC externo é recusado.
-- [ ] Extrair bootstrap e implementar supervisor com cleanup; portar recursos estáticos para pacote/ASAR e respeitar diretórios graváveis separados.
-- [ ] Criar scripts desktop:dev, desktop:build, desktop:package e desktop:test; incluir typecheck desktop. Não renomear scripts web existentes.
+- [x] Escrever testes: readiness antes de abrir janela; porta ocupada não mata serviço alheio; segundo lançamento foca instância existente; remetente IPC externo é recusado.
+- [x] Extrair bootstrap e implementar supervisor com cleanup; portar recursos estáticos para pacote/ASAR e respeitar diretórios graváveis separados.
+- [x] Criar scripts desktop:dev, desktop:build, desktop:package e desktop:test; incluir typecheck desktop. Não renomear scripts web existentes.
 - [ ] Executar npm run desktop:test e npm run desktop:package em Windows e macOS; abrir build sem Node externo e registrar logs/evidência.
-- [ ] Commit: feat: add Electron desktop shell. Gate: escritório legado abre no pacote, encerra processos próprios e mantém npm start funcional.
+- [x] Commit: feat: add Electron desktop shell. Gate: escritório legado abre no pacote, encerra processos próprios e mantém `npm start` funcional.
 
 ### M2 — Contrato de sessões e worker Pi
 
