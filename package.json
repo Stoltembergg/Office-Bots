@@ -31,7 +31,7 @@
     "desktop:dev": "npm run build:client && node scripts/build-desktop.mjs --dev && electron .",
     "desktop:build": "npm run build:client && npm run build:server && node scripts/build-desktop.mjs",
     "desktop:package": "npm run desktop:build && electron-forge make",
-    "desktop:test": "vitest run desktop server/config.test.ts",
+    "desktop:test": "vitest run desktop server/config.test.ts server/agents/pi",
     "desktop:typecheck": "tsc --noEmit -p desktop/tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p server/tsconfig.json && npm run desktop:typecheck",
     "test": "vitest run",
@@ -78,5 +78,9 @@
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
     "node-pty": "^1.1.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0"
   }
 }
