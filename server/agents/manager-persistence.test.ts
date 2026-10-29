@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,11 +10,18 @@ import type { ManagedRuntime, RuntimeSessionConfig } from './runtime';
 
 class Runtime implements ManagedRuntime {
   created: RuntimeSessionConfig[] = [];
+  resumed: (RuntimeSessionConfig & { runtimeSessionId: string })[] = [];
   calls: { id: string; resolve: () => void }[] = [];
   closed: string[] = [];
   cancelled: string[] = [];
   cancelWait?: Promise<void>;
   async create(config: RuntimeSessionConfig) { this.created.push(config); return { runtimeSessionId: config.id }; }
+  async resume(config: RuntimeSessionConfig & { runtimeSessionId: string }) {
+    this.resumed.push(structuredClone(config));
+    return { runtimeSessionId: config.runtimeSessionId, lastSeq: 11, messages: [{
+      messageId: 'old-message', inputHash: createHash('sha256').update('texto anterior').digest('hex'), outcome: 'completed' as const,
+    }] };
+  }
   prompt(id: string) { return new Promise<void>(resolve => this.calls.push({ id, resolve })); }
   async cancel(id: string) { this.cancelled.push(id); await this.cancelWait; }
   async close(id: string) { this.closed.push(id); }
@@ -67,6 +75,43 @@ describe('persistência coordenada do manager', () => {
     await next.initialize();
     expect(next.get(s.id)).toEqual(s); expect(nextRuntime.created).toEqual([]); expect(nextRuntime.calls).toEqual([]);
     await expect(next.prompt(s.id, prompt)).rejects.toMatchObject({ code: 'resume-required' });
+  });
+  it('retoma apenas por chamada explícita com seleção histórica e impede replay de mensagem confirmada', async () => {
+    const s = await setup();
+    await catalog.updateAgent(s.agentId, { modelPolicy: { mode: 'fixed', selection: { ...chosen, modelId: 'new' } } });
+    const nextRuntime = new Runtime();
+    const next = new SessionManager(catalog, nextRuntime, async () => true, new SessionStore(root, catalog));
+    await next.initialize();
+    expect(nextRuntime.resumed).toEqual([]);
+    await expect(next.prompt(s.id, prompt)).rejects.toMatchObject({ code: 'resume-required' });
+
+    await next.resume(s.id);
+
+    expect(nextRuntime.resumed).toHaveLength(1);
+    expect(nextRuntime.resumed[0]).toMatchObject({ id: s.id, runtimeSessionId: s.runtimeSessionId,
+      projectId: s.projectId, agentId: s.agentId, cwd: path.join(root, 'project'), selection: chosen });
+    await expect(next.prompt(s.id, { messageId: 'old-message', text: 'texto anterior' })).resolves.toBeUndefined();
+    await expect(next.prompt(s.id, { messageId: 'old-message', text: 'outro texto' })).rejects.toMatchObject({ code: 'invalid' });
+    expect(nextRuntime.created).toEqual([]); expect(nextRuntime.calls).toEqual([]);
+  });
+  it('compartilha uma única retomada quando duas chamadas chegam concorrentes', async () => {
+    const s = await setup(); const nextRuntime = new Runtime();
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { reached = resolve; });
+    nextRuntime.resume = async config => {
+      nextRuntime.resumed.push(structuredClone(config)); reached(); await gate;
+      return { runtimeSessionId: config.runtimeSessionId, lastSeq: 11, messages: [] };
+    };
+    const next = new SessionManager(catalog, nextRuntime, async () => true, new SessionStore(root, catalog));
+    await next.initialize();
+    const first = next.resume(s.id); await entered;
+    const second = next.resume(s.id);
+    try {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(nextRuntime.resumed).toHaveLength(1);
+    } finally { release(); }
+    await expect(Promise.all([first, second])).resolves.toEqual([s, s]);
   });
   it('crash com turno running restaura interrupted sem liberar reenvio', async () => {
     const s = await setup(); await store.setState(s.id, 'running');
