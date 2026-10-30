@@ -1,5 +1,7 @@
 # Progresso do desenvolvimento desktop
 
+> Registro histórico do trabalho anterior. O produto segue o [plano web](../superpowers/plans/2026-10-30-office-bots-web.md); os marcos e pendências abaixo não são um plano ativo.
+
 ## M0 — qualificação de dependências e base
 
 Estado: concluído em 2026-10-24. Base: `11ba85e986383ad0cbf0e4e66f4b81b62b9a1bbd`. Branch de trabalho: `feat/desktop-foundation`.

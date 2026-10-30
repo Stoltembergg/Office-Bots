@@ -1,6 +1,6 @@
 # Office Bots — direção web e plano inicial
 
-**Estado:** decisão de produto, não descrição de funcionalidades já entregues. Em 30/10/2026, o usuário decidiu substituir o plano desktop pelo produto web. O [plano desktop](2026-10-24-office-bots-desktop.md) é histórico; seu progresso e pressupostos não comprovam capacidades web.
+**Estado:** decisão de produto, não descrição de funcionalidades já entregues. Em 30/10/2026, o usuário decidiu substituir a direção desktop pelo produto web. Os registros históricos do desktop não comprovam capacidades web.
 
 ## Produto
 
