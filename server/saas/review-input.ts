@@ -2,7 +2,7 @@ const STABLE_GITHUB_ID_PATTERN = /^[1-9][0-9]{0,19}$/;
 const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
 
 export const REVIEW_INPUT_LIMITS = Object.freeze({
-  maxPages: 10,
+  maxPages: 3,
   maxFiles: 300,
   maxBytes: 1_000_000,
   pageSize: 100,
@@ -45,7 +45,9 @@ export interface ReviewInputAccessRequest {
 /**
  * Read-only GitHub adapter contract. `validateRepositoryAccess` must freshly establish, from
  * GitHub, that this exact user/installation/repository tuple is authorized under an approved
- * product policy. It must not use a cached grant or trust the IDs supplied here by themselves.
+ * product policy before reading the PR and again before returning the result. It must not rely on a
+ * cached grant or trust the IDs supplied here by themselves. Each page request also has to succeed
+ * with the live, repository-scoped GitHub credential; failure discards the entire input.
  * No production adapter or permission policy is selected by this module.
  *
  * Each files page carries repository, PR number, and base/head SHA metadata that this module checks
@@ -353,7 +355,7 @@ export function createReviewInputLoader(deps: ReviewInputDependencies): {
       const request = parseRequest(untrustedRequest);
       let initialUserId: string | undefined;
 
-      const revalidateAccess = async (): Promise<void> => {
+      const authenticateUser = async (): Promise<string> => {
         let identity: unknown;
         try {
           identity = await authenticateSession.call(sessionAuthenticator, request.sessionCredential);
@@ -365,7 +367,10 @@ export function createReviewInputLoader(deps: ReviewInputDependencies): {
           throw new ReviewInputError('unauthenticated');
         }
         if (initialUserId === undefined) initialUserId = githubUserId;
+        return githubUserId;
+      };
 
+      const revalidateAccess = async (githubUserId: string): Promise<void> => {
         const accessRequest = Object.freeze({
           githubUserId,
           installationId: request.installationId,
@@ -381,7 +386,8 @@ export function createReviewInputLoader(deps: ReviewInputDependencies): {
       };
 
       const readPullRequest = async (): Promise<ParsedPullRequest> => {
-        await revalidateAccess();
+        const githubUserId = await authenticateUser();
+        await revalidateAccess(githubUserId);
         let pullRequest: unknown;
         try {
           pullRequest = await getPullRequest.call(github, {
@@ -405,7 +411,9 @@ export function createReviewInputLoader(deps: ReviewInputDependencies): {
 
       while (hasNextPage) {
         if (pageNumber > REVIEW_INPUT_LIMITS.maxPages) throw new ReviewInputError('limit_exceeded');
-        await revalidateAccess();
+        // Recheck session and current repository selection before every page. The following GitHub
+        // request also has to succeed with the short-lived, repository-scoped installation token.
+        await revalidateAccess(await authenticateUser());
         let rawPage: unknown;
         try {
           rawPage = await listPullRequestFiles.call(github, {

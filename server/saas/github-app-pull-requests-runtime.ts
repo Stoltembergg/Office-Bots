@@ -1,4 +1,5 @@
 import { createGitHubAppPullRequestsLoader } from './github-app-pull-requests';
+import { createGitHubAppReviewInputLoader } from './github-app-review-input';
 import { createGitHubAppPullRequestsAdapter } from './github-app-pull-requests-adapter';
 import {
   createGitHubAppRepositoriesRuntime,
@@ -14,6 +15,7 @@ export class GitHubAppPullRequestsConfigurationError extends Error {
 
 export type GitHubAppPullRequestsRuntime = ReturnType<typeof createGitHubAppRepositoriesRuntime> & {
   readonly loader: ReturnType<typeof createGitHubAppPullRequestsLoader>;
+  readonly reviewInputLoader: ReturnType<typeof createGitHubAppReviewInputLoader>;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -44,7 +46,12 @@ export function createGitHubAppPullRequestsRuntime(
       repositoriesStore: repositoriesRuntime.repositoriesStore,
       github,
     });
-    return Object.freeze({ ...repositoriesRuntime, loader });
+    const reviewInputLoader = createGitHubAppReviewInputLoader({
+      sessions: repositoriesRuntime.sessions,
+      repositoriesStore: repositoriesRuntime.repositoriesStore,
+      github,
+    });
+    return Object.freeze({ ...repositoriesRuntime, loader, reviewInputLoader });
   } catch {
     throw new GitHubAppPullRequestsConfigurationError();
   }

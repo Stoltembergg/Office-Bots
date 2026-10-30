@@ -33,6 +33,8 @@ describe('GitHub App pull request runtime', () => {
 
     expect(runtime.appSlug).toBe('office-bots');
     await expect(runtime.loader.load('s'.repeat(43))).rejects.toMatchObject({ code: 'unauthenticated' });
+    await expect(runtime.reviewInputLoader.load({ sessionCredential: 's'.repeat(43), pullNumber: 17 }))
+      .rejects.toMatchObject({ code: 'unauthenticated' });
   });
 
   it('requires a numeric App ID and valid server-only private key without echoing secrets', () => {

@@ -147,6 +147,88 @@ describe('GitHub App pull request adapter', () => {
     await expect(adapter.listOpenPullRequests(input())).rejects.toBeInstanceOf(GitHubAppPullRequestsAdapterError);
   });
 
+  it('creates a request-scoped read session for PR metadata and bounded file pages', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const href = String(url);
+      calls.push({ url: href, init });
+      if (href.endsWith('/access_tokens')) {
+        return jsonResponse({
+          token: INSTALLATION_TOKEN,
+          expires_at: '2026-10-30T22:00:00Z',
+          permissions: { pull_requests: 'read' },
+        }, 201);
+      }
+      if (href.endsWith('/repos/octo/example')) {
+        return jsonResponse({ id: 9001, full_name: 'octo/example' });
+      }
+      if (href.endsWith('/pulls/17')) {
+        return jsonResponse({
+          number: 17,
+          base: { sha: 'a'.repeat(40), repo: { id: 9001 } },
+          head: { sha: 'b'.repeat(40) },
+        });
+      }
+      if (href.includes('/pulls/17/files?')) {
+        return jsonResponse([{ filename: 'src/main.ts', patch: '@@ -1 +1 @@\n-old\n+new' }], 200, {
+          link: '<https://api.github.com/repos/octo/example/pulls/17/files?page=2>; rel="next"',
+        });
+      }
+      return jsonResponse({ message: 'not found' }, 404);
+    });
+    const { adapter } = configuredAdapter(fetch);
+
+    const session = await adapter.createRepositoryReadSession(input());
+    await expect(session.getRepositoryIdentity()).resolves.toEqual({ repositoryId: '9001', repositoryFullName: 'octo/example' });
+    await expect(session.getPullRequest(17)).resolves.toEqual({
+      repositoryId: '9001',
+      number: 17,
+      base: { sha: 'a'.repeat(40) },
+      head: { sha: 'b'.repeat(40) },
+    });
+    await expect(session.listPullRequestFiles({
+      pullNumber: 17,
+      page: 1,
+      perPage: 100,
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+    })).resolves.toEqual({
+      repositoryId: '9001',
+      pullNumber: 17,
+      page: 1,
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      files: [{ filename: 'src/main.ts', patch: '@@ -1 +1 @@\n-old\n+new' }],
+      hasNextPage: true,
+    });
+    expect(calls.filter((call) => call.init?.method === 'POST')).toHaveLength(1);
+    expect(calls.slice(1).every((call) => (call.init?.headers as Record<string, string>).authorization === `Bearer ${INSTALLATION_TOKEN}`))
+      .toBe(true);
+    expect(calls.some((call) => call.url.includes('/issues/'))).toBe(false);
+  });
+
+  it('does not create arbitrary paths from invalid pull numbers or file page parameters', async () => {
+    const fetch = vi.fn(async (url: string | URL | Request): Promise<Response> => {
+      if (String(url).endsWith('/access_tokens')) {
+        return jsonResponse({ token: INSTALLATION_TOKEN, expires_at: '2026-10-30T22:00:00Z', permissions: { pull_requests: 'read' } }, 201);
+      }
+      return jsonResponse({ id: 9001, full_name: 'octo/example' });
+    });
+    const { adapter } = configuredAdapter(fetch);
+    const session = await adapter.createRepositoryReadSession(input());
+
+    await expect(session.getPullRequest(Number.NaN)).rejects.toBeInstanceOf(GitHubAppPullRequestsAdapterError);
+    await expect(session.getPullRequest(0)).rejects.toBeInstanceOf(GitHubAppPullRequestsAdapterError);
+    await expect(session.listPullRequestFiles({
+      pullNumber: 17,
+      page: 11,
+      perPage: 100,
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+    })).rejects.toBeInstanceOf(GitHubAppPullRequestsAdapterError);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   it('rejects a repository identity mismatch before listing pull requests', async () => {
     const fetch = vi.fn(async (url: string | URL | Request): Promise<Response> => {
       const href = String(url);

@@ -46,6 +46,26 @@ export interface GitHubPullRequestsPage {
   readonly hasMore: boolean;
 }
 
+export interface GitHubPullRequestFilesRequest {
+  readonly pullNumber: number;
+  readonly page: number;
+  readonly perPage: number;
+  readonly baseSha: string;
+  readonly headSha: string;
+}
+
+export interface GitHubAppRepositoryReadSession {
+  getRepositoryIdentity(): Promise<{ readonly repositoryId: string; readonly repositoryFullName: string }>;
+  getPullRequest(pullNumber: number): Promise<unknown>;
+  listPullRequestFiles(input: GitHubPullRequestFilesRequest): Promise<unknown>;
+  listOpenPullRequests(): Promise<GitHubPullRequestsPage>;
+}
+
+export interface GitHubAppPullRequestsAdapter {
+  createRepositoryReadSession(input: GitHubAppPullRequestsRequest): Promise<GitHubAppRepositoryReadSession>;
+  listOpenPullRequests(input: GitHubAppPullRequestsRequest): Promise<GitHubPullRequestsPage>;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -103,12 +123,44 @@ async function readBoundedBody(response: Response): Promise<Uint8Array> {
   return body;
 }
 
-function parseRepositoryIdentity(value: unknown, expected: GitHubAppPullRequestsRequest): boolean {
-  if (!isRecord(value)) return false;
+function normalizedGitHubId(value: unknown): string | undefined {
+  const normalized = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? String(value) : value;
+  return typeof normalized === 'string' && GITHUB_ID_PATTERN.test(normalized) ? normalized : undefined;
+}
+
+function readRepositoryIdentity(value: unknown): { readonly repositoryId: string; readonly repositoryFullName: string } | undefined {
+  if (!isRecord(value)) return undefined;
   const id = ownDataProperty(value, 'id');
   const fullName = ownDataProperty(value, 'full_name');
-  const normalizedId = typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? String(id) : id;
-  return normalizedId === expected.repositoryId && fullName === expected.repositoryFullName;
+  const repositoryId = normalizedGitHubId(id);
+  if (!repositoryId || typeof fullName !== 'string' || !validRepositoryFullName(fullName)) return undefined;
+  return Object.freeze({ repositoryId, repositoryFullName: fullName });
+}
+
+function normalizePullRequest(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const base = ownDataProperty(value, 'base');
+  const head = ownDataProperty(value, 'head');
+  if (!isRecord(base) || !isRecord(head)) return value;
+  const repository = ownDataProperty(base, 'repo');
+  const repositoryId = isRecord(repository) ? normalizedGitHubId(ownDataProperty(repository, 'id')) : undefined;
+  return Object.freeze({
+    repositoryId,
+    number: ownDataProperty(value, 'number'),
+    base: Object.freeze({ sha: ownDataProperty(base, 'sha') }),
+    head: Object.freeze({ sha: ownDataProperty(head, 'sha') }),
+  });
+}
+
+function normalizeFiles(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((rawFile) => {
+    if (!isRecord(rawFile)) return rawFile;
+    const filename = ownDataProperty(rawFile, 'filename');
+    const patch = ownDataProperty(rawFile, 'patch');
+    if (typeof patch !== 'string') return Object.freeze({ filename });
+    return Object.freeze({ filename, patch });
+  });
 }
 
 function parseTimestamp(value: unknown): string | undefined {
@@ -184,9 +236,7 @@ function hasNextPage(value: string | null): boolean {
  * Creates short-lived app and repository-scoped installation tokens for read-only PR metadata.
  * The token never leaves this adapter and is never persisted.
  */
-export function createGitHubAppPullRequestsAdapter(options: GitHubAppPullRequestsAdapterOptions): {
-  listOpenPullRequests(input: GitHubAppPullRequestsRequest): Promise<GitHubPullRequestsPage>;
-} {
+export function createGitHubAppPullRequestsAdapter(options: GitHubAppPullRequestsAdapterOptions): GitHubAppPullRequestsAdapter {
   try {
     if (!isRecord(options)) throw new Error();
     const appId = options.appId;
@@ -263,8 +313,9 @@ export function createGitHubAppPullRequestsAdapter(options: GitHubAppPullRequest
       }
     }
 
-    return Object.freeze({
-      async listOpenPullRequests(untrustedInput: GitHubAppPullRequestsRequest): Promise<GitHubPullRequestsPage> {
+    async function createRepositoryReadSession(
+      untrustedInput: GitHubAppPullRequestsRequest,
+    ): Promise<GitHubAppRepositoryReadSession> {
         if (!isRecord(untrustedInput)) throw new GitHubAppPullRequestsAdapterError();
         const installationId = ownDataProperty(untrustedInput, 'installationId');
         const repositoryId = ownDataProperty(untrustedInput, 'repositoryId');
@@ -312,27 +363,99 @@ export function createGitHubAppPullRequestsAdapter(options: GitHubAppPullRequest
         ) {
           throw new GitHubAppPullRequestsAdapterError();
         }
+        const accessToken = installationToken as string;
 
         const [owner, repository] = repositoryFullName.split('/');
         const repositoryPath = `/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(repository!)}`;
         const repositoryUrl = `${GITHUB_API_ORIGIN}${repositoryPath}`;
-        const pullRequestsUrl = new URL(`${GITHUB_API_ORIGIN}${repositoryPath}/pulls`);
-        pullRequestsUrl.searchParams.set('state', 'open');
-        pullRequestsUrl.searchParams.set('sort', 'updated');
-        pullRequestsUrl.searchParams.set('direction', 'desc');
-        pullRequestsUrl.searchParams.set('per_page', '100');
-        pullRequestsUrl.searchParams.set('page', '1');
-        // After the token is restricted to this single repository, validate its ID and list its PRs
-        // concurrently to keep the three-request path within the default Vercel function window.
-        const [repositoryResponse, pullRequestsResponse] = await Promise.all([
-          requestJson(repositoryUrl, 'GET', installationToken, 200),
-          requestJson(pullRequestsUrl.href, 'GET', installationToken, 200),
-        ]);
-        if (!parseRepositoryIdentity(repositoryResponse.value, input)) throw new GitHubAppPullRequestsAdapterError();
+
+        async function getPullRequest(pullNumber: number): Promise<unknown> {
+          if (!Number.isSafeInteger(pullNumber) || pullNumber < 1) throw new GitHubAppPullRequestsAdapterError();
+          const response = await requestJson(`${GITHUB_API_ORIGIN}${repositoryPath}/pulls/${pullNumber}`, 'GET', accessToken, 200);
+          return normalizePullRequest(response.value);
+        }
+
+        async function listPullRequestFiles(untrustedFilesRequest: GitHubPullRequestFilesRequest): Promise<unknown> {
+          if (!isRecord(untrustedFilesRequest)) throw new GitHubAppPullRequestsAdapterError();
+          const pullNumber = ownDataProperty(untrustedFilesRequest, 'pullNumber');
+          const page = ownDataProperty(untrustedFilesRequest, 'page');
+          const perPage = ownDataProperty(untrustedFilesRequest, 'perPage');
+          const baseSha = ownDataProperty(untrustedFilesRequest, 'baseSha');
+          const headSha = ownDataProperty(untrustedFilesRequest, 'headSha');
+          if (
+            typeof pullNumber !== 'number' || !Number.isSafeInteger(pullNumber) || pullNumber < 1 ||
+            typeof page !== 'number' || !Number.isSafeInteger(page) || page < 1 || page > 10 ||
+            typeof perPage !== 'number' || !Number.isSafeInteger(perPage) || perPage < 1 || perPage > 100 ||
+            typeof baseSha !== 'string' || !COMMIT_SHA_PATTERN.test(baseSha) ||
+            typeof headSha !== 'string' || !COMMIT_SHA_PATTERN.test(headSha)
+          ) {
+            throw new GitHubAppPullRequestsAdapterError();
+          }
+          const url = new URL(`${GITHUB_API_ORIGIN}${repositoryPath}/pulls/${pullNumber}/files`);
+          url.searchParams.set('per_page', String(perPage));
+          url.searchParams.set('page', String(page));
+          const response = await requestJson(url.href, 'GET', accessToken, 200);
+          return Object.freeze({
+            repositoryId,
+            pullNumber,
+            page,
+            baseSha: baseSha.toLowerCase(),
+            headSha: headSha.toLowerCase(),
+            files: normalizeFiles(response.value),
+            hasNextPage: hasNextPage(response.response.headers.get('link')),
+          });
+        }
+
         return Object.freeze({
-          pullRequests: parsePullRequests(pullRequestsResponse.value, input),
-          hasMore: hasNextPage(pullRequestsResponse.response.headers.get('link')),
+          async getRepositoryIdentity() {
+            const response = await requestJson(repositoryUrl, 'GET', accessToken, 200);
+            const identity = readRepositoryIdentity(response.value);
+            if (!identity) throw new GitHubAppPullRequestsAdapterError();
+            return identity;
+          },
+          getPullRequest,
+          listPullRequestFiles,
+          async listOpenPullRequests(): Promise<GitHubPullRequestsPage> {
+            const url = new URL(`${GITHUB_API_ORIGIN}${repositoryPath}/pulls`);
+            url.searchParams.set('state', 'open');
+            url.searchParams.set('sort', 'updated');
+            url.searchParams.set('direction', 'desc');
+            url.searchParams.set('per_page', '100');
+            url.searchParams.set('page', '1');
+            const response = await requestJson(url.href, 'GET', accessToken, 200);
+            return Object.freeze({
+              pullRequests: parsePullRequests(response.value, input),
+              hasMore: hasNextPage(response.response.headers.get('link')),
+            });
+          },
         });
+    }
+
+    return Object.freeze({
+      createRepositoryReadSession,
+      async listOpenPullRequests(untrustedInput: GitHubAppPullRequestsRequest): Promise<GitHubPullRequestsPage> {
+        if (!isRecord(untrustedInput)) throw new GitHubAppPullRequestsAdapterError();
+        const installationId = ownDataProperty(untrustedInput, 'installationId');
+        const repositoryId = ownDataProperty(untrustedInput, 'repositoryId');
+        const repositoryFullName = ownDataProperty(untrustedInput, 'repositoryFullName');
+        if (
+          typeof installationId !== 'string' || !GITHUB_ID_PATTERN.test(installationId) ||
+          typeof repositoryId !== 'string' || !GITHUB_ID_PATTERN.test(repositoryId) ||
+          typeof repositoryFullName !== 'string' || !validRepositoryFullName(repositoryFullName)
+        ) throw new GitHubAppPullRequestsAdapterError();
+        const expected = Object.freeze({ installationId, repositoryId, repositoryFullName });
+        const session = await createRepositoryReadSession(expected);
+        const [identity, pullRequests] = await Promise.all([
+          session.getRepositoryIdentity(),
+          session.listOpenPullRequests(),
+        ]);
+        if (
+          identity.repositoryId !== expected.repositoryId ||
+          identity.repositoryFullName !== expected.repositoryFullName
+        ) {
+          throw new GitHubAppPullRequestsAdapterError();
+        }
+        return pullRequests;
       },
     });
   } catch {

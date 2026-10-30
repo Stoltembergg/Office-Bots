@@ -251,6 +251,18 @@ describe('domínio de entrada de revisão manual de PR', () => {
     expect(getPullRequest).toHaveBeenCalledTimes(2);
   });
 
+  it('nega o resultado se a autorização do repositório for revogada durante a paginação', async () => {
+    const validateRepositoryAccess = vi
+      .fn<ReviewInputGitHubAdapter['validateRepositoryAccess']>()
+      .mockResolvedValueOnce({ authorized: true, githubUserId: USER_A, installationId: INSTALLATION_ID, repositoryId: REPOSITORY_ID })
+      .mockResolvedValueOnce({ authorized: false, githubUserId: USER_A, installationId: INSTALLATION_ID, repositoryId: REPOSITORY_ID });
+    const { loader, github } = createTestLoader({ validateRepositoryAccess });
+
+    await expectCode(loader.load(request()), 'forbidden');
+    expect(github.listPullRequestFiles).not.toHaveBeenCalled();
+    expect(github.getPullRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('falha fechado se falta patch, se o patch é vazio ou se o upstream é malformado', async () => {
     for (const files of [[{ filename: 'src/no-patch.ts' }], [file('src/empty.ts', '')], [null]]) {
       const { loader } = createTestLoader({
