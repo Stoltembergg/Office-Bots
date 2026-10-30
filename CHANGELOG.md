@@ -14,6 +14,7 @@ do meio (0.**3**.0).
 
 - Escritório web do Office Bots substitui a prévia: sala em pixel art, agentes por área de revisão e estado explícito de espera até conectar um repositório.
 - Base de login com GitHub e sessão web revogável, armazenada no Supabase e protegida por cookie `HttpOnly`; a integração depende da configuração das credenciais no servidor.
+- Conexão da GitHub App com autorização por conta, sincronização dos repositórios acessíveis e seleção de um repositório por usuário; tokens do GitHub são usados apenas durante a sincronização.
 
 ## [1.0.3] - 2026-10-16
 
