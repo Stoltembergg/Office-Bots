@@ -12,8 +12,11 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
-- Prévia estática do Office Bots para acompanhar a visão do produto web, com indicação das funcionalidades ainda em desenvolvimento.
+- Escritório web do Office Bots substitui a prévia: sala em pixel art, agentes por área de revisão e estado explícito de espera até conectar um repositório.
 - Base de login com GitHub e sessão web revogável, armazenada no Supabase e protegida por cookie `HttpOnly`; a integração depende da configuração das credenciais no servidor.
+- Conexão da GitHub App com autorização por conta, sincronização dos repositórios acessíveis e seleção de um repositório por usuário; tokens do GitHub são usados apenas durante a sincronização.
+- Lista dos PRs abertos no repositório selecionado, com token de instalação curto e limitado ao repositório. A seleção ainda não dispara revisão nem altera o código.
+- Preparação somente leitura da entrada de um PR selecionado: patches limitados são lidos em memória no servidor, enquanto o Office mostra apenas nomes de arquivos e SHAs; completude do diff não verificada e nenhuma IA chamada.
 
 ## [1.0.3] - 2026-10-16
 
