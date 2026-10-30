@@ -3,6 +3,7 @@ import * as art from './art';
 import { pixelText, pixelTextWidth } from './art/pixelfont';
 import { TILE, type FurnitureKind, type Sprite } from './art/api';
 import { readPullRequestPickerResponse, type PullRequestPickerItem } from './office-pull-requests';
+import { readPreparedReviewInputResponse } from './office-review-input';
 import { getLocale, registerDictionary, tr, type Locale } from '../../shared/i18n';
 import './office.css';
 
@@ -143,7 +144,10 @@ function renderPage(): void {
                   </select>
                   <button class="pull-request-refresh" id="pull-request-refresh" type="button">${tr('Atualizar PRs')}</button>
                 </div>
+                <button class="pull-request-prepare" id="pull-request-prepare" type="button" disabled>${tr('Preparar entrada somente leitura')}</button>
                 <p class="pull-request-note" id="pull-request-note" role="status" aria-live="polite">${tr('Selecione um repositório para ver os PRs abertos.')}</p>
+                <p class="pull-request-note prepared-input-note" id="prepared-input-note" role="status" aria-live="polite" hidden></p>
+                <ul class="prepared-input-files" id="prepared-input-files" hidden></ul>
               </div>
               <div class="setup-note">
                 <span class="setup-number">01</span>
@@ -160,7 +164,7 @@ function renderPage(): void {
           </aside>
         </div>
 
-        <footer class="workspace-note"><span class="note-icon" aria-hidden="true">i</span><p>${tr('A lista mostra repositórios acessíveis pela GitHub App e seus PRs abertos. Selecionar um PR ainda não inicia uma revisão; a análise e a criação de PRs seguem em desenvolvimento.')}</p></footer>
+        <footer class="workspace-note"><span class="note-icon" aria-hidden="true">i</span><p>${tr('A lista mostra repositórios acessíveis pela GitHub App e seus PRs abertos. O Office pode preparar a entrada somente leitura de um PR; análise e criação de PRs seguem em desenvolvimento.')}</p></footer>
       </main>
       <footer class="app-footer"><span>${tr('Office Bots')}</span><span>${tr('Seu código, suas escolhas.')}</span><span class="footer-spark" aria-hidden="true">✳</span></footer>
     </div>`;
@@ -265,15 +269,27 @@ function wireAuthentication(): void {
   const pullRequestControl = document.querySelector<HTMLDivElement>('#pull-request-control')!;
   const pullRequestPicker = document.querySelector<HTMLSelectElement>('#pull-request-picker')!;
   const pullRequestRefresh = document.querySelector<HTMLButtonElement>('#pull-request-refresh')!;
+  const pullRequestPrepare = document.querySelector<HTMLButtonElement>('#pull-request-prepare')!;
   const pullRequestNote = document.querySelector<HTMLParagraphElement>('#pull-request-note')!;
+  const preparedInputNote = document.querySelector<HTMLParagraphElement>('#prepared-input-note')!;
+  const preparedInputFiles = document.querySelector<HTMLUListElement>('#prepared-input-files')!;
   let currentRepositories: RepositoryPickerItem[] = [];
   let currentPullRequests: PullRequestPickerItem[] = [];
   let pullRequestLoadSequence = 0;
+  let preparedInputSequence = 0;
   const installationRequired = new URLSearchParams(window.location.search).get('github') === 'install-required';
   const showNotice = (message: string): void => {
     authNotice.textContent = message;
     authNotice.hidden = false;
   };
+
+  function clearPreparedInput(): void {
+    preparedInputSequence += 1;
+    preparedInputNote.hidden = true;
+    preparedInputNote.textContent = '';
+    preparedInputFiles.hidden = true;
+    preparedInputFiles.replaceChildren();
+  }
 
   const query = new URLSearchParams(window.location.search);
   const loginResult = query.get('login');
@@ -303,6 +319,8 @@ function wireAuthentication(): void {
   function renderRepositories(value: unknown): void {
     const repositories = readRepositoryPickerItems(value);
     pullRequestLoadSequence += 1;
+    clearPreparedInput();
+    pullRequestPrepare.disabled = true;
     currentRepositories = repositories;
     repositoryPicker.replaceChildren();
     const emptyOption = document.createElement('option');
@@ -328,12 +346,15 @@ function wireAuthentication(): void {
       emptyPullRequest.textContent = tr('Selecione um pull request');
       pullRequestPicker.append(emptyPullRequest);
       pullRequestPicker.disabled = true;
+      pullRequestPrepare.disabled = true;
       pullRequestNote.textContent = tr('Selecione um repositório para ver os PRs abertos.');
     }
   }
 
   async function loadPullRequests(): Promise<void> {
     const sequence = ++pullRequestLoadSequence;
+    clearPreparedInput();
+    pullRequestPrepare.disabled = true;
     const repository = currentRepositories.find((item) => item.isSelected);
     if (!repository) {
       pullRequestRefresh.disabled = false;
@@ -368,7 +389,7 @@ function wireAuthentication(): void {
         ? tr('Nenhum PR aberto neste repositório.')
         : result.hasMore
           ? tr('Mostrando os 100 PRs abertos mais recentes. A revisão ainda está em desenvolvimento.')
-          : tr('Escolher um PR não inicia a revisão; essa etapa ainda está em desenvolvimento.');
+          : tr('Selecione um PR para preparar a entrada somente leitura.');
     } catch {
       if (sequence !== pullRequestLoadSequence) return;
       currentPullRequests = [];
@@ -461,13 +482,53 @@ function wireAuthentication(): void {
   });
 
   pullRequestPicker.addEventListener('change', () => {
+    clearPreparedInput();
     const number = Number(pullRequestPicker.value);
     if (!Number.isSafeInteger(number) || number < 1) {
-      pullRequestNote.textContent = tr('Escolher um PR não inicia a revisão; essa etapa ainda está em desenvolvimento.');
+      pullRequestPrepare.disabled = true;
+      pullRequestNote.textContent = tr('Selecione um PR para preparar a entrada somente leitura.');
       return;
     }
     const selected = currentPullRequests.find((pullRequest) => pullRequest.number === number);
-    if (selected) pullRequestNote.textContent = tr('PR #{0} selecionado. A revisão ainda não foi iniciada.', [selected.number]);
+    if (selected) {
+      pullRequestPrepare.disabled = false;
+      pullRequestNote.textContent = tr('PR #{0} selecionado. Preparar a entrada não inicia uma revisão de IA.', [selected.number]);
+    } else {
+      pullRequestPrepare.disabled = true;
+    }
+  });
+
+  pullRequestPrepare.addEventListener('click', async () => {
+    const number = Number(pullRequestPicker.value);
+    const selected = currentPullRequests.find((pullRequest) => pullRequest.number === number);
+    if (!selected || !currentRepositories.some((repository) => repository.isSelected)) return;
+    const sequence = ++preparedInputSequence;
+    pullRequestPrepare.disabled = true;
+    preparedInputNote.hidden = false;
+    preparedInputNote.textContent = tr('Lendo patches no servidor; nenhuma IA será chamada…');
+    preparedInputFiles.hidden = true;
+    preparedInputFiles.replaceChildren();
+    try {
+      const response = await fetch(`/api/github/pull-requests/input?number=${encodeURIComponent(String(number))}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error();
+      const result = readPreparedReviewInputResponse(await response.json() as unknown, number);
+      if (sequence !== preparedInputSequence) return;
+      for (const file of result.files) {
+        const item = document.createElement('li');
+        item.textContent = file.filename;
+        preparedInputFiles.append(item);
+      }
+      preparedInputFiles.hidden = false;
+      preparedInputNote.textContent = tr('Patches lidos apenas em memória no servidor. Integridade e completude não verificadas; nenhuma IA foi chamada.');
+    } catch {
+      if (sequence !== preparedInputSequence) return;
+      preparedInputNote.textContent = tr('Não foi possível preparar a entrada do PR. Tente novamente.');
+    } finally {
+      if (sequence === preparedInputSequence) pullRequestPrepare.disabled = false;
+    }
   });
 
   logoutAction.addEventListener('click', async () => {
