@@ -1,6 +1,10 @@
 import { createGitHubAppAuthorizationFlow } from './github-auth';
 import { createGitHubAppOAuthAdapter } from './github-oauth-adapter';
-import { createPostgresSaasStores, type PostgresPool } from './postgres-stores';
+import {
+  createPostgresSaasStores,
+  officeBotsDatabaseSchemaForEnvironment,
+  type PostgresPool,
+} from './postgres-stores';
 import { createSaasSessionManager, type SaasSessionManager } from './sessions';
 import { officeBotsPostgresPool } from './vercel-postgres-pool';
 
@@ -66,7 +70,10 @@ export function createGitHubWebAuthRuntime(
     }
 
     const pool = options.pool ?? officeBotsPostgresPool(required(env, 'OFFICE_BOTS_DATABASE_URL'));
-    const stores = createPostgresSaasStores(pool, { clock: options.now });
+    const stores = createPostgresSaasStores(pool, {
+      clock: options.now,
+      schema: officeBotsDatabaseSchemaForEnvironment(env),
+    });
     const flow = createGitHubAppAuthorizationFlow({
       config: {
         clientId: required(env, 'GITHUB_OAUTH_CLIENT_ID'),

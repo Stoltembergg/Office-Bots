@@ -42,6 +42,38 @@ describe('GitHub App repository runtime', () => {
     expect(statements[1]).toContain('office_bots_private.sessions');
   });
 
+  it('routes the Preview App flow and sessions to the isolated Preview schema', async () => {
+    const statements: string[] = [];
+    const pool: PostgresPool = {
+      async query(statement) {
+        statements.push(statement);
+        return { rows: [] };
+      },
+      async connect() {
+        throw new Error('transaction client not expected in this case');
+      },
+    };
+    const previewEnv = {
+      ...env(),
+      VERCEL_ENV: 'preview',
+      OFFICE_BOTS_DATABASE_SCHEMA: 'office_bots_preview_private',
+    };
+    const runtime = createGitHubAppRepositoriesRuntime(previewEnv, { pool, now: () => 10_000 });
+
+    await runtime.flow.beginAuthorization('12345', 'b'.repeat(43));
+    await runtime.sessions.create('12345');
+
+    expect(statements).toHaveLength(2);
+    expect(statements.every((sql) => sql.includes('office_bots_preview_private.'))).toBe(true);
+    expect(statements.some((sql) => sql.includes('office_bots_private.'))).toBe(false);
+  });
+
+  it('fails closed when a Preview database schema is not configured', () => {
+    expect(() => createGitHubAppRepositoriesRuntime({ ...env(), VERCEL_ENV: 'preview' }, {
+      pool: { query: async () => ({ rows: [] }), connect: async () => { throw new Error(); } },
+    })).toThrow(GitHubAppRepositoriesConfigurationError);
+  });
+
   it('rejects callbacks outside the configured Office origin and callback path', () => {
     for (const callbackUrl of [
       'https://attacker.example/api/github/app/callback',

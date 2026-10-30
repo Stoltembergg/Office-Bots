@@ -59,6 +59,40 @@ export interface GitHubRepositoriesStore {
 export interface PostgresSaasStoreOptions {
   /** Clock read after the OAuth state row lock is acquired. Defaults to Date.now. */
   readonly clock?: () => number;
+  /** Selects one of the pre-created, environment-isolated schemas. */
+  readonly schema?: OfficeBotsDatabaseSchema;
+}
+
+export type OfficeBotsDatabaseSchema = 'office_bots_private' | 'office_bots_preview_private';
+
+export interface OfficeBotsDatabaseEnvironment {
+  readonly OFFICE_BOTS_DATABASE_SCHEMA?: string;
+  readonly VERCEL_ENV?: string;
+}
+
+const DATABASE_SCHEMAS: readonly OfficeBotsDatabaseSchema[] = [
+  'office_bots_private',
+  'office_bots_preview_private',
+];
+
+/**
+ * Resolve Vercel's environment to a fixed schema allowlist. Preview fails closed until it has
+ * an explicit isolated schema; Production remains on its existing schema by default.
+ */
+export function officeBotsDatabaseSchemaForEnvironment(
+  env: OfficeBotsDatabaseEnvironment,
+): OfficeBotsDatabaseSchema {
+  const configured = env.OFFICE_BOTS_DATABASE_SCHEMA;
+  if (configured !== undefined && !DATABASE_SCHEMAS.includes(configured as OfficeBotsDatabaseSchema)) {
+    throw new TypeError('Invalid Office Bots database schema');
+  }
+  if (env.VERCEL_ENV === 'preview' && configured !== 'office_bots_preview_private') {
+    throw new TypeError('Preview requires its isolated Office Bots database schema');
+  }
+  if (env.VERCEL_ENV === 'production' && configured !== undefined && configured !== 'office_bots_private') {
+    throw new TypeError('Production cannot use the Preview Office Bots database schema');
+  }
+  return configured === 'office_bots_preview_private' ? configured : 'office_bots_private';
 }
 
 function isSafeTimestamp(value: unknown): value is number {
@@ -171,6 +205,8 @@ export function createPostgresSaasStores(
   }
   const clock = options.clock ?? Date.now;
   if (typeof clock !== 'function') throw new TypeError('Invalid PostgreSQL store clock');
+  const schema = options.schema ?? 'office_bots_private';
+  if (!DATABASE_SCHEMAS.includes(schema)) throw new TypeError('Invalid Office Bots database schema');
 
   const githubAuthStateStore: GitHubAppAuthStateStore = {
     async issue(state, bindingDigest, codeVerifier, expiresAt, now): Promise<void> {
@@ -178,7 +214,7 @@ export function createPostgresSaasStores(
         throw new TypeError('Invalid OAuth state record');
       }
       await pool.query(
-        `INSERT INTO office_bots_private.oauth_states
+        `INSERT INTO ${schema}.oauth_states
           (state, binding_digest, code_verifier, created_at_ms, expires_at_ms)
          VALUES ($1, $2, $3, $4, $5)`,
         [state, bindingDigest, codeVerifier, now, expiresAt],
@@ -201,7 +237,7 @@ export function createPostgresSaasStores(
         await client.query('BEGIN');
         const selected = await client.query(
           `SELECT binding_digest, code_verifier, expires_at_ms
-             FROM office_bots_private.oauth_states
+             FROM ${schema}.oauth_states
             WHERE state = $1
             FOR UPDATE`,
           [state],
@@ -243,7 +279,7 @@ export function createPostgresSaasStores(
         const checkedNow = Math.max(now, currentNow);
         if (expiresAt <= checkedNow) {
           await client.query(
-            `DELETE FROM office_bots_private.oauth_states
+            `DELETE FROM ${schema}.oauth_states
               WHERE state = $1
               RETURNING state`,
             [state],
@@ -254,7 +290,7 @@ export function createPostgresSaasStores(
         }
 
         const deleted = await client.query(
-          `DELETE FROM office_bots_private.oauth_states
+          `DELETE FROM ${schema}.oauth_states
             WHERE state = $1
             RETURNING state`,
           [state],
@@ -289,7 +325,7 @@ export function createPostgresSaasStores(
         throw new TypeError('Invalid GitHub App authorization state');
       }
       await pool.query(
-        `INSERT INTO office_bots_private.github_app_oauth_states
+        `INSERT INTO ${schema}.github_app_oauth_states
           (state, github_user_id, binding_digest, code_verifier, created_at_ms, expires_at_ms)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [state, githubUserId, bindingDigest, codeVerifier, now, expiresAt],
@@ -308,7 +344,7 @@ export function createPostgresSaasStores(
         await client.query('BEGIN');
         const selected = await client.query(
           `SELECT github_user_id, binding_digest, code_verifier, expires_at_ms
-             FROM office_bots_private.github_app_oauth_states
+             FROM ${schema}.github_app_oauth_states
             WHERE state = $1
             FOR UPDATE`,
           [state],
@@ -348,7 +384,7 @@ export function createPostgresSaasStores(
         if (!isSafeTimestamp(currentNow) || currentNow < now) throw new Error('Invalid GitHub App authorization clock');
         if (expiresAt <= Math.max(now, currentNow)) {
           await client.query(
-            `DELETE FROM office_bots_private.github_app_oauth_states
+            `DELETE FROM ${schema}.github_app_oauth_states
               WHERE state = $1
               RETURNING state`,
             [state],
@@ -359,7 +395,7 @@ export function createPostgresSaasStores(
         }
 
         const deleted = await client.query(
-          `DELETE FROM office_bots_private.github_app_oauth_states
+          `DELETE FROM ${schema}.github_app_oauth_states
             WHERE state = $1
             RETURNING state`,
           [state],
@@ -403,13 +439,13 @@ export function createPostgresSaasStores(
       try {
         await client.query('BEGIN');
         await client.query(
-          `DELETE FROM office_bots_private.github_app_repositories
+          `DELETE FROM ${schema}.github_app_repositories
             WHERE github_user_id = $1
               AND NOT (repository_id = ANY($2::bigint[]))`,
           [githubUserId, repositoryIds],
         );
         await client.query(
-          `INSERT INTO office_bots_private.github_app_repositories
+          `INSERT INTO ${schema}.github_app_repositories
             (github_user_id, repository_id, installation_id, full_name, is_private, default_branch, html_url, last_synced_at_ms)
            SELECT $1, incoming.repository_id, incoming.installation_id, incoming.full_name,
                   incoming.is_private, incoming.default_branch, incoming.html_url, $3
@@ -452,8 +488,8 @@ export function createPostgresSaasStores(
                 r.default_branch,
                 r.html_url,
                 (s.repository_id IS NOT NULL) AS is_selected
-           FROM office_bots_private.github_app_repositories AS r
-           LEFT JOIN office_bots_private.github_app_selected_repositories AS s
+           FROM ${schema}.github_app_repositories AS r
+           LEFT JOIN ${schema}.github_app_selected_repositories AS s
              ON s.github_user_id = r.github_user_id
             AND s.repository_id = r.repository_id
           WHERE r.github_user_id = $1
@@ -484,7 +520,7 @@ export function createPostgresSaasStores(
       if (!GITHUB_USER_ID_PATTERN.test(githubUserId) || !isSafeTimestamp(now)) return false;
       if (repositoryId === null) {
         await pool.query(
-          `DELETE FROM office_bots_private.github_app_selected_repositories
+          `DELETE FROM ${schema}.github_app_selected_repositories
             WHERE github_user_id = $1`,
           [githubUserId],
         );
@@ -492,10 +528,10 @@ export function createPostgresSaasStores(
       }
       if (!REPOSITORY_ID_PATTERN.test(repositoryId)) return false;
       const result = await pool.query(
-        `INSERT INTO office_bots_private.github_app_selected_repositories
+        `INSERT INTO ${schema}.github_app_selected_repositories
           (github_user_id, repository_id, selected_at_ms)
          SELECT $1, r.repository_id, $3
-           FROM office_bots_private.github_app_repositories AS r
+           FROM ${schema}.github_app_repositories AS r
           WHERE r.github_user_id = $1
             AND r.repository_id = $2::bigint
          ON CONFLICT (github_user_id) DO UPDATE SET
@@ -514,7 +550,7 @@ export function createPostgresSaasStores(
         throw new TypeError('Invalid session record');
       }
       await pool.query(
-        `INSERT INTO office_bots_private.sessions
+        `INSERT INTO ${schema}.sessions
           (token_digest, github_user_id, created_at_ms, expires_at_ms)
          VALUES ($1, $2, $3, $4)`,
         [digest, githubUserId, now, expiresAt],
@@ -525,7 +561,7 @@ export function createPostgresSaasStores(
       if (!SESSION_DIGEST_PATTERN.test(digest) || !isSafeTimestamp(now)) return undefined;
       const result = await pool.query(
         `SELECT github_user_id, expires_at_ms
-           FROM office_bots_private.sessions
+           FROM ${schema}.sessions
           WHERE token_digest = $1
             AND revoked_at_ms IS NULL
             AND expires_at_ms > $2
@@ -550,7 +586,7 @@ export function createPostgresSaasStores(
     async revoke(digest, now): Promise<boolean> {
       if (!SESSION_DIGEST_PATTERN.test(digest) || !isSafeTimestamp(now)) return false;
       const result = await pool.query(
-        `UPDATE office_bots_private.sessions
+        `UPDATE ${schema}.sessions
             SET revoked_at_ms = $2
           WHERE token_digest = $1
             AND revoked_at_ms IS NULL
