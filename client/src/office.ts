@@ -18,6 +18,47 @@ interface ReviewArea {
   readonly tone: string;
 }
 
+interface RepositoryPickerItem {
+  readonly repositoryId: string;
+  readonly fullName: string;
+  readonly isPrivate: boolean;
+  readonly defaultBranch: string | null;
+  readonly htmlUrl: string;
+  readonly isSelected: boolean;
+}
+
+function readRepositoryPickerItems(value: unknown): RepositoryPickerItem[] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Invalid repository response');
+  const repositories = (value as { repositories?: unknown }).repositories;
+  if (!Array.isArray(repositories) || repositories.length > 10_000) throw new Error('Invalid repository response');
+  const seen = new Set<string>();
+  let selectedCount = 0;
+  const result: RepositoryPickerItem[] = [];
+  for (const item of repositories) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) throw new Error('Invalid repository response');
+    const repository = item as Record<string, unknown>;
+    if (
+      typeof repository.repositoryId !== 'string' ||
+      !/^[1-9][0-9]{0,19}$/.test(repository.repositoryId) ||
+      seen.has(repository.repositoryId) ||
+      typeof repository.fullName !== 'string' ||
+      !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(repository.fullName) ||
+      typeof repository.isPrivate !== 'boolean' ||
+      (repository.defaultBranch !== null &&
+        (typeof repository.defaultBranch !== 'string' || repository.defaultBranch.length > 255)) ||
+      repository.htmlUrl !== `https://github.com/${repository.fullName}` ||
+      typeof repository.isSelected !== 'boolean'
+    ) {
+      throw new Error('Invalid repository response');
+    }
+    if (repository.isSelected) selectedCount += 1;
+    seen.add(repository.repositoryId);
+    result.push(repository as unknown as RepositoryPickerItem);
+  }
+  if (selectedCount > 1) throw new Error('Invalid repository response');
+  return result;
+}
+
 const WIDTH = 28 * TILE;
 const HEIGHT = 17 * TILE;
 const REVIEW_AREA_DEFS: readonly ReviewArea[] = [
@@ -48,9 +89,9 @@ function renderPage(): void {
         <a class="brand" href="/" aria-label="${tr('Office Bots, início')}"><span class="brand-mark" aria-hidden="true">▦</span><span>office<span class="brand-accent">bots</span></span></a>
         <div class="topbar-context"><span>${tr('Espaço de trabalho')}</span><b aria-hidden="true">/</b><strong>${tr('Escritório')}</strong></div>
         <div class="topbar-actions">
-          <button class="repo-picker" id="repo-picker" type="button" disabled title="${tr('A instalação do GitHub App ainda está em construção.')}">
-            <span class="github-mark" aria-hidden="true">GH</span><span id="repo-picker-label">${tr('Nenhum repositório conectado')}</span><span class="picker-chevron" aria-hidden="true">⌄</span>
-          </button>
+          <select class="repo-picker" id="repo-picker" aria-label="${tr('Selecionar repositório')}" disabled>
+            <option value="">${tr('Nenhum repositório conectado')}</option>
+          </select>
           <a class="auth-button" id="auth-action" href="/api/auth/github/start">${tr('Entrar com GitHub')}</a>
           <button class="auth-button logout-button" id="logout-action" type="button" hidden>${tr('Sair')}</button>
         </div>
@@ -93,12 +134,22 @@ function renderPage(): void {
             <section class="panel activity-panel" aria-labelledby="activity-title">
               <header class="panel-heading compact-heading"><div><p class="section-kicker">${tr('SEU HISTÓRICO')}</p><h2 id="activity-title">${tr('Atividade recente')}</h2></div><span class="activity-mark" aria-hidden="true">↗</span></header>
               <div class="empty-state"><span class="empty-glyph" aria-hidden="true">✳</span><strong>${tr('Seu histórico começa aqui.')}</strong><p>${tr('Quando uma revisão estiver disponível, o progresso e o relatório aparecerão neste espaço.')}</p></div>
-              <div class="setup-note"><span class="setup-number">01</span><p>${tr('Conecte o GitHub para preparar seu espaço de revisão.')}</p><span class="setup-arrow" aria-hidden="true">↗</span></div>
+              <div class="setup-note">
+                <span class="setup-number">01</span>
+                <div class="setup-copy">
+                  <p id="github-app-note">${tr('Conecte o GitHub para preparar seu espaço de revisão.')}</p>
+                  <div class="setup-actions">
+                    <a class="setup-action" id="github-app-action" href="/api/github/app/authorize" hidden>${tr('Conectar GitHub App')}</a>
+                    <a class="setup-action secondary" id="github-install-action" href="/api/github/app/install" hidden>${tr('Instalar GitHub App')}</a>
+                  </div>
+                </div>
+                <span class="setup-arrow" aria-hidden="true">↗</span>
+              </div>
             </section>
           </aside>
         </div>
 
-        <footer class="workspace-note"><span class="note-icon" aria-hidden="true">i</span><p>${tr('A instalação do GitHub App, a seleção de repositórios e as revisões estão em desenvolvimento.')}</p></footer>
+        <footer class="workspace-note"><span class="note-icon" aria-hidden="true">i</span><p>${tr('A lista mostra apenas repositórios acessíveis pela instalação autorizada do GitHub App. As revisões e a criação de PRs ainda estão em desenvolvimento.')}</p></footer>
       </main>
       <footer class="app-footer"><span>${tr('Office Bots')}</span><span>${tr('Seu código, suas escolhas.')}</span><span class="footer-spark" aria-hidden="true">✳</span></footer>
     </div>`;
@@ -196,14 +247,22 @@ function wireAuthentication(): void {
   const authAction = document.querySelector<HTMLAnchorElement>('#auth-action')!;
   const logoutAction = document.querySelector<HTMLButtonElement>('#logout-action')!;
   const authNotice = document.querySelector<HTMLParagraphElement>('#auth-notice')!;
+  const repositoryPicker = document.querySelector<HTMLSelectElement>('#repo-picker')!;
+  const appAction = document.querySelector<HTMLAnchorElement>('#github-app-action')!;
+  const installAction = document.querySelector<HTMLAnchorElement>('#github-install-action')!;
+  const appNote = document.querySelector<HTMLParagraphElement>('#github-app-note')!;
+  let currentRepositories: RepositoryPickerItem[] = [];
+  const installationRequired = new URLSearchParams(window.location.search).get('github') === 'install-required';
   const showNotice = (message: string): void => {
     authNotice.textContent = message;
     authNotice.hidden = false;
   };
 
-  const loginResult = new URLSearchParams(window.location.search).get('login');
+  const query = new URLSearchParams(window.location.search);
+  const loginResult = query.get('login');
+  const githubResult = query.get('github');
   if (loginResult === 'success') {
-    showNotice(tr('Login concluído. Para listar repositórios, ainda falta conectar a instalação do GitHub App.'));
+    showNotice(tr('Login concluído. Conecte o GitHub App para carregar os repositórios autorizados.'));
   } else if (loginResult === 'cancelled') {
     showNotice(tr('Login cancelado.'));
   } else if (loginResult === 'failed') {
@@ -211,7 +270,46 @@ function wireAuthentication(): void {
   } else if (loginResult === 'logged-out') {
     showNotice(tr('Sessão encerrada.'));
   }
-  if (loginResult) history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+  if (githubResult === 'connected') {
+    showNotice(tr('GitHub App conectado. Repositórios autorizados atualizados.'));
+  } else if (githubResult === 'install-required') {
+    showNotice(tr('Não há uma instalação do GitHub App para esta conta. Instale o app e atualize a lista.'));
+  } else if (githubResult === 'cancelled') {
+    showNotice(tr('Autorização do GitHub App cancelada.'));
+  } else if (githubResult === 'failed') {
+    showNotice(tr('Não foi possível sincronizar repositórios. Tente novamente.'));
+  } else if (githubResult === 'login-required') {
+    showNotice(tr('Entre com GitHub para conectar uma instalação.'));
+  }
+  if (loginResult || githubResult) history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+
+  function renderRepositories(value: unknown): void {
+    const repositories = readRepositoryPickerItems(value);
+    currentRepositories = repositories;
+    repositoryPicker.replaceChildren();
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = repositories.length ? tr('Selecione um repositório') : tr('Nenhum repositório conectado');
+    repositoryPicker.append(emptyOption);
+    for (const repository of repositories) {
+      const option = document.createElement('option');
+      option.value = repository.repositoryId;
+      option.textContent = repository.fullName;
+      option.selected = repository.isSelected;
+      repositoryPicker.append(option);
+    }
+    repositoryPicker.disabled = repositories.length === 0;
+    appAction.textContent = repositories.length ? tr('Atualizar repositórios') : tr('Conectar GitHub App');
+  }
+
+  async function loadRepositories(): Promise<void> {
+    const response = await fetch('/api/github/repositories', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error();
+    renderRepositories(await response.json() as unknown);
+  }
 
   void fetch('/api/session', { credentials: 'same-origin', cache: 'no-store' })
     .then(async (response) => {
@@ -226,6 +324,17 @@ function wireAuthentication(): void {
         logoutAction.hidden = false;
         logoutAction.setAttribute('aria-label', tr('Sair da conta GitHub'));
         showNotice(tr('GitHub conectado: conta {0}.', [value.githubUserId]));
+        appAction.hidden = false;
+        installAction.hidden = !installationRequired;
+        appNote.textContent = tr('Autorize o GitHub App para sincronizar os repositórios que você escolheu compartilhar.');
+        void loadRepositories().catch(() => {
+          appAction.removeAttribute('href');
+          appAction.setAttribute('aria-disabled', 'true');
+          appAction.title = tr('A integração do GitHub App ainda não está configurada no servidor.');
+          appAction.textContent = tr('GitHub App em configuração');
+          repositoryPicker.disabled = true;
+          showNotice(tr('A integração do GitHub App ainda não está configurada no servidor.'));
+        });
       } else if (value.authenticated === false) {
         authAction.hidden = false;
       }
@@ -237,6 +346,32 @@ function wireAuthentication(): void {
       authAction.title = tr('O login depende da configuração do servidor.');
       authAction.textContent = tr('Login em configuração');
     });
+
+  repositoryPicker.addEventListener('change', async () => {
+    const previous = currentRepositories.find((repository) => repository.isSelected)?.repositoryId ?? '';
+    const repositoryId = repositoryPicker.value || null;
+    repositoryPicker.disabled = true;
+    try {
+      const response = await fetch('/api/github/repositories/selected', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repositoryId }),
+      });
+      if (!response.ok) throw new Error();
+      renderRepositories(await response.json() as unknown);
+      const selected = currentRepositories.find((repository) => repository.isSelected);
+      showNotice(selected
+        ? tr('Repositório selecionado: {0}.', [selected.fullName])
+        : tr('Seleção de repositório removida.'));
+    } catch {
+      repositoryPicker.value = previous;
+      showNotice(tr('Não foi possível salvar a seleção do repositório. Tente novamente.'));
+    } finally {
+      repositoryPicker.disabled = currentRepositories.length === 0;
+    }
+  });
 
   logoutAction.addEventListener('click', async () => {
     logoutAction.disabled = true;
