@@ -10,6 +10,10 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Adicionado
+
+- Prévia estática do Office Bots para acompanhar a visão do produto web, com indicação das funcionalidades ainda em desenvolvimento.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
