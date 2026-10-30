@@ -6,7 +6,7 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    name: 'Office Bots',
+    name: 'OfficeBots',
     executableName: 'office-bots',
     appBundleId: 'com.officebots.app',
     appCategoryType: 'public.app-category.productivity',

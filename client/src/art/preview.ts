@@ -61,7 +61,13 @@ const nav = document.getElementById('nav') as HTMLElement;
 function section(id: string, title: string, desc: string): HTMLElement {
   const s = document.createElement('section');
   s.id = id;
-  s.innerHTML = `<h2>${title}</h2><p class="desc">${desc}</p>`;
+  const h2 = document.createElement('h2');
+  h2.textContent = title;
+  s.appendChild(h2);
+  const p = document.createElement('p');
+  p.className = 'desc';
+  p.textContent = desc;
+  s.appendChild(p);
   root.appendChild(s);
   const a = document.createElement('a');
   a.href = `#${id}`;

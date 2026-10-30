@@ -68,3 +68,15 @@ Ambiente: Linux `6.18.55` x86_64, Node `24.19.0`, npm `11.9.0`, base `11ba85e`.
 - Electron [releases](https://releases.electronjs.org/), [breaking changes](https://www.electronjs.org/docs/latest/breaking-changes) e [Forge 8.0.1](https://github.com/electron/forge/releases/tag/v8.0.1).
 - Anthropic [Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk) e [legal and compliance](https://docs.anthropic.com/en/docs/claude-code/legal-and-compliance).
 - OpenAI [Codex authentication](https://developers.openai.com/codex/auth).
+
+## Refinamento M2.5 — carregamento de recursos
+
+A implementação do worker revelou que `DefaultResourceLoader` 1.4.0 lê `APPEND_SYSTEM.md` mesmo com `noContextFiles:true` e interpreta um `systemPrompt` que coincide com caminho existente como arquivo. O produto usa um `ResourceLoader` próprio, sem discovery/recursos, com instruções literais, runtime de extensões vazio e settings em memória sem confiança no projeto. Testes com marcadores reproduziram o vazamento antes da correção e passaram depois. As flags do loader padrão sozinhas não são uma fronteira adequada de privacidade.
+
+O worker deste incremento não autoriza contas de produção, não consulta credenciais das CLIs e não habilita ferramentas. Provas com fauxProvider do SDK não qualificam autenticação real, aprovação de ferramentas nem o lançamento final usando o Node do Electron. Esses gates permanecem M2/M3.
+
+## M2.6 — Node embutido e ASAR
+
+Em Linux x64, o executável Electron do pacote (Node observado 24.22.0) iniciou `app.asar/dist/desktop/pi-worker.mjs` com `ELECTRON_RUN_AS_NODE=1`; o SDK real carregou, criou e fechou sessão sintética, sem prompt, antes de encerrar o processo. O teste de runtime também usa o executável Electron instalado, em vez de Node externo no filho. Não houve autenticação/chamada de modelo real.
+
+O smoke da janela no CI agora exige o marcador do worker e SDK, além do cliente web. Essa prova headless local não substitui o smoke GUI nos SOs alvo, nem assinatura/notarização. O launcher define apenas o executável incluído pelo app e um ambiente restrito; não habilita caminhos/executáveis controláveis pelo renderer.

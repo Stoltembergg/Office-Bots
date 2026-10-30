@@ -55,7 +55,7 @@ export class CatalogStore {
     validate(value);
     return value;
   }
-  private mutate<T>(change: (data: Catalog) => T | Promise<T>): Promise<T> {
+  private mutate<T>(change: (data: Catalog) => T | Promise<T>, persist = true): Promise<T> {
     const task = this.pending.then(async () => {
       await mkdir(this.directory, { recursive: true });
       await mkdir(this.lock);
@@ -64,8 +64,10 @@ export class CatalogStore {
         const data = await this.read();
         const result = await change(data);
         validate(data);
-        await writeFile(temporary, JSON.stringify(data), { flag: 'wx', mode: 0o600 });
-        await rename(temporary, this.file);
+        if (persist) {
+          await writeFile(temporary, JSON.stringify(data), { flag: 'wx', mode: 0o600 });
+          await rename(temporary, this.file);
+        }
         return structuredClone(result);
       } finally {
         await rm(temporary, { force: true });
@@ -74,6 +76,17 @@ export class CatalogStore {
     });
     this.pending = task.catch(() => undefined);
     return task;
+  }
+  /** Serialize synchronous turn reservation with edits/archive on this catalog.
+   * The reservation must be reflected by isAgentBusy before this callback returns.
+   * Share this store and its occupancy owner for all managed sessions in the app.
+   */
+  admitAgent(id: string, reserve: (agent: AgentProfile) => void): Promise<void> {
+    return this.mutate(data => {
+      const found = data.agents.find(a => a.id === id);
+      if (!found || found.archivedAt) throw invalid();
+      reserve(structuredClone(found));
+    }, false);
   }
   async listProjects(): Promise<Project[]> { return (await this.read()).projects; }
   async getProject(id: string): Promise<Project> {
