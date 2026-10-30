@@ -2,6 +2,7 @@ import '@fontsource/pixelify-sans/400.css';
 import * as art from './art';
 import { pixelText, pixelTextWidth } from './art/pixelfont';
 import { TILE, type FurnitureKind, type Sprite } from './art/api';
+import { readPullRequestPickerResponse, type PullRequestPickerItem } from './office-pull-requests';
 import { getLocale, registerDictionary, tr, type Locale } from '../../shared/i18n';
 import './office.css';
 
@@ -134,6 +135,16 @@ function renderPage(): void {
             <section class="panel activity-panel" aria-labelledby="activity-title">
               <header class="panel-heading compact-heading"><div><p class="section-kicker">${tr('SEU HISTÓRICO')}</p><h2 id="activity-title">${tr('Atividade recente')}</h2></div><span class="activity-mark" aria-hidden="true">↗</span></header>
               <div class="empty-state"><span class="empty-glyph" aria-hidden="true">✳</span><strong>${tr('Seu histórico começa aqui.')}</strong><p>${tr('Quando uma revisão estiver disponível, o progresso e o relatório aparecerão neste espaço.')}</p></div>
+              <div class="pull-request-control" id="pull-request-control" hidden>
+                <label for="pull-request-picker">${tr('Pull request aberto')}</label>
+                <div class="pull-request-actions">
+                  <select class="pull-request-picker" id="pull-request-picker" disabled>
+                    <option value="">${tr('Selecione um pull request')}</option>
+                  </select>
+                  <button class="pull-request-refresh" id="pull-request-refresh" type="button">${tr('Atualizar PRs')}</button>
+                </div>
+                <p class="pull-request-note" id="pull-request-note" role="status" aria-live="polite">${tr('Selecione um repositório para ver os PRs abertos.')}</p>
+              </div>
               <div class="setup-note">
                 <span class="setup-number">01</span>
                 <div class="setup-copy">
@@ -149,7 +160,7 @@ function renderPage(): void {
           </aside>
         </div>
 
-        <footer class="workspace-note"><span class="note-icon" aria-hidden="true">i</span><p>${tr('A lista mostra apenas repositórios acessíveis pela instalação autorizada do GitHub App. As revisões e a criação de PRs ainda estão em desenvolvimento.')}</p></footer>
+        <footer class="workspace-note"><span class="note-icon" aria-hidden="true">i</span><p>${tr('A lista mostra repositórios acessíveis pela GitHub App e seus PRs abertos. Selecionar um PR ainda não inicia uma revisão; a análise e a criação de PRs seguem em desenvolvimento.')}</p></footer>
       </main>
       <footer class="app-footer"><span>${tr('Office Bots')}</span><span>${tr('Seu código, suas escolhas.')}</span><span class="footer-spark" aria-hidden="true">✳</span></footer>
     </div>`;
@@ -251,7 +262,13 @@ function wireAuthentication(): void {
   const appAction = document.querySelector<HTMLAnchorElement>('#github-app-action')!;
   const installAction = document.querySelector<HTMLAnchorElement>('#github-install-action')!;
   const appNote = document.querySelector<HTMLParagraphElement>('#github-app-note')!;
+  const pullRequestControl = document.querySelector<HTMLDivElement>('#pull-request-control')!;
+  const pullRequestPicker = document.querySelector<HTMLSelectElement>('#pull-request-picker')!;
+  const pullRequestRefresh = document.querySelector<HTMLButtonElement>('#pull-request-refresh')!;
+  const pullRequestNote = document.querySelector<HTMLParagraphElement>('#pull-request-note')!;
   let currentRepositories: RepositoryPickerItem[] = [];
+  let currentPullRequests: PullRequestPickerItem[] = [];
+  let pullRequestLoadSequence = 0;
   const installationRequired = new URLSearchParams(window.location.search).get('github') === 'install-required';
   const showNotice = (message: string): void => {
     authNotice.textContent = message;
@@ -285,6 +302,7 @@ function wireAuthentication(): void {
 
   function renderRepositories(value: unknown): void {
     const repositories = readRepositoryPickerItems(value);
+    pullRequestLoadSequence += 1;
     currentRepositories = repositories;
     repositoryPicker.replaceChildren();
     const emptyOption = document.createElement('option');
@@ -300,6 +318,69 @@ function wireAuthentication(): void {
     }
     repositoryPicker.disabled = repositories.length === 0;
     appAction.textContent = repositories.length ? tr('Atualizar repositórios') : tr('Conectar GitHub App');
+    const hasSelectedRepository = repositories.some((repository) => repository.isSelected);
+    pullRequestControl.hidden = !hasSelectedRepository;
+    if (!hasSelectedRepository) {
+      currentPullRequests = [];
+      pullRequestPicker.replaceChildren();
+      const emptyPullRequest = document.createElement('option');
+      emptyPullRequest.value = '';
+      emptyPullRequest.textContent = tr('Selecione um pull request');
+      pullRequestPicker.append(emptyPullRequest);
+      pullRequestPicker.disabled = true;
+      pullRequestNote.textContent = tr('Selecione um repositório para ver os PRs abertos.');
+    }
+  }
+
+  async function loadPullRequests(): Promise<void> {
+    const sequence = ++pullRequestLoadSequence;
+    const repository = currentRepositories.find((item) => item.isSelected);
+    if (!repository) {
+      pullRequestRefresh.disabled = false;
+      return;
+    }
+    pullRequestControl.hidden = false;
+    pullRequestPicker.disabled = true;
+    pullRequestRefresh.disabled = true;
+    pullRequestNote.textContent = tr('Carregando pull requests abertos…');
+    try {
+      const response = await fetch('/api/github/pull-requests', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error();
+      const result = readPullRequestPickerResponse(await response.json() as unknown, repository.fullName);
+      if (sequence !== pullRequestLoadSequence) return;
+      currentPullRequests = [...result.pullRequests];
+      pullRequestPicker.replaceChildren();
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = tr('Selecione um pull request');
+      pullRequestPicker.append(placeholder);
+      for (const pullRequest of currentPullRequests) {
+        const option = document.createElement('option');
+        option.value = String(pullRequest.number);
+        option.textContent = tr('PR #{0} — {1}{2}', [pullRequest.number, pullRequest.title, pullRequest.draft ? ` (${tr('rascunho')})` : '']);
+        pullRequestPicker.append(option);
+      }
+      pullRequestPicker.disabled = currentPullRequests.length === 0;
+      pullRequestNote.textContent = currentPullRequests.length === 0
+        ? tr('Nenhum PR aberto neste repositório.')
+        : result.hasMore
+          ? tr('Mostrando os 100 PRs abertos mais recentes. A revisão ainda está em desenvolvimento.')
+          : tr('Escolher um PR não inicia a revisão; essa etapa ainda está em desenvolvimento.');
+    } catch {
+      if (sequence !== pullRequestLoadSequence) return;
+      currentPullRequests = [];
+      pullRequestPicker.replaceChildren();
+      const failedOption = document.createElement('option');
+      failedOption.value = '';
+      failedOption.textContent = tr('Pull requests indisponíveis');
+      pullRequestPicker.append(failedOption);
+      pullRequestNote.textContent = tr('Não foi possível carregar os pull requests. Tente novamente.');
+    } finally {
+      if (sequence === pullRequestLoadSequence) pullRequestRefresh.disabled = false;
+    }
   }
 
   async function loadRepositories(): Promise<void> {
@@ -309,6 +390,7 @@ function wireAuthentication(): void {
     });
     if (!response.ok) throw new Error();
     renderRepositories(await response.json() as unknown);
+    await loadPullRequests();
   }
 
   void fetch('/api/session', { credentials: 'same-origin', cache: 'no-store' })
@@ -362,6 +444,7 @@ function wireAuthentication(): void {
       if (!response.ok) throw new Error();
       renderRepositories(await response.json() as unknown);
       const selected = currentRepositories.find((repository) => repository.isSelected);
+      await loadPullRequests();
       showNotice(selected
         ? tr('Repositório selecionado: {0}.', [selected.fullName])
         : tr('Seleção de repositório removida.'));
@@ -371,6 +454,20 @@ function wireAuthentication(): void {
     } finally {
       repositoryPicker.disabled = currentRepositories.length === 0;
     }
+  });
+
+  pullRequestRefresh.addEventListener('click', () => {
+    void loadPullRequests();
+  });
+
+  pullRequestPicker.addEventListener('change', () => {
+    const number = Number(pullRequestPicker.value);
+    if (!Number.isSafeInteger(number) || number < 1) {
+      pullRequestNote.textContent = tr('Escolher um PR não inicia a revisão; essa etapa ainda está em desenvolvimento.');
+      return;
+    }
+    const selected = currentPullRequests.find((pullRequest) => pullRequest.number === number);
+    if (selected) pullRequestNote.textContent = tr('PR #{0} selecionado. A revisão ainda não foi iniciada.', [selected.number]);
   });
 
   logoutAction.addEventListener('click', async () => {
