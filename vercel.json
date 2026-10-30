@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build:preview",
-  "outputDirectory": "dist/preview",
-  "rewrites": [{ "source": "/", "destination": "/preview.html" }]
+  "buildCommand": "npm run build:web",
+  "outputDirectory": "dist/office",
+  "rewrites": [{ "source": "/", "destination": "/office.html" }]
 }
