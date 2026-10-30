@@ -1,5 +1,7 @@
 # Qualificação de dependências e plataformas
 
+> Registro histórico da qualificação desktop. Não é requisito nem roteiro do produto atual; consulte o [plano web](../superpowers/plans/2026-10-30-office-bots-web.md).
+
 Verificação M0 em 2026-10-24, sobre `main` importado em `11ba85e986383ad0cbf0e4e66f4b81b62b9a1bbd`. Esta qualificação usa versões fixas para iniciar M1; uma atualização de major exige repetir as provas abaixo.
 
 ## Decisão de início
