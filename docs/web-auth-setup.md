@@ -52,7 +52,9 @@ O banco guarda apenas o hash da sessão, o state/verificador OAuth de curta dura
 
 O projeto Supabase escolhido para o Office Bots é `camplol`. Em 2026-10-30, as migrações `saas_auth`, `office_bots_auth_runtime_role` e `github_app_repositories` foram aplicadas nele. Elas criam somente o schema privado `office_bots_private`; não alteram tabelas nem dados do schema `public`.
 
-O papel sem login `office_bots_auth_runtime` já existe. Ainda falta criar o papel de login `office_bots_auth_login` com uma senha exclusiva, montar a connection string pelo pooler de transação e configurá-la como `OFFICE_BOTS_DATABASE_URL` na Vercel para cada ambiente. Não salve essa senha no repositório.
+Os papéis `office_bots_auth_runtime` e `office_bots_auth_login` foram criados. Verificações no banco confirmaram que o login herda as permissões de runtime, usa o schema privado e acessa as tabelas necessárias. A senha e a connection string não são registradas no repositório.
+
+O responsável pelo projeto adicionou `OFFICE_BOTS_DATABASE_URL` somente ao ambiente **Production** da Vercel. A URL e a senha não são registradas no repositório. O ambiente **Preview** ainda precisa de uma URL para um banco de teste separado; depois de configurar cada ambiente, gere um novo deployment para que as funções recebam as variáveis.
 
 O advisor do Supabase sinaliza RLS desabilitado nas cinco tabelas privadas. No momento, `anon` e `authenticated` não têm `USAGE` no schema nem privilégios de leitura nessas tabelas; o acesso está limitado ao papel de runtime. Habilitar RLS sem políticas para `office_bots_auth_runtime` também bloquearia o servidor.
 
