@@ -20,8 +20,13 @@ document.querySelector<HTMLDivElement>('#preview')!.innerHTML = `
   <main>
     <nav class="topbar" aria-label="${tr('Navegação principal')}">
       <a class="brand" href="#top" aria-label="${tr('Office Bots, início')}"><span class="brand-icon" aria-hidden="true">▦</span> office<span>bots</span></a>
-      <span class="preview-tag"><i></i>${tr('Prévia · em desenvolvimento')}</span>
+      <div class="topbar-actions">
+        <span class="preview-tag"><i></i>${tr('Prévia · em desenvolvimento')}</span>
+        <a class="auth-button" id="auth-action" href="/api/auth/github/start">${tr('Entrar com GitHub')}</a>
+        <button class="auth-button" id="logout-action" type="button" hidden>${tr('Sair')}</button>
+      </div>
     </nav>
+    <p class="auth-notice" id="auth-notice" role="status" aria-live="polite" hidden></p>
     <section class="hero" id="top" aria-labelledby="headline">
       <div class="hero-copy">
         <p class="eyebrow"><span>✳</span> ${tr('UM NOVO ESCRITÓRIO PARA O CÓDIGO')}</p>
@@ -44,6 +49,67 @@ document.querySelector<HTMLDivElement>('#preview')!.innerHTML = `
       <ol class="review-grid">${labels.map((item) => `<li class="review-card ${item.tone}"><span class="card-number">${item.n} / 04</span><span class="card-icon" aria-hidden="true">${item.icon}</span><h3>${item.title}</h3><p>${item.copy}</p><span class="card-arrow" aria-hidden="true">↗</span></li>`).join('')}</ol>
       <div class="flowline"><span>${tr('GITHUB')}</span><b></b><span>${tr('SEU REPOSITÓRIO')}</span><b></b><span>${tr('REVISÃO COM CONTEXTO')}</span><b></b><span>${tr('VOCÊ NO COMANDO')}</span></div>
     </section>
-    <section class="honest" aria-labelledby="honest-title"><div class="honest-mark" aria-hidden="true">!</div><div><p class="eyebrow">${tr('TRANSPARÊNCIA, DESDE O PRIMEIRO DIA')}</p><h2 id="honest-title">${tr('Ainda estamos')} <em>${tr('construindo.')}</em></h2><p>${tr('Esta página é uma prévia da visão do Office Bots. Login com GitHub, conexão a repositórios e revisões ainda não estão disponíveis. Não há revisões ou agentes em execução por aqui.')}</p></div><span class="build-stamp">${tr('EM CONSTRUÇÃO')}<br>✳</span></section>
+    <section class="honest" aria-labelledby="honest-title"><div class="honest-mark" aria-hidden="true">!</div><div><p class="eyebrow">${tr('TRANSPARÊNCIA, DESDE O PRIMEIRO DIA')}</p><h2 id="honest-title">${tr('Ainda estamos')} <em>${tr('construindo.')}</em></h2><p>${tr('Esta página é uma prévia da visão do Office Bots. O login GitHub depende da configuração do servidor; a instalação do GitHub App, a escolha de repositórios e as revisões ainda estão sendo construídas. Não há revisões ou agentes em execução por aqui.')}</p></div><span class="build-stamp">${tr('EM CONSTRUÇÃO')}<br>✳</span></section>
     <footer><a class="brand" href="#top"><span class="brand-icon" aria-hidden="true">▦</span> office<span>bots</span></a><p>${tr('Feito com cuidado. Ainda em desenvolvimento.')}</p><a href="#top" class="back-top">${tr('Voltar ao topo')} ↑</a></footer>
   </main>`;
+
+const authAction = document.querySelector<HTMLAnchorElement>('#auth-action')!;
+const logoutAction = document.querySelector<HTMLButtonElement>('#logout-action')!;
+const authNotice = document.querySelector<HTMLParagraphElement>('#auth-notice')!;
+const showAuthNotice = (message: string): void => {
+  authNotice.textContent = message;
+  authNotice.hidden = false;
+};
+
+const loginResult = new URLSearchParams(window.location.search).get('login');
+if (loginResult === 'success') {
+  showAuthNotice(tr('Login concluído. Para listar repositórios, ainda falta conectar a instalação do GitHub App.'));
+} else if (loginResult === 'cancelled') {
+  showAuthNotice(tr('Login cancelado.'));
+} else if (loginResult === 'failed') {
+  showAuthNotice(tr('Não foi possível concluir o login. Tente novamente.'));
+} else if (loginResult === 'logged-out') {
+  showAuthNotice(tr('Sessão encerrada.'));
+}
+if (loginResult) history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+
+void fetch('/api/session', { credentials: 'same-origin', cache: 'no-store' })
+  .then(async response => {
+    if (!response.ok) throw new Error();
+    return await response.json() as unknown;
+  })
+  .then(session => {
+    if (!session || typeof session !== 'object' || !('authenticated' in session)) throw new Error();
+    const value = session as { authenticated?: unknown; githubUserId?: unknown };
+    if (value.authenticated === true && typeof value.githubUserId === 'string') {
+      authAction.hidden = true;
+      logoutAction.hidden = false;
+      logoutAction.setAttribute('aria-label', tr('Sair da conta GitHub'));
+      showAuthNotice(tr('GitHub conectado: conta {0}.', [value.githubUserId]));
+    } else if (value.authenticated === false) {
+      authAction.hidden = false;
+    }
+  })
+  .catch(() => {
+    authAction.removeAttribute('href');
+    authAction.setAttribute('aria-disabled', 'true');
+    authAction.tabIndex = -1;
+    authAction.title = tr('O login depende da configuração do servidor.');
+    authAction.textContent = tr('Login em configuração');
+  });
+
+logoutAction.addEventListener('click', async () => {
+  logoutAction.disabled = true;
+  try {
+    const response = await fetch('/api/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error();
+    window.location.assign('/?login=logged-out');
+  } catch {
+    logoutAction.disabled = false;
+    showAuthNotice(tr('Não foi possível encerrar a sessão. Tente novamente.'));
+  }
+});
