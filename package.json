@@ -26,7 +26,7 @@
     "shots:world": "node scripts/world-shots.mjs",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build --config vite.config.ts",
-    "build:preview": "vite build --config vite.preview.config.ts",
+    "build:web": "vite build --config vite.web.config.ts",
     "build:server": "node scripts/build-server.mjs",
     "start": "node dist/server/index.js",
     "desktop:dev": "npm run build:client && node scripts/build-desktop.mjs --dev && electron .",

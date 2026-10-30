@@ -12,7 +12,7 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
-- Prévia estática do Office Bots para acompanhar a visão do produto web, com indicação das funcionalidades ainda em desenvolvimento.
+- Escritório web do Office Bots substitui a prévia: sala em pixel art, agentes por área de revisão e estado explícito de espera até conectar um repositório.
 - Base de login com GitHub e sessão web revogável, armazenada no Supabase e protegida por cookie `HttpOnly`; a integração depende da configuração das credenciais no servidor.
 
 ## [1.0.3] - 2026-10-16
