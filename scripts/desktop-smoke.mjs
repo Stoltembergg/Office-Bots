@@ -4,9 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const outputDir = join('out', `Office Bots-${process.platform}-${process.arch}`);
+const outputDir = join('out', `OfficeBots-${process.platform}-${process.arch}`);
 const executable = process.platform === 'darwin'
-  ? join(outputDir, 'Office Bots.app', 'Contents', 'MacOS', 'office-bots')
+  ? join(outputDir, 'OfficeBots.app', 'Contents', 'MacOS', 'office-bots')
   : join(outputDir, process.platform === 'win32' ? 'office-bots.exe' : 'office-bots');
 
 if (!existsSync(executable)) throw new Error(`Packaged app executable not found: ${executable}`);
