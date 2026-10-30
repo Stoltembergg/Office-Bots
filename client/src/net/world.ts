@@ -571,7 +571,7 @@ export function uplinkBytes(uplink: WorldUplink): number {
 /** E-mail da conta de exemplo dos estados 'waiting' e 'approved'. */
 export const FAKE_EMAIL = 'voce@exemplo.com';
 /** Senha da conta de exemplo. */
-export const FAKE_PASSWORD = 'uma senha bem comprida';
+export const FAKE_PASSWORD = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 /** O código que o "e-mail" do FakeWorldApi manda (a tela mostra no modo demonstração). */
 export const FAKE_CODE = '123456';
 
