@@ -50,7 +50,11 @@ Use esse usuário no connection string do pooler de transação e salve a URL co
 
 O banco guarda apenas o hash da sessão, o state/verificador OAuth de curta duração, metadados necessários para exibir a lista e o repositório escolhido. O token de usuário do GitHub é usado apenas no callback para validar a identidade e ler instalações/repositórios; ele e eventuais tokens de atualização não são persistidos nem enviados ao navegador. A escolha fica associada ao ID numérico da conta GitHub. Uma sincronização que detecta que o repositório deixou de estar acessível remove seus metadados e escolha.
 
-Ainda não há um projeto Supabase vinculado a este repositório. Escolha ou crie o projeto do Office Bots antes de vincular a CLI e aplicar as migrações. Os projetos existentes da conta não foram alterados.
+O projeto Supabase escolhido para o Office Bots é `camplol`. Em 2026-10-30, as migrações `saas_auth`, `office_bots_auth_runtime_role` e `github_app_repositories` foram aplicadas nele. Elas criam somente o schema privado `office_bots_private`; não alteram tabelas nem dados do schema `public`.
+
+O papel sem login `office_bots_auth_runtime` já existe. Ainda falta criar o papel de login `office_bots_auth_login` com uma senha exclusiva, montar a connection string pelo pooler de transação e configurá-la como `OFFICE_BOTS_DATABASE_URL` na Vercel para cada ambiente. Não salve essa senha no repositório.
+
+O advisor do Supabase sinaliza RLS desabilitado nas cinco tabelas privadas. No momento, `anon` e `authenticated` não têm `USAGE` no schema nem privilégios de leitura nessas tabelas; o acesso está limitado ao papel de runtime. Habilitar RLS sem políticas para `office_bots_auth_runtime` também bloquearia o servidor.
 
 ## Rotas web
 
