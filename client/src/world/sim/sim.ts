@@ -1285,7 +1285,7 @@ export class Sim {
   private overflowFree(x: number, y: number, ch: Character, busy = this.busyTiles(ch.id)): boolean {
     const grid = this.building.grid;
     if (grid.get(x, y) !== FREE || busy.has(y * grid.w + x)) return false;
-    for (const s of this.spots.all()) if (s.tx === x && s.ty === y) return false;
+    if (this.spots.hasSpotAt(x, y)) return false;
     return true;
   }
 

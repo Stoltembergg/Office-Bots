@@ -6,13 +6,16 @@ export class SpotRegistry {
   private owners = new Map<string, string>();
   private byKind = new Map<SpotKind, SpotDef[]>();
   private byGroup = new Map<string, SpotDef[]>();
+  private coords = new Set<number>();
 
   /** Substitui o conjunto de spots mantendo as reservas dos que continuam existindo. Retorna as reservas perdidas. */
   setSpots(spots: Iterable<SpotDef>): { spotId: string; owner: string }[] {
     this.spots.clear();
     this.byKind.clear();
     this.byGroup.clear();
+    this.coords.clear();
     for (const s of spots) {
+      this.coords.add((s.ty << 16) | s.tx);
       this.spots.set(s.id, s);
       let list = this.byKind.get(s.kind);
       if (!list) this.byKind.set(s.kind, (list = []));
@@ -35,6 +38,10 @@ export class SpotRegistry {
 
   get(id: string | null | undefined): SpotDef | undefined {
     return id ? this.spots.get(id) : undefined;
+  }
+
+  hasSpotAt(tx: number, ty: number): boolean {
+    return this.coords.has((ty << 16) | tx);
   }
 
   all(): IterableIterator<SpotDef> {
