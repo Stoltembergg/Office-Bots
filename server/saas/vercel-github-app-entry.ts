@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createGitHubAppRepositoriesHandlers } from './github-app-repositories-handlers';
-import { createGitHubAppRepositoriesRuntime } from './github-app-repositories-runtime';
+import { createGitHubAppRepositoriesHandlers } from './github-app-repositories-handlers.js';
+import { createGitHubAppRepositoriesRuntime } from './github-app-repositories-runtime.js';
 
 type Operation = 'authorize' | 'callback' | 'install' | 'repositories' | 'selectRepository';
 

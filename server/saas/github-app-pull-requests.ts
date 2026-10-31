@@ -2,9 +2,9 @@ import type {
   GitHubAppPullRequestsRequest,
   GitHubPullRequestSummary,
   GitHubPullRequestsPage,
-} from './github-app-pull-requests-adapter';
-import type { GitHubRepositoriesStore } from './postgres-stores';
-import type { SaasSessionManager } from './sessions';
+} from './github-app-pull-requests-adapter.js';
+import type { GitHubRepositoriesStore } from './postgres-stores.js';
+import type { SaasSessionManager } from './sessions.js';
 
 const SESSION_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const GITHUB_ID_PATTERN = /^[1-9][0-9]{0,19}$/;

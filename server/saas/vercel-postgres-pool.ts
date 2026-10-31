@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import type { PostgresClient, PostgresPool, PostgresQueryExecutor, PostgresQueryResult } from './postgres-stores';
+import type { PostgresClient, PostgresPool, PostgresQueryExecutor, PostgresQueryResult } from './postgres-stores.js';
 
 const MAX_CONNECTION_STRING_LENGTH = 4_096;
 

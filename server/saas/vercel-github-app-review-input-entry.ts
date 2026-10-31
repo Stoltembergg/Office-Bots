@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createGitHubAppReviewInputHandlers } from './github-app-review-input-handlers';
-import { createGitHubAppPullRequestsRuntime } from './github-app-pull-requests-runtime';
+import { createGitHubAppReviewInputHandlers } from './github-app-review-input-handlers.js';
+import { createGitHubAppPullRequestsRuntime } from './github-app-pull-requests-runtime.js';
 
 /** Prepares a bounded PR input using server-only GitHub credentials; patches are not returned to the browser. */
 export async function handleGitHubAppReviewInput(req: IncomingMessage, res: ServerResponse): Promise<void> {

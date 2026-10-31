@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { SaasSessionManager } from './sessions';
-import type { GitHubAppRepositoriesAuthorizationFlow } from './github-app-repositories';
-import type { GitHubRepositoriesStore } from './postgres-stores';
+import type { SaasSessionManager } from './sessions.js';
+import type { GitHubAppRepositoriesAuthorizationFlow } from './github-app-repositories.js';
+import type { GitHubRepositoriesStore } from './postgres-stores.js';
 
 const SESSION_COOKIE = '__Host-office_bots_session';
 const BINDING_COOKIE = '__Host-office_bots_app_binding';

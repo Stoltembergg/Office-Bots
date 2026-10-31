@@ -1,10 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
-import type { GitHubAppAuthStateStore } from './github-auth';
+import type { GitHubAppAuthStateStore } from './github-auth.js';
 import type {
   GitHubAppAuthorizationStateStore,
   GitHubRepositorySummary,
-} from './github-app-repositories';
-import type { SaasSessionStore } from './sessions';
+} from './github-app-repositories.js';
+import type { SaasSessionStore } from './sessions.js';
 
 const OAUTH_STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const BINDING_DIGEST_PATTERN = /^[a-f0-9]{64}$/;

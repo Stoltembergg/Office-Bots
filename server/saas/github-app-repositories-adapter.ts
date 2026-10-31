@@ -1,4 +1,4 @@
-import type { GitHubRepositorySummary } from './github-app-repositories';
+import type { GitHubRepositorySummary } from './github-app-repositories.js';
 
 const GITHUB_API_ORIGIN = 'https://api.github.com';
 const PER_PAGE = 100;

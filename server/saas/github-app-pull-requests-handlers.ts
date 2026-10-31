@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { GitHubAppPullRequestsResult } from './github-app-pull-requests';
+import type { GitHubAppPullRequestsResult } from './github-app-pull-requests.js';
 
 const SESSION_COOKIE = '__Host-office_bots_session';
 const SESSION_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
