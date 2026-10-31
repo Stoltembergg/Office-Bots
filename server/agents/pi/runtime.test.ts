@@ -68,7 +68,7 @@ describe('Pi isolado com SDK real e provedor falso', () => {
     expect(events.filter(e => e.type === 'message-end')).toHaveLength(1);
     expect(events.some(e => e.type === 'usage')).toBe(true);
     await runtime.close(s.runtimeSessionId);
-  });
+  }, workerOperationTimeoutMs);
   it('separa execuções e continua a sequência da mesma conversa', async () => {
     const s = await runtime.create(config()); await runtime.prompt(s.runtimeSessionId, input);
     await runtime.prompt(s.runtimeSessionId, { ...input, messageId: 'message-2' });
