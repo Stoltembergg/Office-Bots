@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import type { PostgresClient, PostgresPool, PostgresQueryExecutor, PostgresQueryResult } from './postgres-stores.js';
 
 const MAX_CONNECTION_STRING_LENGTH = 4_096;
@@ -10,6 +10,24 @@ export class OfficeBotsPostgresConfigurationError extends Error {
     super('Office Bots database is not configured');
     this.name = 'OfficeBotsPostgresConfigurationError';
   }
+}
+
+/** Report fixed categories only: driver errors may contain credentials, SQL or parameters. */
+function reportDatabaseFailure(error: unknown): void {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    && typeof error.code === 'string' ? error.code : '';
+  const message = error instanceof Error ? error.message : '';
+  let category = 'unknown';
+  if (message.includes('Tenant or user not found')) category = 'pooler-tenant-or-user';
+  else if (code === '28P01' || code === '28000') category = 'authentication';
+  else if (code === '42501') category = 'permission';
+  else if (code === '42P01' || code === '3F000') category = 'missing-schema-or-table';
+  else if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') category = 'dns';
+  else if (code === 'ETIMEDOUT' || message === 'Connection terminated due to connection timeout') category = 'timeout';
+  else if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ENETUNREACH' || code === 'EHOSTUNREACH') category = 'network';
+  else if (code === 'SELF_SIGNED_CERT_IN_CHAIN' || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
+    || code === 'CERT_HAS_EXPIRED' || code === 'ERR_TLS_CERT_ALTNAME_INVALID') category = 'tls';
+  console.error('[office-bots] database failure', category);
 }
 
 function connectionStringIssue(value: unknown): DatabaseConfigurationIssue | undefined {
@@ -36,14 +54,23 @@ function connectionStringIssue(value: unknown): DatabaseConfigurationIssue | und
 function execute(executor: PostgresQueryExecutor, sql: string, values?: unknown[]): Promise<PostgresQueryResult> {
   return executor.query(sql, values).then((result) => ({
     rows: result.rows as readonly Record<string, unknown>[],
-  }));
+  })).catch((error: unknown) => {
+    reportDatabaseFailure(error);
+    throw error;
+  });
 }
 
 function asPostgresPool(pool: Pool): PostgresPool {
   return Object.freeze({
     query: (sql: string, values?: unknown[]) => execute(pool, sql, values),
     async connect(): Promise<PostgresClient> {
-      const client = await pool.connect();
+      let client: PoolClient;
+      try {
+        client = await pool.connect();
+      } catch (error) {
+        reportDatabaseFailure(error);
+        throw error;
+      }
       return Object.freeze({
         query: (sql: string, values?: unknown[]) => execute(client, sql, values),
         release: (error?: Error | boolean) => client.release(error),

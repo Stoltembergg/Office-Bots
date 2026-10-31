@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createGitHubWebAuthHandlers } from './github-web-auth-handlers.js';
 import { createGitHubWebAuthRuntime, GitHubWebAuthConfigurationError } from './github-web-auth-runtime.js';
+import { GitHubAppAuthError } from './github-auth.js';
 
 type Operation = 'start' | 'callback' | 'session' | 'logout';
 
@@ -15,7 +16,8 @@ export async function handleGitHubWebAuth(
     await handlers[operation](req, res);
   } catch (error) {
     console.error('[office-bots] github auth failure', operation,
-      error instanceof GitHubWebAuthConfigurationError ? `configuration:${error.stage}` : 'request');
+      error instanceof GitHubWebAuthConfigurationError ? `configuration:${error.stage}`
+        : error instanceof GitHubAppAuthError ? `authorization:${error.code}` : 'request');
     if (res.headersSent) {
       if (!res.writableEnded) res.end();
       return;
