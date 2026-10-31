@@ -1,7 +1,11 @@
 import { createGitHubAppRepositoriesAuthorizationFlow, type GitHubAppRepositoriesAdapter } from './github-app-repositories.js';
 import { createGitHubAppRepositoriesAdapter } from './github-app-repositories-adapter.js';
 import { createGitHubAppOAuthAdapter } from './github-oauth-adapter.js';
-import { createPostgresSaasStores, type PostgresPool } from './postgres-stores.js';
+import {
+  createPostgresSaasStores,
+  officeBotsDatabaseSchemaForEnvironment,
+  type PostgresPool,
+} from './postgres-stores.js';
 import { createSaasSessionManager, type SaasSessionManager } from './sessions.js';
 import { officeBotsPostgresPool } from './vercel-postgres-pool.js';
 
@@ -71,7 +75,10 @@ export function createGitHubAppRepositoriesRuntime(
 
     const pool = options.pool ?? officeBotsPostgresPool(required(env, 'OFFICE_BOTS_DATABASE_URL'));
     const now = options.now ?? Date.now;
-    const stores = createPostgresSaasStores(pool, { clock: now });
+    const stores = createPostgresSaasStores(pool, {
+      clock: now,
+      schema: officeBotsDatabaseSchemaForEnvironment(env),
+    });
     const oauth = createGitHubAppOAuthAdapter({ clientSecret, fetch: options.fetch });
     const githubApi = createGitHubAppRepositoriesAdapter({ appSlug, fetch: options.fetch });
     const adapter: GitHubAppRepositoriesAdapter = Object.freeze({

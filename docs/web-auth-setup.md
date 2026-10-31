@@ -19,6 +19,7 @@ Configure estas variáveis nas funções Node da Vercel:
 | `GITHUB_APP_ID` | ID numérico da GitHub App usado para assinar JWTs do servidor |
 | `GITHUB_APP_PRIVATE_KEY` | Chave privada PEM da GitHub App, exclusiva do ambiente servidor |
 | `OFFICE_BOTS_DATABASE_URL` | Connection string do usuário de runtime do Postgres no Supabase, pelo pooler de transação, com `sslmode=require` |
+| `OFFICE_BOTS_DATABASE_SCHEMA` | Schema permitido para o ambiente: `office_bots_private` em Production ou `office_bots_preview_private` em Preview |
 
 Todas são variáveis somente do servidor. O login pode usar a mesma GitHub App ou um OAuth App separado; se forem separados, use os client IDs e segredos correspondentes a cada fluxo.
 
@@ -26,7 +27,9 @@ Todas são variáveis somente do servidor. O login pode usar a mesma GitHub App 
 
 Cada ambiente precisa de seus próprios valores no painel da Vercel. Para o Preview, escolha uma origem HTTPS estável atribuída à branch de teste; não use a URL temporária de um deployment específico. Configure `OFFICE_BOT_APP_ORIGIN` com essa origem e monte `GITHUB_OAUTH_CALLBACK_URL` e `GITHUB_APP_CALLBACK_URL` nela, mantendo exatamente os caminhos da tabela. Cadastre esses callbacks nas configurações OAuth correspondentes do GitHub. Se o app de produção não aceitar também o callback do Preview, crie apps de teste separados para Preview.
 
-Configure as variáveis necessárias como **Preview** (e, se preciso, restrinja-as à branch de teste). Não use variáveis `NEXT_PUBLIC_*` para credenciais. O `OFFICE_BOTS_DATABASE_URL` do Preview deve apontar para um banco Supabase de teste com todas as migrações aplicadas; não reutilize o banco de produção para testes de login e seleção. Depois de alterar variáveis ou callbacks, gere um novo deployment Preview para que a função receba a configuração.
+Configure as variáveis necessárias como **Preview** (e, se preciso, restrinja-as à branch de teste). Não use variáveis `NEXT_PUBLIC_*` para credenciais. No plano Free, não crie outro projeto nem uma Preview Branch do Supabase para testar o Office: use o projeto `camplol` existente, mas com o schema `office_bots_preview_private`, o papel `office_bots_preview_login` e uma URL próprios para Preview. A separação de papel impede que Preview consulte ou altere as tabelas de Production. Os dois ambientes compartilham os limites e o armazenamento do projeto Free; esta configuração não provisiona compute adicional. Mantenha o uso dentro das cotas gratuitas.
+
+Em Preview, defina `OFFICE_BOTS_DATABASE_SCHEMA=office_bots_preview_private` e `OFFICE_BOTS_DATABASE_URL` com a credencial `office_bots_preview_login`. `VERCEL_ENV=preview` sem o schema explícito correto faz as funções falharem fechado. Em Production, mantenha o usuário `office_bots_auth_login` e `OFFICE_BOTS_DATABASE_SCHEMA=office_bots_private` (ou omita a variável para usar esse padrão). Depois de alterar variáveis ou callbacks, gere um novo deployment Preview para que as funções recebam a configuração.
 
 Deployments de PR só exibem o Office web quando incluem a mudança em `vercel.json` para `npm run build:web`. Mesclar uma PR numa branch intermediária não atualiza a página Production: o código precisa chegar à branch de produção `main` e gerar um novo deployment Production. Builds verdes, por si sós, não confirmam que callbacks, migrações e credenciais estejam configurados.
 
@@ -40,17 +43,23 @@ Ao abrir a lista de PRs, o servidor assina um JWT curto com `GITHUB_APP_ID` e `G
 
 ## Banco de dados
 
-As migrações criam o schema privado `office_bots_private` e o papel sem login `office_bots_auth_runtime`. Ele acessa apenas as tabelas de estado OAuth, sessão, metadados de repositório e escolha atual. Depois de aplicar todas as migrações no projeto Supabase escolhido, crie um usuário de login com senha gerada para o ambiente:
+As migrações criam os schemas privados `office_bots_private` e `office_bots_preview_private`, com papéis de runtime separados. Cada papel acessa apenas as tabelas do próprio ambiente: estado OAuth, sessão, metadados de repositório e escolha atual. O papel de login de Production já existe em `camplol`. Depois de aplicar as migrações, crie uma senha exclusiva para o login de Preview:
 
 ```sql
-CREATE ROLE office_bots_auth_login LOGIN PASSWORD '<senha-aleatoria>' IN ROLE office_bots_auth_runtime;
+CREATE ROLE office_bots_preview_login LOGIN PASSWORD '<senha-aleatoria>' IN ROLE office_bots_preview_runtime;
 ```
 
-Use esse usuário no connection string do pooler de transação e salve a URL completa em `OFFICE_BOTS_DATABASE_URL` na Vercel. Não use o usuário `postgres` nem uma chave `service_role` na aplicação. Nenhum papel `anon` ou `authenticated` recebe acesso às tabelas privadas.
+Use `office_bots_auth_login` na URL de Production e `office_bots_preview_login` na URL de Preview, ambas pelo pooler de transação. Não use o usuário `postgres` nem uma chave `service_role` na aplicação. Nenhum papel `anon` ou `authenticated` recebe acesso às tabelas privadas.
 
 O banco guarda apenas o hash da sessão, o state/verificador OAuth de curta duração, metadados necessários para exibir a lista e o repositório escolhido. O token de usuário do GitHub é usado apenas no callback para validar a identidade e ler instalações/repositórios; ele e eventuais tokens de atualização não são persistidos nem enviados ao navegador. A escolha fica associada ao ID numérico da conta GitHub. Uma sincronização que detecta que o repositório deixou de estar acessível remove seus metadados e escolha.
 
-Ainda não há um projeto Supabase vinculado a este repositório. Escolha ou crie o projeto do Office Bots antes de vincular a CLI e aplicar as migrações. Os projetos existentes da conta não foram alterados.
+O projeto Supabase escolhido para o Office Bots é `camplol`, no plano Free. Em 2026-10-30, as migrações `saas_auth`, `office_bots_auth_runtime_role`, `github_app_repositories` e `office_bots_preview_schema` foram aplicadas nele. A última cria o schema privado de Preview, cinco tabelas isoladas e um papel de runtime separado; não altera tabelas nem dados do schema `public` ou de Production.
+
+Os papéis `office_bots_auth_runtime`, `office_bots_auth_login` e `office_bots_preview_runtime` foram criados. As cinco tabelas Preview têm RLS habilitado e políticas só para `office_bots_preview_runtime`. A verificação confirmou que `office_bots_auth_runtime` não tem uso do schema Preview nem acesso às tabelas dele. Ainda falta criar `office_bots_preview_login` com uma senha gerada por quem administra o projeto. Senhas e connection strings não são registradas no repositório.
+
+O responsável pelo projeto adicionou `OFFICE_BOTS_DATABASE_URL` somente ao ambiente **Production** da Vercel. A URL e a senha não são registradas no repositório. Preview precisa de uma URL com o login `office_bots_preview_login`, além de `OFFICE_BOTS_DATABASE_SCHEMA=office_bots_preview_private`; depois de configurar, gere um novo deployment para que as funções recebam as variáveis.
+
+O advisor do Supabase ainda sinaliza RLS desabilitado nas cinco tabelas privadas de Production (`office_bots_private`). `anon` e `authenticated` não têm `USAGE` nos schemas privados nem privilégios de leitura nessas tabelas; o acesso está limitado ao papel de runtime. As cinco tabelas de Preview já têm RLS habilitado com políticas para o papel Preview.
 
 ## Rotas web
 
