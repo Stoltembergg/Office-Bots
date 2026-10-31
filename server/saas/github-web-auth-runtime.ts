@@ -10,8 +10,10 @@ import { officeBotsPostgresPool } from './vercel-postgres-pool.js';
 
 export const OFFICE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+type AuthConfigurationStage = 'origin' | 'callback' | 'database' | 'schema' | 'client-id' | 'client-secret' | 'oauth' | 'sessions';
+
 export class GitHubWebAuthConfigurationError extends Error {
-  constructor() {
+  constructor(readonly stage: AuthConfigurationStage = 'origin') {
     super('GitHub web authentication is not configured');
     this.name = 'GitHubWebAuthConfigurationError';
   }
@@ -56,8 +58,10 @@ export function createGitHubWebAuthRuntime(
   env: NodeJS.ProcessEnv = process.env,
   options: GitHubWebAuthRuntimeOptions = {},
 ): GitHubWebAuthRuntime {
+  let stage: AuthConfigurationStage = 'origin';
   try {
     const appOrigin = configuredOrigin(required(env, 'OFFICE_BOT_APP_ORIGIN'));
+    stage = 'callback';
     const callbackUrl = required(env, 'GITHUB_OAUTH_CALLBACK_URL');
     const callback = new URL(callbackUrl);
     if (
@@ -69,23 +73,31 @@ export function createGitHubWebAuthRuntime(
       throw new GitHubWebAuthConfigurationError();
     }
 
+    stage = 'database';
     const pool = options.pool ?? officeBotsPostgresPool(required(env, 'OFFICE_BOTS_DATABASE_URL'));
+    stage = 'schema';
     const stores = createPostgresSaasStores(pool, {
       clock: options.now,
       schema: officeBotsDatabaseSchemaForEnvironment(env),
     });
+    stage = 'client-id';
+    const clientId = required(env, 'GITHUB_OAUTH_CLIENT_ID');
+    stage = 'client-secret';
+    const clientSecret = required(env, 'GITHUB_OAUTH_CLIENT_SECRET');
+    stage = 'oauth';
     const flow = createGitHubAppAuthorizationFlow({
       config: {
-        clientId: required(env, 'GITHUB_OAUTH_CLIENT_ID'),
+        clientId,
         callbackUrl,
       },
       stateStore: stores.githubAuthStateStore,
       now: options.now,
       adapter: createGitHubAppOAuthAdapter({
-        clientSecret: required(env, 'GITHUB_OAUTH_CLIENT_SECRET'),
+        clientSecret,
         fetch: options.fetch,
       }),
     });
+    stage = 'sessions';
     const sessions = createSaasSessionManager({
       store: stores.sessionStore,
       ttlMs: OFFICE_SESSION_TTL_MS,
@@ -98,6 +110,6 @@ export function createGitHubWebAuthRuntime(
       sessions,
     });
   } catch {
-    throw new GitHubWebAuthConfigurationError();
+    throw new GitHubWebAuthConfigurationError(stage);
   }
 }

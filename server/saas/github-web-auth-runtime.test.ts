@@ -75,6 +75,16 @@ describe('GitHub web auth runtime', () => {
       .toThrow(GitHubWebAuthConfigurationError);
   });
 
+  it('identifies schema selection failures without exposing environment values', () => {
+    const pool: PostgresPool = { query: async () => ({ rows: [] }), connect: async () => { throw new Error(); } };
+    expect.assertions(1);
+    try {
+      createGitHubWebAuthRuntime({ ...env(), VERCEL_ENV: 'preview' }, { pool });
+    } catch (error) {
+      expect(error).toMatchObject({ stage: 'schema', message: 'GitHub web authentication is not configured' });
+    }
+  });
+
   it('requires TLS and rejects malformed database URLs without exposing them', () => {
     for (const url of [
       'https://db.example.invalid',
