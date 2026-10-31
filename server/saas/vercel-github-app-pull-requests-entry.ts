@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createGitHubAppPullRequestsHandlers } from './github-app-pull-requests-handlers';
-import { createGitHubAppPullRequestsRuntime } from './github-app-pull-requests-runtime';
+import { createGitHubAppPullRequestsHandlers } from './github-app-pull-requests-handlers.js';
+import { createGitHubAppPullRequestsRuntime } from './github-app-pull-requests-runtime.js';
 
 /** Dedicated read-only endpoint; it does not accept repository selectors or forward to legacy APIs. */
 export async function handleGitHubAppPullRequests(req: IncomingMessage, res: ServerResponse): Promise<void> {

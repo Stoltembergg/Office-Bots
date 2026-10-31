@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createGitHubWebAuthHandlers } from './github-web-auth-handlers';
-import { createGitHubWebAuthRuntime } from './github-web-auth-runtime';
+import { createGitHubWebAuthHandlers } from './github-web-auth-handlers.js';
+import { createGitHubWebAuthRuntime } from './github-web-auth-runtime.js';
 
 type Operation = 'start' | 'callback' | 'session' | 'logout';
 

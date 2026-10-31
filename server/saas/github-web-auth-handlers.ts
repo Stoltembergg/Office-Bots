@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { OFFICE_SESSION_TTL_MS, type GitHubWebAuthRuntime } from './github-web-auth-runtime';
+import { OFFICE_SESSION_TTL_MS, type GitHubWebAuthRuntime } from './github-web-auth-runtime.js';
 
 const SESSION_COOKIE = '__Host-office_bots_session';
 const BINDING_COOKIE = '__Host-office_bots_oauth_binding';

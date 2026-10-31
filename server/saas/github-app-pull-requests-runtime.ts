@@ -1,10 +1,10 @@
-import { createGitHubAppPullRequestsLoader } from './github-app-pull-requests';
-import { createGitHubAppReviewInputLoader } from './github-app-review-input';
-import { createGitHubAppPullRequestsAdapter } from './github-app-pull-requests-adapter';
+import { createGitHubAppPullRequestsLoader } from './github-app-pull-requests.js';
+import { createGitHubAppReviewInputLoader } from './github-app-review-input.js';
+import { createGitHubAppPullRequestsAdapter } from './github-app-pull-requests-adapter.js';
 import {
   createGitHubAppRepositoriesRuntime,
   type GitHubAppRepositoriesRuntimeOptions,
-} from './github-app-repositories-runtime';
+} from './github-app-repositories-runtime.js';
 
 export class GitHubAppPullRequestsConfigurationError extends Error {
   constructor() {

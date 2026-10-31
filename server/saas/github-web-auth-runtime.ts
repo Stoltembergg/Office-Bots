@@ -1,12 +1,12 @@
-import { createGitHubAppAuthorizationFlow } from './github-auth';
-import { createGitHubAppOAuthAdapter } from './github-oauth-adapter';
+import { createGitHubAppAuthorizationFlow } from './github-auth.js';
+import { createGitHubAppOAuthAdapter } from './github-oauth-adapter.js';
 import {
   createPostgresSaasStores,
   officeBotsDatabaseSchemaForEnvironment,
   type PostgresPool,
-} from './postgres-stores';
-import { createSaasSessionManager, type SaasSessionManager } from './sessions';
-import { officeBotsPostgresPool } from './vercel-postgres-pool';
+} from './postgres-stores.js';
+import { createSaasSessionManager, type SaasSessionManager } from './sessions.js';
+import { officeBotsPostgresPool } from './vercel-postgres-pool.js';
 
 export const OFFICE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PreparedReviewInput } from './review-input';
+import type { PreparedReviewInput } from './review-input.js';
 
 const SESSION_COOKIE = '__Host-office_bots_session';
 const SESSION_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
