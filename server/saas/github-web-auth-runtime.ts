@@ -6,11 +6,11 @@ import {
   type PostgresPool,
 } from './postgres-stores.js';
 import { createSaasSessionManager, type SaasSessionManager } from './sessions.js';
-import { officeBotsPostgresPool } from './vercel-postgres-pool.js';
+import { officeBotsPostgresPool, OfficeBotsPostgresConfigurationError, type DatabaseConfigurationIssue } from './vercel-postgres-pool.js';
 
 export const OFFICE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-type AuthConfigurationStage = 'origin' | 'callback' | 'database' | 'schema' | 'client-id' | 'client-secret' | 'oauth' | 'sessions';
+type AuthConfigurationStage = 'origin' | 'callback' | 'database-variable' | 'database' | `database-${DatabaseConfigurationIssue}` | 'schema' | 'client-id' | 'client-secret' | 'oauth' | 'sessions';
 
 export class GitHubWebAuthConfigurationError extends Error {
   constructor(readonly stage: AuthConfigurationStage = 'origin') {
@@ -73,8 +73,10 @@ export function createGitHubWebAuthRuntime(
       throw new GitHubWebAuthConfigurationError();
     }
 
+    stage = 'database-variable';
+    const databaseUrl = options.pool ? undefined : required(env, 'OFFICE_BOTS_DATABASE_URL');
     stage = 'database';
-    const pool = options.pool ?? officeBotsPostgresPool(required(env, 'OFFICE_BOTS_DATABASE_URL'));
+    const pool = options.pool ?? officeBotsPostgresPool(databaseUrl!);
     stage = 'schema';
     const stores = createPostgresSaasStores(pool, {
       clock: options.now,
@@ -109,7 +111,10 @@ export function createGitHubWebAuthRuntime(
       flow,
       sessions,
     });
-  } catch {
+  } catch (error) {
+    if (stage === 'database' && error instanceof OfficeBotsPostgresConfigurationError) {
+      stage = `database-${error.issue}`;
+    }
     throw new GitHubWebAuthConfigurationError(stage);
   }
 }
